@@ -1,0 +1,2 @@
+reset && make clean && make && make sr_clean test_clean && tests/test_subscr_filtering
+
