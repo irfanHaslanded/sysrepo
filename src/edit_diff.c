@@ -920,6 +920,7 @@ sr_edit_diff_add(struct lyd_node *node, const char *attr_val, const char *prev_a
     sr_error_info_t *err_info = NULL;
     struct lyd_node *node_dup = NULL, *next, *elem;
     int has_leafref = 0;
+    char *xml_str = NULL;
 
     assert((op == EDIT_NONE) || (op == EDIT_CREATE) || (op == EDIT_DELETE) || (op == EDIT_REPLACE));
     assert(!*diff_node);
@@ -948,6 +949,11 @@ sr_edit_diff_add(struct lyd_node *node, const char *attr_val, const char *prev_a
         }
 
         if (has_leafref) {
+            /* Make sure that everything in node is actually usable before duplicating it */
+            lyd_print_mem(&xml_str, node, LYD_XML, LYP_WITHSIBLINGS);
+            SR_LOG_INF("node xml_str %s", xml_str);
+            free(xml_str);
+
             /* no easy way to get rid of the link, so just duplicate the data */
             node_dup = lyd_dup(node, LYD_DUP_OPT_WITH_KEYS | LYD_DUP_OPT_NO_ATTR);
             if (!node_dup) {
