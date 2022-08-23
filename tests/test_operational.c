@@ -105,6 +105,10 @@ setup(void **state)
     if (sr_install_module(st->conn, TESTS_DIR "/files/oper-group-test.yang", TESTS_DIR "/files", NULL, 0) != SR_ERR_OK) {
         return 1;
     }
+
+    if (sr_install_module(st->conn, TESTS_DIR "/files/test-list.yang", TESTS_DIR "/files", NULL, 0) != SR_ERR_OK) {
+        return 1;
+    }
     sr_disconnect(st->conn);
 
     if (sr_connect(0, &(st->conn)) != SR_ERR_OK) {
@@ -143,6 +147,7 @@ teardown(void **state)
     sr_remove_module(st->conn, "iana-if-type");
     sr_remove_module(st->conn, "ietf-interfaces");
     sr_remove_module(st->conn, "test");
+    sr_remove_module(st->conn, "test-list");
 
     sr_disconnect(st->conn);
     pthread_barrier_destroy(&st->barrier);
@@ -4077,10 +4082,44 @@ test_state_default_merge(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void test_oper_new_fail(void **arg)
+{
+    sr_conn_ctx_t *conn = NULL;
+    sr_session_ctx_t *sess = NULL;
+    int ret = 0;
+
+    ret = sr_connect(0, &conn);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/test-list:stats/sheets[index='1']/index", "1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/test-list:stats/sheets", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+//    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+
+    ret = sr_set_item_str(sess, "/test-list:stats/sheets[index='1']/first/size/x/len", "1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    sr_disconnect(conn);
+}
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test(test_yang_lib),
         cmocka_unit_test(test_sr_mon),
         cmocka_unit_test_teardown(test_enabled_partial, clear_up),
@@ -4112,6 +4151,8 @@ main(void)
         cmocka_unit_test_teardown(test_disabled_default, clear_up),
         cmocka_unit_test_teardown(test_merge_flag, clear_up),
         cmocka_unit_test_teardown(test_state_default_merge, clear_up),
+#endif
+        cmocka_unit_test(test_oper_new_fail),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

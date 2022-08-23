@@ -1,0 +1,27 @@
+module test-list {
+    prefix tl;
+    yang-version 1.1;
+    namespace "https://graphiant.com/ns/yang/irfan";
+
+    container stats {
+        config false;
+        list sheets {
+            key index;
+            leaf index {
+                type uint32;
+            }
+            container first {
+                container size {
+                    container x {
+                        leaf len {
+                            type string;
+                        }
+                    }
+                    container y {
+                    }
+                }
+            }
+        }
+    }
+}
+
