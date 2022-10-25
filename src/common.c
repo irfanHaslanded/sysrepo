@@ -53,6 +53,9 @@
 #include "shm_sub.h"
 #include "sysrepo.h"
 
+API int sr_test_insert_delay_before_unlock;
+#define SR_TEST_CHECK_UNLOCK_WITH_DELAY() if (sr_test_insert_delay_before_unlock) { usleep(200000); }
+
 /**
  * @brief Internal DS plugin array.
  */
@@ -4587,6 +4590,8 @@ sr_rwunlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
     assert(mode && cid);
     assert((mode == SR_LOCK_WRITE) || (timeout_ms > 0));
 
+    SR_TEST_CHECK_UNLOCK_WITH_DELAY();
+
     if ((mode == SR_LOCK_READ) || (mode == SR_LOCK_READ_UPGR)) {
         sr_time_get(&timeout_ts, timeout_ms);
 
@@ -5272,6 +5277,9 @@ sr_ev2str(sr_sub_event_t ev)
         return "rpc";
     case SR_SUB_EV_NOTIF:
         return "notif";
+
+    case SR_SUB_EV_SUCCESS:
+        return "success";
     default:
         SR_ERRINFO_INT(&err_info);
         sr_errinfo_free(&err_info);

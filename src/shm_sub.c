@@ -437,6 +437,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int 
         }
         if (err_info && (err_info->err[0].err_code == SR_ERR_TIME_OUT)) {
             /* UNLOCK mutex as well, on timeout caused by another lock we have lost the WRITE lock anyway */
+            SR_LOG_WRN("DONT HAVE WRITE LOCK");
             sr_munlock(&sub_shm->lock.mutex);
         } else {
             /* set the WRITE lock back */
