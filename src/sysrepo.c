@@ -3758,7 +3758,6 @@ _sr_replace_config(sr_session_ctx_t *session, const struct lys_module *ly_mod, s
     struct sr_mod_info_s mod_info;
 
     assert(!*src_config || !(*src_config)->prev->next);
-    assert(session->ds != SR_DS_OPERATIONAL);
     SR_MODINFO_INIT(mod_info, session->conn, session->ds, session->ds);
 
     /* single module/all modules */
@@ -3805,7 +3804,7 @@ sr_replace_config(sr_session_ctx_t *session, const char *module_name, struct lyd
     sr_error_info_t *err_info = NULL;
     const struct lys_module *ly_mod = NULL;
 
-    SR_CHECK_ARG_APIRET(!session || !SR_IS_CONVENTIONAL_DS(session->ds), session, err_info);
+    SR_CHECK_ARG_APIRET(!session, session, err_info);
 
     /* CONTEXT LOCK */
     if ((err_info = sr_lycc_lock(session->conn, SR_LOCK_READ, 0, __func__))) {

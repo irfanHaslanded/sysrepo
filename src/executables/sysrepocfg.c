@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <getopt.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -25,7 +26,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <unistd.h>
 
 #include <libyang/libyang.h>
@@ -217,7 +217,8 @@ enum data_type {
     DATA_CONFIG,
     DATA_EDIT,
     DATA_RPC,
-    DATA_NOTIF
+    DATA_NOTIF,
+    DATA_OPER
 };
 
 static int
@@ -285,6 +286,9 @@ step_load_data(const struct ly_ctx *ly_ctx, const char *file_path, LYD_FORMAT fo
     case DATA_NOTIF:
         lyrc = lyd_parse_op(ly_ctx, NULL, in, format, LYD_TYPE_NOTIF_YANG, data, NULL);
         break;
+    case DATA_OPER:
+        lyrc = lyd_parse_data(ly_ctx, NULL, in, format, LYD_PARSE_ONLY, 0, data);
+        break;
     }
     ly_in_free(in, 1);
 
@@ -342,18 +346,34 @@ op_import(sr_session_ctx_t *sess, const char *file_path, const char *module_name
     const struct ly_ctx *ly_ctx;
     struct lyd_node *data;
     int r, rc = EXIT_SUCCESS;
-
+    enum data_type type;
     ly_ctx = sr_acquire_context(sr_session_get_connection(sess));
+    if (sr_session_get_ds(sess) == SR_DS_OPERATIONAL) {
+        type = DATA_OPER;
+    } else {
+        type = DATA_CONFIG;
+    }
 
-    if (step_load_data(ly_ctx, file_path, format, DATA_CONFIG, not_strict, 0, &data)) {
+    if (step_load_data(ly_ctx, file_path, format, type, not_strict, 0, &data)) {
         rc = EXIT_FAILURE;
         goto cleanup;
     }
 
-    /* replace config (always spends data) */
-    r = sr_replace_config(sess, module_name, data, timeout_s * 1000);
+    if (type == DATA_OPER) {
+        r = sr_edit_batch(sess, data, "merge");
+        lyd_free_siblings(data);
+        if (r) {
+            goto error_cleanup;
+        }
+        r = sr_apply_changes(sess, 0);
+    } else {
+        /* replace config (always spends data) */
+        r = sr_replace_config(sess, module_name, data, timeout_s * 1000);
+    }
+
+error_cleanup:
     if (r) {
-        error_print(r, "Replace config failed");
+        error_print(r, "Import failed");
         rc = EXIT_FAILURE;
         goto cleanup;
     }
@@ -684,6 +704,8 @@ main(int argc, char **argv)
     char *ptr;
     int r, rc = EXIT_FAILURE, opt, operation = 0, lock = 0, not_strict = 0, opaq = 0, timeout = 0, wd_opt = 0;
     uint32_t max_depth = 0;
+    int forever = 0;
+
     struct option options[] = {
         {"help",            no_argument,       NULL, 'h'},
         {"version",         no_argument,       NULL, 'V'},
@@ -915,7 +937,10 @@ main(int argc, char **argv)
     if (ds == SR_DS_OPERATIONAL) {
         switch (operation) {
         case 'I':
-            op_str = "Import";
+            op_str = NULL;
+            /* If importing oper data we need run forever */
+            forever = 1;
+            printf("Sleeping forever to maintain operational datastore...\n");
             break;
         case 'E':
             op_str = "Edit";
@@ -983,6 +1008,12 @@ main(int argc, char **argv)
     }
 
 cleanup:
+    if (rc == EXIT_SUCCESS) {
+        while (forever) {
+            /* We don't disconnect/exit if forever is set */
+            sleep(UINT_MAX);
+        }
+    }
     sr_session_stop(sess);
     sr_disconnect(conn);
     return rc;
