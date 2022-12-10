@@ -636,17 +636,25 @@ arg_is_file(const char *optarg)
 static int
 arg_get_ds(const char *optarg, sr_datastore_t *ds)
 {
-    if (!strcmp(optarg, "running")) {
-        *ds = SR_DS_RUNNING;
-    } else if (!strcmp(optarg, "startup")) {
-        *ds = SR_DS_STARTUP;
-    } else if (!strcmp(optarg, "candidate")) {
-        *ds = SR_DS_CANDIDATE;
-    } else if (!strcmp(optarg, "operational")) {
-        *ds = SR_DS_OPERATIONAL;
-    } else {
-        error_print(0, "Unknown datastore \"%s\"", optarg);
-        return -1;
+    if (optarg == NULL) {
+        return 0;
+    }
+    switch (*optarg) {
+        case 'r':
+            *ds = SR_DS_RUNNING;
+            break;
+        case 's':
+            *ds = SR_DS_STARTUP;
+            break;
+        case 'c':
+            *ds = SR_DS_CANDIDATE;
+            break;
+        case 'o':
+            *ds = SR_DS_OPERATIONAL;
+            break;
+        default:
+            error_print(0, "Unknown datastore \"%s\"", optarg);
+            return -1;
     }
 
     return 0;
