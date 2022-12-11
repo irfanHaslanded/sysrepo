@@ -3516,7 +3516,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
     }
 
     if (!mod_info->diff) {
-        SR_LOG_INF("No datastore changes to apply.");
+        SR_LOG_DBG("No datastore changes to apply.");
         goto store;
     }
 
@@ -3568,7 +3568,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
 
     if (!mod_info->diff) {
         /* diff can disappear after validation */
-        SR_LOG_INF("No datastore changes to apply.");
+        SR_LOG_DBG("No datastore changes to apply.");
         goto store;
     }
 
@@ -3590,7 +3590,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
     }
 
     if (!mod_info->diff) {
-        SR_LOG_INF("No datastore changes to apply.");
+        SR_LOG_DBG("No datastore changes to apply.");
         goto store;
     }
 
