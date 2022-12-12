@@ -441,7 +441,14 @@ sr_shmmain_conn_list_del(sr_cid_t cid)
         return err_info;
     }
     if (unlink(path)) {
-        SR_ERRINFO_SYSERRNO(&err_info, "unlink");
+
+        /*
+         * Another process doing a connection check may have deleted the lockfile because we looked dead
+         * So, we can safely ignore if lockfile does not exist (ENOENT)
+         */
+        if (ENOENT != errno) {
+            SR_ERRINFO_SYSERRNO(&err_info, "unlink");
+        }
     }
     free(path);
 
