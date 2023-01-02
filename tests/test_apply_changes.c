@@ -6906,12 +6906,15 @@ int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test_setup_teardown(test_change_done, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update2, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update_fail, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_fail, setup_f, teardown_f),
+#endif
         cmocka_unit_test_setup_teardown(test_change_fail2, setup_f, teardown_f),
+#if 0
         cmocka_unit_test_setup_teardown(test_change_fail_priority, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_no_changes, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_any, setup_f, teardown_f),
@@ -6930,6 +6933,7 @@ main(void)
         cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
+#endif
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

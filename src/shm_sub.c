@@ -313,6 +313,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
     /* wait until there is no event and there are no readers (just like write lock) */
     sr_time_get(&timeout_abs, SR_SUBSHM_LOCK_TIMEOUT);
     ret = 0;
+    SR_LOG_RWLOCK(&sub_shm->lock, 3, cid, __func__, "fake unlock");
     while (!ret && (sub_shm->lock.readers[0] || (sub_shm->event && (sub_shm->event != lock_event)))) {
         /* COND WAIT */
         ret = sr_cond_timedwait(&sub_shm->lock.cond, &sub_shm->lock.mutex, &timeout_abs);
@@ -320,6 +321,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
 
     /* FAKE WRITE LOCK */
     sub_shm->lock.writer = cid;
+    SR_LOG_RWLOCK(&sub_shm->lock, 3, cid, __func__, "Locked");
 
     if ((ret == ETIMEDOUT) && !sub_shm->lock.readers[0]) {
         assert(sub_shm->event);
@@ -402,6 +404,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int 
      * (just like write lock except do not set a waiting writer, needs to wait for everyone else, even writers) */
     sr_time_get(&timeout_abs, timeout_ms);
     ret = 0;
+    SR_LOG_RWLOCK(&sub_shm->lock, 3, cid, __func__, "fake unlock");
     while (!ret && (sub_shm->lock.readers[0] || /*sub_shm->lock.writer ||*/
             (sub_shm->event && !SR_IS_NOTIFY_EVENT(sub_shm->event)))) {
         /* COND WAIT */
@@ -440,6 +443,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int 
         } else {
             /* set the WRITE lock back */
             sub_shm->lock.writer = cid;
+            SR_LOG_RWLOCK(&sub_shm->lock, 3, cid, __func__, "Locked");
         }
         return err_info;
     }
@@ -447,6 +451,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int 
 event_handled:
     /* FAKE WRITE LOCK */
     sub_shm->lock.writer = cid;
+    SR_LOG_RWLOCK(&sub_shm->lock, 3, cid, __func__, "handled and Locked");
 
     /* remap sub data SHM */
     if ((err_info = sr_shmsub_data_open_remap(NULL, NULL, -1, shm_data_sub, 0))) {

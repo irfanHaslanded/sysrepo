@@ -4136,6 +4136,7 @@ sr_munlock(pthread_mutex_t *lock)
 sr_error_info_t *
 sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
 {
+    static ATOMIC_T sr_rwlock_id;
     sr_error_info_t *err_info = NULL;
 
     if ((err_info = sr_mutex_init(&rwlock->mutex, shared))) {
@@ -4154,7 +4155,7 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
     memset(rwlock->readers, 0, sizeof rwlock->readers);
     rwlock->upgr = 0;
     rwlock->writer = 0;
-
+    rwlock->id = ATOMIC_INC_RELAXED(sr_rwlock_id);
     return NULL;
 }
 
@@ -4379,7 +4380,7 @@ _sr_rwlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t ci
     assert(mode && (timeout_ms >= 0) && cid);
 
     sr_time_get(&timeout_abs, timeout_ms);
-
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locking");
     if (!has_mutex) {
         /* MUTEX LOCK */
         ret = pthread_mutex_timedlock(&rwlock->mutex, &timeout_abs);
@@ -4442,6 +4443,7 @@ _sr_rwlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t ci
             if (!rwlock->writer) {
                 /* urge waiting for write lock */
                 rwlock->writer = cid;
+                SR_LOG_RWLOCK(rwlock, mode, cid, func, "locking urge set");
                 wr_urged = 1;
             }
 
@@ -4460,6 +4462,7 @@ _sr_rwlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t ci
             /* restore flags */
             if (wr_urged) {
                 rwlock->writer = 0;
+                SR_LOG_RWLOCK(rwlock, mode, cid, func, "locking urge writer unset");
             }
             goto error_cond_unlock;
         }
@@ -4470,6 +4473,7 @@ _sr_rwlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t ci
         /* set writer flag (if not set before) */
         if (!wr_urged) {
             rwlock->writer = cid;
+            SR_LOG_RWLOCK(rwlock, mode, cid, func, "final urge set");
         }
         assert(rwlock->writer == cid);
 
@@ -4539,6 +4543,7 @@ _sr_rwlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t ci
         pthread_mutex_unlock(&rwlock->mutex);
     }
 
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locked");
     return NULL;
 
 error_cond_unlock:
@@ -4575,6 +4580,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
 
     assert(mode && cid);
     assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocking");
 
     if (mode == SR_LOCK_WRITE) {
         /*
@@ -4630,6 +4636,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
         rwlock->upgr = 0;
         rwlock->writer = cid;
 
+        SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
         /* simply keep the lock */
         return NULL;
 
@@ -4705,6 +4712,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
         }
 
         /* simply keep the lock */
+        SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
         return NULL;
     }
 
@@ -4728,6 +4736,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
 
     /* redundant to broadcast on condition because we were holding write-lock, so something can only be
      * waiting on the mutex, never the condition */
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
 
 cleanup_unlock:
     /* MUTEX UNLOCK */
@@ -4745,8 +4754,14 @@ sr_rwunlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
     assert(mode && cid);
     assert((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE) || (timeout_ms > 0));
 
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "Unlocking");
+
     if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
         /* we are unlocking a write lock, there can be no readers */
+        if (!(!rwlock->readers[0] && !rwlock->upgr && (rwlock->writer == cid))) {
+            SR_LOG_WRN("Bad problems");
+        }
+
         assert(!rwlock->readers[0] && !rwlock->upgr && (rwlock->writer == cid));
 
         /* remove the writer flag */
@@ -4790,6 +4805,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, int timeout_ms, sr_lock_mode_t mode, sr_cid_t c
         sr_cond_broadcast(&rwlock->cond);
     }
 
+    SR_LOG_RWLOCK(rwlock, mode, cid, func, "Unlocked");
     /* MUTEX UNLOCK */
     pthread_mutex_unlock(&rwlock->mutex);
 }

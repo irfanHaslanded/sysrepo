@@ -60,7 +60,9 @@ typedef struct {
     uint8_t read_count[SR_RWLOCK_READ_LIMIT];   /**< Number of recursive read locks of the connection in readers. */
     sr_cid_t upgr;                  /**< CID of the READ-UPGR lock owner if locked, 0 otherwise. */
     sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, 0 otherwise. */
+    uint32_t id;
 } sr_rwlock_t;
+
 
 /**
  * @brief Subscription event.

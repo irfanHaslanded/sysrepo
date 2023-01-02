@@ -31,6 +31,11 @@ struct sr_mod_info_mod_s;
 struct srplg_ds_s;
 struct srplg_ntf_s;
 
+#define SR_LOG_RWLOCK(rwlock_ptr, mode, cid, func, str)      \
+    SR_LOG_INF("%s: %s rwlock id %u wr %u upgr %u rd1 %u in mode %d by CID %" PRIu32, \
+            func, str, (rwlock_ptr)->id, (rwlock_ptr)->writer, (rwlock_ptr)->upgr, (rwlock_ptr)->readers[0], mode, cid)
+
+
 /** macro for mutex align check */
 #define SR_MUTEX_ALIGN_CHECK(mutex) ((uintptr_t)mutex % sizeof(void *))
 
