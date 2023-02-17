@@ -2754,7 +2754,6 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
     memset(rwlock->readers, 0, sizeof rwlock->readers);
     rwlock->upgr = 0;
     rwlock->writer = 0;
-
     return NULL;
 }
 
@@ -5185,7 +5184,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, sr_datastore_t ds, s
     struct lyd_node *mod_data = NULL;
     char *path = NULL;
     int fd = -1, flags;
-
+    char *buf;
 retry_open:
     /* prepare correct file path */
     if (ds == SR_DS_STARTUP) {
@@ -5236,6 +5235,11 @@ retry_open:
         sr_ly_link(*data, mod_data);
     } else if (mod_data) {
         *data = mod_data;
+    }
+    if (ds == SR_DS_OPERATIONAL && strcmp("ietf-interfaces", ly_mod->name) == 0) {
+        lyd_print_mem(&buf, mod_data, 1, 7);
+        SR_LOG_INF("loaded %s", buf);
+        free(buf);
     }
     close(fd);
     free(path);
