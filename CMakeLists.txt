@@ -288,6 +288,8 @@ if(ENABLE_TESTS)
     endif()
 endif()
 
+set(ENABLE_PERF_TESTS ON)
+
 if(ENABLE_PERF_TESTS)
     find_path(VALGRIND_INCLUDE_DIR
         NAMES
