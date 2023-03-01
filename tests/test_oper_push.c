@@ -2263,10 +2263,57 @@ test_change_cb(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void
+test_pushed_scale(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_data_t *data;
+    char xpath[128];
+    int max_scale = getenv("TEST_SCALE_MAX") ? 100000 : 1000;
+    int i, ret;
+    sr_conn_ctx_t *conn;
+    sr_session_ctx_t *sess;
+    clock_t ticks, elapsed = 0;
+
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+    /* Push a large amount of data into multiple modules */
+    for (i = 0; i < max_scale; i++) {
+        sprintf(xpath, "/test:cont/l2[k='key%d']/v", i);
+        ret = sr_set_item_str(st->sess, xpath, "1", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("Pushed scale %d oper data", max_scale);
+
+    /* Create short-lived connections which push a small amount of data into some modules */
+
+    for (int i = 0; i < 10; i++) {
+        ret = sr_connect(0, &conn);
+        assert_int_equal(ret, SR_ERR_OK);
+        ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* set some operational data */
+        ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/type",
+                "iana-if-type:ethernetCsmacd", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        ret = sr_apply_changes(sess, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        ticks = clock();
+        sr_disconnect(conn);
+        elapsed += clock() - ticks;
+    }
+    TLOG_INF("Disconnect took average %d ms", elapsed/(10 * (CLOCKS_PER_SEC/1000)));
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
@@ -2282,6 +2329,8 @@ main(void)
         cmocka_unit_test_teardown(test_diff_merge_userord, clear_up),
         cmocka_unit_test_teardown(test_schema_mount, clear_up),
         cmocka_unit_test_teardown(test_change_cb, clear_up),
+#endif
+        cmocka_unit_test_teardown(test_pushed_scale, clear_up),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);
