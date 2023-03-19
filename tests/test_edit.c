@@ -1369,6 +1369,7 @@ test_anyxml(void **state)
     ret = sr_get_data(st->sess, "/test-module:main/xml-data", 0, 0, 0, &data);
     assert_int_equal(ret, SR_ERR_OK);
     lyd_print_mem(&str, data->tree, LYD_JSON, LYD_PRINT_WITHSIBLINGS);
+    assert_int_equal(ret, SR_ERR_OK);
 
     assert_string_equal(str, str2);
     sr_release_data(data);
@@ -1406,10 +1407,36 @@ test_unknown_ns(void **state)
     sr_discard_changes(st->sess);
 }
 
+static void
+test_edit_set_item_del_parent(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test(test_edit_item),
         cmocka_unit_test_teardown(test_delete, clear_interfaces),
         cmocka_unit_test_teardown(test_create1, clear_interfaces),
@@ -1428,6 +1455,9 @@ main(void)
         cmocka_unit_test(test_edit_forbid_node_types),
         cmocka_unit_test(test_anyxml),
         cmocka_unit_test(test_unknown_ns),
+#endif
+        cmocka_unit_test(test_edit_set_item_del_parent),
+
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

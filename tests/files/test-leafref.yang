@@ -1,0 +1,45 @@
+module test-leafref {
+    yang-version 1.1;
+    namespace "https://example.com";
+    prefix "tlf";
+
+    container car {
+
+        list sensors {
+            key name;
+            leaf name {
+                type string;
+            }
+
+            list params {
+                key name;
+                leaf name {
+                    type leafref {
+                        path "/tlf:car/parameters/name";
+                    }
+                }
+            }
+
+            max-elements 2;
+        }
+
+        list parameters {
+            key name;
+            leaf name {
+                type string;
+            }
+        }
+    }
+
+    container car-state {
+        config false;
+        leaf a1 {
+            type string;
+        }
+        leaf-list enabled-params {
+            type leafref {
+                path "/tlf:car/parameters/name";
+            }
+        }
+    }
+}
