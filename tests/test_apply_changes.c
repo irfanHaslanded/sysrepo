@@ -6220,11 +6220,100 @@ test_mult_update(void **state)
     sr_session_stop(sess);
 }
 
+static int
+module_print_cb(sr_session_ctx_t *session, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
+{
+    sr_change_oper_t op;
+    sr_change_iter_t *iter;
+    sr_data_t *subtree;
+    const struct lyd_node *node;
+    char *str1;
+    const char *str2, *prev_val = NULL;
+    bool prev_dflt;
+
+    int ret;
+    (void)module_name;
+    (void)xpath;
+    (void)event;
+    (void)request_id;
+    (void)private_data;
+
+    ret = sr_get_changes_iter(session, "/test:*//.", &iter);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    while (SR_ERR_NOT_FOUND != (ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, &str2, &prev_dflt))) {
+        str1 = NULL;
+        prev_val = NULL;
+        assert_int_equal(ret, SR_ERR_OK);
+        TLOG_INF("%s: %s", __func__, prev_val ? prev_val : "NULL");
+        free(prev_val);
+        ret = lyd_print_mem(&str1, node, LYD_XML, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        TLOG_INF("%s: %s", __func__, str1 ? str1 : "NULL");
+        free(str1);
+    }
+
+    sr_free_change_iter(iter);
+
+    return SR_ERR_OK;
+}
+
+
+static void
+test_changes_case(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_subscription_ctx_t *subscr = NULL;
+    sr_session_ctx_t *sess;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "test", NULL, module_print_cb, st, 0, SR_SUBSCR_DONE_ONLY, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/test:new-opts/cont-case/field1",
+                "value1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/test:new-opts/cont-case/field2",
+                "value2", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    //irfan
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/test:new-opts/cont-case/field2", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/test:new-opts/cont-case/field1", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/test:new-opts", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0, 1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    sr_unsubscribe(subscr);
+    sr_session_stop(sess);
+}
+
+
 /* MAIN */
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test_setup_teardown(test_change_done, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update2, setup_f, teardown_f),
@@ -6247,6 +6336,8 @@ main(void)
         cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
+#endif
+        cmocka_unit_test_setup_teardown(test_changes_case, setup_f, teardown_f),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

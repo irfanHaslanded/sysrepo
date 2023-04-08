@@ -84,4 +84,47 @@ module test {
             default 15;
         }
     }
+
+    container new-opts {
+        choice choose-one {
+            description
+              "A choice type.";
+            case str {
+                description
+                  "A string case.";
+                leaf str {
+                    type string;
+                    description
+                      "A string type.";
+                }
+            }
+            case id-null {
+                description
+                  "An empty case.";
+                leaf null {
+                    type empty;
+                    description
+                      "An empty type." ;
+                }
+            }
+            case cont-case {
+                description
+                  "A container case.";
+                container cont-case {
+                    leaf field1 {
+                        type string;
+                        description
+                          "First field of container.";
+                    }
+                    leaf field2 {
+                        type string;
+                        description
+                          "Second field of container. Multiple fields are
+                           present to test the setting of these inside the
+                           choice union.";
+                    }
+                }
+            }
+        }
+    }
 }
