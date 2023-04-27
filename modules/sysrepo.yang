@@ -27,6 +27,11 @@ module sysrepo {
     description
         "Sysrepo YANG datastore internal attributes and information.";
 
+    revision "2023-04-27" {
+        description
+            "Add details about module dependencies.";
+    }
+
     revision "2023-02-16" {
         description
             "Import and use ietf-datastores for enabled extending supported datastores.";
@@ -186,6 +191,13 @@ module sysrepo {
                 description
                     "Foreign target module of the leafref.";
             }
+
+            leaf in-union {
+                type boolean;
+                mandatory true;
+                description
+                    "Whether the leafref is part of a union type.";
+            }
         }
 
         list inst-id {
@@ -204,23 +216,48 @@ module sysrepo {
                 description
                     "Default instance-identifier value.";
             }
+
+            leaf in-union {
+                type boolean;
+                mandatory true;
+                description
+                    "Whether the leafref is part of a union type.";
+            }
         }
 
-        list xpath {
+        list must {
             description
-                "Dependency of an XPath expression - must or when statement.";
+                "Dependency of a must statement.";
 
             leaf expression {
                 type yang:xpath1.0;
                 mandatory true;
                 description
-                    "XPath expression of the dependency - must or when statement argument.";
+                    "Must XPath expression.";
             }
 
             leaf-list target-module {
                 type module-ref;
                 description
-                    "Foreign modules with the data needed for evaluation of the XPath.";
+                    "Foreign modules with the data needed for the evaluation.";
+            }
+        }
+
+        list when {
+            description
+                "Dependency of a when statement.";
+
+            leaf expression {
+                type yang:xpath1.0;
+                mandatory true;
+                description
+                    "When XPath expression.";
+            }
+
+            leaf-list target-module {
+                type module-ref;
+                description
+                    "Foreign modules with the data needed for the evaluation.";
             }
         }
     }

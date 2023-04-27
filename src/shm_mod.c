@@ -333,7 +333,7 @@ sr_shmmod_fill_deps(sr_mod_shm_t *mod_shm, struct lyd_node *sr_dep_parent, sr_de
             }
 
             ++(*dep_i);
-        } else if (!strcmp(sr_dep->schema->name, "xpath")) {
+        } else if (!strcmp(sr_dep->schema->name, "must") || !strcmp(sr_dep->schema->name, "when")) {
             /* set dep type */
             shm_deps[*dep_i].type = SR_DEP_XPATH;
 
@@ -400,7 +400,7 @@ sr_shmmod_add_dep_size(const struct lyd_node *sr_dep, size_t *shm_size)
     }
 
     /* find all target modules */
-    if (!strcmp(sr_dep->schema->name, "xpath")) {
+    if (!strcmp(sr_dep->schema->name, "must") || !strcmp(sr_dep->schema->name, "when")) {
         ly_set_free(set, NULL);
         if (lyd_find_xpath(sr_dep, "target-module", &set)) {
             sr_errinfo_new_ly(&err_info, LYD_CTX(sr_dep), NULL);
