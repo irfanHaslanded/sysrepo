@@ -3602,14 +3602,14 @@ sr_validate(sr_session_ctx_t *session, const char *module_name, uint32_t timeout
     case SR_DS_STARTUP:
     case SR_DS_RUNNING:
         /* validate only changed modules and any that can become invalid because of the changes */
-        if ((err_info = sr_modinfo_validate(&mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_DEP, 0))) {
+        if ((err_info = sr_modinfo_validate(&mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_VAL_DEP | MOD_INFO_INV_CHG_DEP, 0))) {
             goto cleanup;
         }
         break;
     case SR_DS_CANDIDATE:
     case SR_DS_OPERATIONAL:
         /* validate all the modules because they may be invalid without any changes */
-        if ((err_info = sr_modinfo_validate(&mod_info, MOD_INFO_REQ | MOD_INFO_INV_DEP, 0))) {
+        if ((err_info = sr_modinfo_validate(&mod_info, MOD_INFO_REQ | MOD_INFO_INV_VAL_DEP | MOD_INFO_INV_CHG_DEP, 0))) {
             goto cleanup;
         }
         break;
@@ -3692,7 +3692,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
             goto cleanup;
         }
 
-        if ((err_info = sr_modinfo_validate(mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_DEP, 1))) {
+        if ((err_info = sr_modinfo_validate(mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_VAL_DEP | MOD_INFO_INV_CHG_DEP, 1))) {
             goto cleanup;
         }
         break;

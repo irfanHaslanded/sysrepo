@@ -268,7 +268,8 @@ sr_modinfo_collect_deps(struct sr_mod_info_s *mod_info)
                 break;
             }
         /* fallthrough */
-        case MOD_INFO_INV_DEP:
+        case MOD_INFO_INV_VAL_DEP:
+        case MOD_INFO_INV_CHG_DEP:
             /* this module data will be validated */
             assert(mod->state & MOD_INFO_DATA);
             if ((err_info = sr_shmmod_collect_deps(SR_CONN_MOD_SHM(mod_info->conn),
@@ -2265,7 +2266,8 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
     uint32_t i;
     int new = 0;
 
-    assert((mod_type == MOD_INFO_REQ) || (mod_type == MOD_INFO_DEP) || (mod_type == MOD_INFO_INV_DEP));
+    assert((mod_type == MOD_INFO_REQ) || (mod_type == MOD_INFO_DEP) || (mod_type == MOD_INFO_INV_VAL_DEP) ||
+            (mod_type == MOD_INFO_INV_CHG_DEP));
 
     /* check that it is not already added */
     for (i = 0; i < mod_info->mod_count; ++i) {
@@ -2353,7 +2355,7 @@ sr_modinfo_mod_inv_deps(sr_mod_t *shm_mod, struct sr_mod_info_s *mod_info)
     off_t *shm_inv_val_deps, *shm_inv_chg_deps;
     uint32_t i;
 
-    /* add all inverse validation dependencies (modules dependening on this module) */
+    /* add all inverse (modules dependening on this module) validation dependencies */
     shm_inv_val_deps = (off_t *)(mod_info->conn->mod_shm.addr + shm_mod->inv_val_deps);
     for (i = 0; i < shm_mod->inv_val_dep_count; ++i) {
         /* find ly module */
@@ -2361,7 +2363,7 @@ sr_modinfo_mod_inv_deps(sr_mod_t *shm_mod, struct sr_mod_info_s *mod_info)
         SR_CHECK_INT_RET(!ly_mod, err_info);
 
         /* add inverse dependency */
-        if ((err_info = sr_modinfo_mod_new(ly_mod, MOD_INFO_INV_DEP, mod_info))) {
+        if ((err_info = sr_modinfo_mod_new(ly_mod, MOD_INFO_INV_VAL_DEP, mod_info))) {
             return err_info;
         }
     }
@@ -2374,7 +2376,7 @@ sr_modinfo_mod_inv_deps(sr_mod_t *shm_mod, struct sr_mod_info_s *mod_info)
         SR_CHECK_INT_RET(!ly_mod, err_info);
 
         /* add inverse dependency */
-        if ((err_info = sr_modinfo_mod_new(ly_mod, MOD_INFO_INV_DEP, mod_info))) {
+        if ((err_info = sr_modinfo_mod_new(ly_mod, MOD_INFO_INV_CHG_DEP, mod_info))) {
             return err_info;
         }
     }
@@ -2687,7 +2689,8 @@ sr_modinfo_add_defaults(struct sr_mod_info_s *mod_info, int finish_diff)
                 }
             }
             break;
-        case MOD_INFO_INV_DEP:
+        case MOD_INFO_INV_VAL_DEP:
+        case MOD_INFO_INV_CHG_DEP:
         case MOD_INFO_DEP:
             /* this module will not be validated */
             break;
@@ -3002,7 +3005,7 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
             }
 
             /* validate */
-            if ((err_info = sr_modinfo_validate(mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_DEP, 1))) {
+            if ((err_info = sr_modinfo_validate(mod_info, MOD_INFO_CHANGED | MOD_INFO_INV_VAL_DEP | MOD_INFO_INV_CHG_DEP, 1))) {
                 goto cleanup;
             }
             break;

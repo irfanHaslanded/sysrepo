@@ -22,20 +22,21 @@
 #include "shm_types.h"
 #include "sysrepo_types.h"
 
-#define MOD_INFO_NEW        0x0001 /* module was added (or an xpath) to mod info and needs to be consolidated */
-#define MOD_INFO_DEP        0x0002 /* dependency module, its data cannot be changed, but are required for validation */
-#define MOD_INFO_INV_DEP    0x0004 /* inverse dependency module, its data cannot be changed, but will be validated */
-#define MOD_INFO_REQ        0x0008 /* required module, its data can be changed and it will be validated */
-#define MOD_INFO_TYPE_MASK  0x000F /* mask for all module types */
+#define MOD_INFO_NEW            0x0001 /* module was added (or an xpath) to mod info and needs to be consolidated */
+#define MOD_INFO_DEP            0x0002 /* dependency module, its data cannot be changed, but are required for validation */
+#define MOD_INFO_INV_VAL_DEP    0x0004 /* inverse dependency module, its data cannot be changed, but will be validated */
+#define MOD_INFO_INV_CHG_DEP    0x0008 /* inverse dependency module, its data can be changed by the validation */
+#define MOD_INFO_REQ            0x0010 /* required module, its data are changed and it will be validated */
+#define MOD_INFO_TYPE_MASK      0x001F /* mask for all module types */
 
-#define MOD_INFO_RLOCK      0x0010 /* read-locked module (main DS) */
-#define MOD_INFO_RLOCK_UPGR 0x0020 /* read-upgr-locked module (main DS) */
-#define MOD_INFO_WLOCK      0x0040 /* write-locked module (main DS) */
-#define MOD_INFO_RLOCK2     0x0080 /* read-locked module (secondary DS, it can be only read locked) */
+#define MOD_INFO_RLOCK          0x0020 /* read-locked module (main DS) */
+#define MOD_INFO_RLOCK_UPGR     0x0040 /* read-upgr-locked module (main DS) */
+#define MOD_INFO_WLOCK          0x0080 /* write-locked module (main DS) */
+#define MOD_INFO_RLOCK2         0x0100 /* read-locked module (secondary DS, it can be only read locked) */
 
-#define MOD_INFO_DATA       0x0100 /* module data were loaded */
-#define MOD_INFO_CHANGED    0x0200 /* module data were changed */
-#define MOD_INFO_XPATH_DYN  0x0400 /* module XPaths are dynamically allocated and need to be freed */
+#define MOD_INFO_DATA           0x0200 /* module data were loaded */
+#define MOD_INFO_CHANGED        0x0400 /* module data were changed */
+#define MOD_INFO_XPATH_DYN      0x0800 /* module XPaths are dynamically allocated and need to be freed */
 
 /**
  * @brief Mod info structure, used for keeping all relevant modules for a data operation.
@@ -193,7 +194,7 @@ sr_error_info_t *sr_modinfo_changesub_rdlock(struct sr_mod_info_s *mod_info);
 void sr_modinfo_changesub_rdunlock(struct sr_mod_info_s *mod_info);
 
 #define SR_MI_NEW_DEPS          0x01    /**< new modules are not required (MOD_INFO_REQ) but only dpendencies (MOD_INFO_DEP) */
-#define SR_MI_INV_DEPS          0x02    /**< add inverse dependencies for added modules */
+#define SR_MI_INV_DEPS          0x02    /**< add inverse dependencies for the existing modules */
 #define SR_MI_LOCK_UPGRADEABLE  0x04    /**< only valid for a read lock, make it upgradeable into a write lock */
 #define SR_MI_DATA_CACHE        0x08    /**< enable cache when loading module data */
 #define SR_MI_DATA_NO           0x10    /**< do not load module data */
