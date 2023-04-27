@@ -2350,14 +2350,27 @@ sr_modinfo_mod_inv_deps(sr_mod_t *shm_mod, struct sr_mod_info_s *mod_info)
 {
     sr_error_info_t *err_info = NULL;
     const struct lys_module *ly_mod;
-    off_t *shm_inv_deps;
+    off_t *shm_inv_val_deps, *shm_inv_chg_deps;
     uint32_t i;
 
-    /* add all inverse dependencies (modules dependening on this module) */
-    shm_inv_deps = (off_t *)(mod_info->conn->mod_shm.addr + shm_mod->inv_deps);
-    for (i = 0; i < shm_mod->inv_dep_count; ++i) {
+    /* add all inverse validation dependencies (modules dependening on this module) */
+    shm_inv_val_deps = (off_t *)(mod_info->conn->mod_shm.addr + shm_mod->inv_val_deps);
+    for (i = 0; i < shm_mod->inv_val_dep_count; ++i) {
         /* find ly module */
-        ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, mod_info->conn->mod_shm.addr + shm_inv_deps[i]);
+        ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, mod_info->conn->mod_shm.addr + shm_inv_val_deps[i]);
+        SR_CHECK_INT_RET(!ly_mod, err_info);
+
+        /* add inverse dependency */
+        if ((err_info = sr_modinfo_mod_new(ly_mod, MOD_INFO_INV_DEP, mod_info))) {
+            return err_info;
+        }
+    }
+
+    /* add all inverse change dependencies */
+    shm_inv_chg_deps = (off_t *)(mod_info->conn->mod_shm.addr + shm_mod->inv_chg_deps);
+    for (i = 0; i < shm_mod->inv_chg_dep_count; ++i) {
+        /* find ly module */
+        ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, mod_info->conn->mod_shm.addr + shm_inv_chg_deps[i]);
         SR_CHECK_INT_RET(!ly_mod, err_info);
 
         /* add inverse dependency */

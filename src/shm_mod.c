@@ -335,7 +335,7 @@ sr_shmmod_fill_deps(sr_mod_shm_t *mod_shm, struct lyd_node *sr_dep_parent, sr_de
             ++(*dep_i);
         } else if (!strcmp(sr_dep->schema->name, "must") || !strcmp(sr_dep->schema->name, "when")) {
             /* set dep type */
-            shm_deps[*dep_i].type = SR_DEP_XPATH;
+            shm_deps[*dep_i].type = !strcmp(sr_dep->schema->name, "must") ? SR_DEP_MUST : SR_DEP_WHEN;
 
             /* store xpath */
             lyd_find_path(sr_dep, "expression", 0, &node);
@@ -431,15 +431,16 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node 
     struct lyd_node *sr_child, *sr_dep;
     sr_mod_t *smod, *ref_smod;
     sr_dep_t *shm_deps;
-    off_t *shm_inv_deps;
+    off_t *shm_inv_val_deps, *shm_inv_chg_deps;
     sr_mod_shm_t *mod_shm;
     char *shm_end;
-    size_t paths_len, dep_i, inv_dep_i, old_shm_size;
+    size_t paths_len, dep_i, inv_val_dep_i, inv_chg_dep_i, old_shm_size;
 
     smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
 
     assert(!smod->dep_count);
-    assert(!smod->inv_dep_count);
+    assert(!smod->inv_val_dep_count);
+    assert(!smod->inv_chg_dep_count);
 
     /* count arrays and paths length */
     paths_len = 0;
@@ -452,9 +453,12 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node 
                     return err_info;
                 }
             }
-        } else if (!strcmp(sr_child->schema->name, "inverse-deps")) {
-            /* another inverse data dependency */
-            ++smod->inv_dep_count;
+        } else if (!strcmp(sr_child->schema->name, "inverse-validation-deps")) {
+            /* another inverse validation data dependency */
+            ++smod->inv_val_dep_count;
+        } else if (!strcmp(sr_child->schema->name, "inverse-change-deps")) {
+            /* another inverse change data dependency */
+            ++smod->inv_chg_dep_count;
         }
     }
 
@@ -463,7 +467,7 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node 
 
     /* enlarge and possibly remap mod SHM */
     if ((err_info = sr_shm_remap(shm_mod, shm_mod->size + paths_len + SR_SHM_SIZE(smod->dep_count * sizeof(sr_dep_t)) +
-            SR_SHM_SIZE(smod->inv_dep_count * sizeof(off_t))))) {
+            SR_SHM_SIZE(smod->inv_val_dep_count * sizeof(off_t)) + SR_SHM_SIZE(smod->inv_chg_dep_count * sizeof(off_t))))) {
         return err_info;
     }
     smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
@@ -475,9 +479,13 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node 
     shm_deps = (sr_dep_t *)(shm_mod->addr + smod->deps);
     dep_i = 0;
 
-    smod->inv_deps = sr_shmcpy(shm_mod->addr, NULL, smod->inv_dep_count * sizeof(off_t), &shm_end);
-    shm_inv_deps = (off_t *)(shm_mod->addr + smod->inv_deps);
-    inv_dep_i = 0;
+    smod->inv_val_deps = sr_shmcpy(shm_mod->addr, NULL, smod->inv_val_dep_count * sizeof(off_t), &shm_end);
+    shm_inv_val_deps = (off_t *)(shm_mod->addr + smod->inv_val_deps);
+    inv_val_dep_i = 0;
+
+    smod->inv_chg_deps = sr_shmcpy(shm_mod->addr, NULL, smod->inv_chg_dep_count * sizeof(off_t), &shm_end);
+    shm_inv_chg_deps = (off_t *)(shm_mod->addr + smod->inv_chg_deps);
+    inv_chg_dep_i = 0;
 
     LY_LIST_FOR(lyd_child(sr_mod), sr_child) {
         if (!strcmp(sr_child->schema->name, "deps")) {
@@ -485,17 +493,25 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node 
             if ((err_info = sr_shmmod_fill_deps(mod_shm, sr_child, shm_deps, &dep_i, &shm_end))) {
                 return err_info;
             }
-        } else if (!strcmp(sr_child->schema->name, "inverse-deps")) {
+        } else if (!strcmp(sr_child->schema->name, "inverse-validation-deps")) {
             /* now fill module references */
             ref_smod = sr_shmmod_find_module(mod_shm, lyd_get_value(sr_child));
             SR_CHECK_INT_RET(!ref_smod, err_info);
-            shm_inv_deps[inv_dep_i] = ref_smod->name;
+            shm_inv_val_deps[inv_val_dep_i] = ref_smod->name;
 
-            ++inv_dep_i;
+            ++inv_val_dep_i;
+        } else if (!strcmp(sr_child->schema->name, "inverse-change-deps")) {
+            /* now fill module references */
+            ref_smod = sr_shmmod_find_module(mod_shm, lyd_get_value(sr_child));
+            SR_CHECK_INT_RET(!ref_smod, err_info);
+            shm_inv_chg_deps[inv_chg_dep_i] = ref_smod->name;
+
+            ++inv_chg_dep_i;
         }
     }
     SR_CHECK_INT_RET(dep_i != smod->dep_count, err_info);
-    SR_CHECK_INT_RET(inv_dep_i != smod->inv_dep_count, err_info);
+    SR_CHECK_INT_RET(inv_val_dep_i != smod->inv_val_dep_count, err_info);
+    SR_CHECK_INT_RET(inv_chg_dep_i != smod->inv_chg_dep_count, err_info);
 
     /* mod SHM size must be exactly what we allocated */
     assert(shm_end == shm_mod->addr + shm_mod->size);
@@ -1102,7 +1118,8 @@ sr_shmmod_collect_deps(sr_mod_shm_t *mod_shm, sr_dep_t *shm_deps, uint16_t shm_d
                 goto cleanup;
             }
             break;
-        case SR_DEP_XPATH:
+        case SR_DEP_MUST:
+        case SR_DEP_WHEN:
             str1 = (char *)mod_shm + shm_deps[i].xpath.expr;
             mod_names = (off_t *)((char *)mod_shm + shm_deps[i].xpath.target_modules);
             if ((err_info = sr_shmmod_collect_deps_xpath(str1, (char *)mod_shm, mod_names,

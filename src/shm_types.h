@@ -25,7 +25,7 @@
 #include "common_types.h"
 #include "sysrepo_types.h"
 
-#define SR_SHM_VER 14   /**< Main, mod, and ext SHM version of their expected content structures. */
+#define SR_SHM_VER 15   /**< Main, mod, and ext SHM version of their expected content structures. */
 #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
 
 /**
@@ -49,7 +49,8 @@
 typedef enum {
     SR_DEP_LREF,    /**< Leafref. */
     SR_DEP_INSTID,  /**< Instance-identifier. */
-    SR_DEP_XPATH    /**< XPath (must or when). */
+    SR_DEP_MUST,    /**< Must condition. */
+    SR_DEP_WHEN     /**< When condition. */
 } sr_dep_type_t;
 
 /**
@@ -131,8 +132,10 @@ typedef struct {
 
     off_t deps;                 /**< Array of module data dependencies (offset in mod SHM). */
     uint16_t dep_count;         /**< Number of module data dependencies. */
-    off_t inv_deps;             /**< Array of inverse module data dependencies (off_t *) (offset in mod SHM). */
-    uint16_t inv_dep_count;     /**< Number of inverse module data dependencies. */
+    off_t inv_val_deps;         /**< Array of inverse validation module data dependencies (off_t *) (offset in mod SHM). */
+    uint16_t inv_val_dep_count; /**< Number of inverse validation module data dependencies. */
+    off_t inv_chg_deps;         /**< Array of inverse change module data dependencies (off_t *) (offset in mod SHM). */
+    uint16_t inv_chg_dep_count; /**< Number of inverse change module data dependencies. */
 
     struct {
         sr_rwlock_t lock;       /**< Process-shared lock for reading or preventing changes (READ) or modifying (WRITE)

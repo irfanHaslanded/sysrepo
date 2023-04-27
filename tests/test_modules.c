@@ -195,7 +195,7 @@ test_data_deps(void **state)
         "<plugin><datastore>ds:operational</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>fd:factory-default</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>sr:notification</datastore><name>JSON notif</name></plugin>"
-        "<inverse-deps>refs</inverse-deps>"
+        "<inverse-validation-deps>refs</inverse-validation-deps>"
         "<rpc><path xmlns:t=\"urn:test\">/t:r1</path></rpc>"
         "<rpc><path xmlns:t=\"urn:test\">/t:r2</path></rpc>"
     "</module>"
@@ -489,7 +489,7 @@ test_inv_deps(void **state)
                 "<expression xmlns:rt=\"urn:ietf:params:xml:ns:yang:ietf-routing\">../type='rt:static'</expression>"
             "</when>"
         "</deps>"
-        "<inverse-deps>ietf-interfaces</inverse-deps>"
+        "<inverse-validation-deps>ietf-interfaces</inverse-validation-deps>"
         "<rpc>"
             "<path xmlns:rt=\"urn:ietf:params:xml:ns:yang:ietf-routing\">/rt:fib-route</path>"
             "<in>"
@@ -531,7 +531,7 @@ test_inv_deps(void **state)
                 "<target-module>ietf-routing</target-module>"
             "</must>"
         "</deps>"
-        "<inverse-deps>ietf-routing</inverse-deps>"
+        "<inverse-validation-deps>ietf-routing</inverse-validation-deps>"
     "</module>"
     );
 
@@ -696,7 +696,7 @@ test_change_feature(void **state)
         "<plugin><datastore>ds:operational</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>fd:factory-default</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>sr:notification</datastore><name>JSON notif</name></plugin>"
-        "<inverse-deps>features</inverse-deps>"
+        "<inverse-validation-deps>features</inverse-validation-deps>"
         "<rpc><path xmlns:t=\"urn:test\">/t:r1</path></rpc>"
         "<rpc><path xmlns:t=\"urn:test\">/t:r2</path></rpc>"
     "</module>"
@@ -1025,7 +1025,7 @@ test_foreign_aug(void **state)
         "<plugin><datastore>ds:operational</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>fd:factory-default</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>sr:notification</datastore><name>JSON notif</name></plugin>"
-        "<inverse-deps>aug-trg</inverse-deps>"
+        "<inverse-validation-deps>aug-trg</inverse-validation-deps>"
     "</module>"
     );
 
@@ -1078,7 +1078,7 @@ test_foreign_aug(void **state)
         "<plugin><datastore>ds:operational</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>fd:factory-default</datastore><name>JSON DS file</name></plugin>"
         "<plugin><datastore>sr:notification</datastore><name>JSON notif</name></plugin>"
-        "<inverse-deps>aug-trg</inverse-deps>"
+        "<inverse-validation-deps>aug-trg</inverse-validation-deps>"
     "</module>"
     );
 

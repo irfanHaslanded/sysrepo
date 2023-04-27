@@ -782,18 +782,19 @@ cleanup:
  * @brief Add inverse dependency node but only if there is not already similar one.
  *
  * @param[in] sr_mod Module with the inverse dependency.
+ * @param[in] node_name SR internal data node name to create.
  * @param[in] inv_dep_mod Name of the module that depends on @p sr_mod.
  * @return err_info, NULL on success.
  */
 static sr_error_info_t *
-sr_lydmods_add_inv_data_dep(struct lyd_node *sr_mod, const char *inv_dep_mod)
+sr_lydmods_add_inv_data_dep(struct lyd_node *sr_mod, const char *node_name, const char *inv_dep_mod)
 {
     sr_error_info_t *err_info = NULL;
     struct lyd_node *node;
 
     /* does it exist already? */
     LY_LIST_FOR(lyd_child(sr_mod), node) {
-        if (strcmp(node->schema->name, "inverse-deps")) {
+        if (strcmp(node->schema->name, node_name)) {
             continue;
         }
 
@@ -803,9 +804,47 @@ sr_lydmods_add_inv_data_dep(struct lyd_node *sr_mod, const char *inv_dep_mod)
         }
     }
 
-    SR_CHECK_LY_RET(lyd_new_term(sr_mod, NULL, "inverse-deps", inv_dep_mod, 0, NULL), LYD_CTX(sr_mod), err_info)
+    SR_CHECK_LY_RET(lyd_new_term(sr_mod, NULL, node_name, inv_dep_mod, 0, NULL), LYD_CTX(sr_mod), err_info)
 
     return NULL;
+}
+
+/**
+ * @brief Add inverse dependency nodes.
+ *
+ * @param[in] sr_mod Module with the dependency.
+ * @param[in] node_name SR internal data node name to create.
+ * @param[in] trg_mods Set of dependency target modules to process.
+ * @return err_info, NULL on success.
+ */
+static sr_error_info_t *
+sr_lydmods_add_inv_data_deps(struct lyd_node *sr_mod, const char *node_name, const struct ly_set *trg_mods)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *sr_mod2;
+    char *xpath;
+    uint32_t i;
+    LY_ERR lyrc;
+
+    for (i = 0; i < trg_mods->count; ++i) {
+        if (asprintf(&xpath, "module[name='%s']", lyd_get_value(trg_mods->dnodes[i])) == -1) {
+            SR_ERRINFO_MEM(&err_info);
+            goto cleanup;
+        }
+
+        /* find the dependent module */
+        lyrc = lyd_find_path(lyd_parent(sr_mod), xpath, 0, &sr_mod2);
+        free(xpath);
+        SR_CHECK_LY_GOTO(lyrc, LYD_CTX(sr_mod), err_info, cleanup);
+
+        /* add inverse dependency */
+        if ((err_info = sr_lydmods_add_inv_data_dep(sr_mod2, node_name, lyd_get_value(lyd_child(sr_mod))))) {
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    return err_info;
 }
 
 /**
@@ -822,7 +861,8 @@ sr_lydmods_del_deps_all(struct lyd_node *sr_mods)
     uint32_t i;
 
     /* find all the containers */
-    if (lyd_find_xpath(sr_mods, "module/deps | module/rpcs | module/notifications | module/inverse-deps", &set)) {
+    if (lyd_find_xpath(sr_mods, "module/deps | module/inverse-validation-deps | module/inverse-change-deps |"
+            " module/rpcs | module/notifications", &set)) {
         sr_errinfo_new_ly(&err_info, LYD_CTX(sr_mods), NULL);
         goto cleanup;
     }
@@ -850,11 +890,9 @@ sr_lydmods_add_deps_all(const struct ly_ctx *ly_ctx, struct lyd_node *sr_mods)
     sr_error_info_t *err_info = NULL;
     const struct lys_module *ly_mod;
     struct ly_set *set = NULL;
-    struct lyd_node *sr_mod, *sr_mod2, *sr_deps;
-    uint32_t i;
-    char *xpath;
-    LY_ERR lyrc;
+    struct lyd_node *sr_mod, *sr_deps;
     struct sr_lydmods_deps_dfs_arg dfs_arg;
+    LY_ERR lyrc;
 
     LY_LIST_FOR(lyd_child(sr_mods), sr_mod) {
         if (strcmp(LYD_NAME(sr_mod), "module")) {
@@ -885,24 +923,20 @@ sr_lydmods_add_deps_all(const struct ly_ctx *ly_ctx, struct lyd_node *sr_mods)
             goto cleanup;
         }
 
-        /* add inverse data deps */
-        SR_CHECK_LY_GOTO(lyd_find_xpath(sr_mod, "deps/*/target-module", &set), LYD_CTX(sr_mods), err_info, cleanup);
+        /* add inverse validation data deps */
+        lyrc = lyd_find_xpath(sr_mod, "deps/lref[in-union='false']/target-module | deps/must/target-module", &set);
+        SR_CHECK_LY_GOTO(lyrc, LYD_CTX(sr_mods), err_info, cleanup);
+        if ((err_info = sr_lydmods_add_inv_data_deps(sr_mod, "inverse-validation-deps", set))) {
+            goto cleanup;
+        }
+        ly_set_free(set, NULL);
+        set = NULL;
 
-        for (i = 0; i < set->count; ++i) {
-            if (asprintf(&xpath, "module[name='%s']", lyd_get_value(set->dnodes[i])) == -1) {
-                SR_ERRINFO_MEM(&err_info);
-                goto cleanup;
-            }
-
-            /* find the dependent module */
-            lyrc = lyd_find_path(lyd_parent(sr_mod), xpath, 0, &sr_mod2);
-            free(xpath);
-            SR_CHECK_LY_GOTO(lyrc, LYD_CTX(sr_mods), err_info, cleanup);
-
-            /* add inverse dependency */
-            if ((err_info = sr_lydmods_add_inv_data_dep(sr_mod2, lyd_get_value(lyd_child(sr_mod))))) {
-                goto cleanup;
-            }
+        /* add inverse change data deps */
+        lyrc = lyd_find_xpath(sr_mod, "deps/lref[in-union='true']/target-module | deps/when/target-module", &set);
+        SR_CHECK_LY_GOTO(lyrc, LYD_CTX(sr_mods), err_info, cleanup);
+        if ((err_info = sr_lydmods_add_inv_data_deps(sr_mod, "inverse-change-deps", set))) {
+            goto cleanup;
         }
         ly_set_free(set, NULL);
         set = NULL;

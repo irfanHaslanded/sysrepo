@@ -294,10 +294,18 @@ module sysrepo {
                 uses deps-grp;
             }
 
-            leaf-list inverse-deps {
+            leaf-list inverse-validation-deps {
                 type module-ref;
                 description
-                    "List of modules that depend on this module.";
+                    "List of modules whose validation depends on this module but cannot be changed by it such as
+                     'must' conditions.";
+            }
+
+            leaf-list inverse-change-deps {
+                type module-ref;
+                description
+                    "List of modules whose validation depends on this module and it can change the data of it such as
+                     'when' conditions or 'leafref' and 'instance-identifier' in a union.";
             }
 
             list rpc {
