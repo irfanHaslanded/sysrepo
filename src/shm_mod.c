@@ -1273,6 +1273,7 @@ sr_shmmod_modinfo_lock(struct sr_mod_info_s *mod_info, sr_datastore_t ds, sr_loc
     struct sr_mod_lock_s *shm_lock;
     sr_lock_mode_t optimal_mode;
 
+    SR_LOG_INF("%s", __func__);
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
         shm_lock = &mod->shm_mod->data_lock_info[ds];
@@ -1291,10 +1292,13 @@ sr_shmmod_modinfo_lock(struct sr_mod_info_s *mod_info, sr_datastore_t ds, sr_loc
             assert(!cur_bit);
         }
 
-        if (mode == SR_LOCK_READ_UPGR && mod->state & MOD_INFO_DEP) {
+        /* Dependencies cannot get modified, so we don't need them to be upgr locked */
+        if (mode == SR_LOCK_READ_UPGR && mod->state & MOD_INFO_DEP || mod->state & MOD_INFO_INV_DEP) {
             optimal_mode = SR_LOCK_READ_NOUPGR;
             cur_bit = MOD_INFO_RLOCK_NOUP;
+            SR_LOG_INF("%s: %s not locked in upgr due to state %x", __func__, mod->ly_mod->name, mod->state);
         } else {
+            SR_LOG_INF("%s: %s locked in %d state %x", __func__, mod->ly_mod->name, mode, mod->state);
             optimal_mode = mode;
             cur_bit = lock_bit;
         }

@@ -3805,6 +3805,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
         return sr_api_ret(session, NULL);
     }
 
+    SR_LOG_INF("%s()", __func__);
     if (!timeout_ms) {
         timeout_ms = SR_CHANGE_CB_TIMEOUT;
     }
@@ -3850,6 +3851,7 @@ cleanup:
         sr_errinfo_merge(&err_info, cb_err_info);
         sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
     }
+    SR_LOG_INF("%s() done", __func__);
     return sr_api_ret(session, err_info);
 }
 
@@ -3914,6 +3916,7 @@ _sr_replace_config(sr_session_ctx_t *session, const struct lys_module *ly_mod, s
     assert(session->ds != SR_DS_OPERATIONAL);
     SR_MODINFO_INIT(mod_info, session->conn, session->ds, session->ds);
 
+    SR_LOG_INF("%s.%d", __func__, __LINE__);
     /* single module/all modules */
     if (ly_mod) {
         if ((err_info = sr_modinfo_add(ly_mod, NULL, 0, 0, &mod_info))) {
@@ -3924,21 +3927,24 @@ _sr_replace_config(sr_session_ctx_t *session, const struct lys_module *ly_mod, s
             goto cleanup;
         }
     }
-
+    SR_LOG_INF("%s.%d", __func__, __LINE__);
     /* add modules with dependencies into mod_info */
     if ((err_info = sr_modinfo_consolidate(&mod_info, SR_LOCK_READ, SR_MI_INV_DEPS | SR_MI_LOCK_UPGRADEABLE | SR_MI_PERM_NO,
             session->sid, session->orig_name, session->orig_data, 0, 0, 0))) {
         goto cleanup;
     }
 
+    SR_LOG_INF("%s.%d", __func__, __LINE__);
     /* update affected data and create corresponding diff, src_config is spent */
     if ((err_info = sr_modinfo_replace(&mod_info, src_config))) {
         goto cleanup;
     }
 
+    SR_LOG_INF("%s.%d", __func__, __LINE__);
     /* notify all the subscribers and store the changes */
     err_info = sr_changes_notify_store(&mod_info, session, timeout_ms, &cb_err_info);
 
+    SR_LOG_INF("%s.%d", __func__, __LINE__);
 cleanup:
     /* MODULES UNLOCK */
     sr_shmmod_modinfo_unlock(&mod_info);

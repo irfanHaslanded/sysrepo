@@ -1,0 +1,15 @@
+module simple-dep {
+    namespace sd;
+    prefix sd;
+    import simple {
+        prefix s;
+    }
+    leaf test-leafref {
+        type leafref {
+            path "/s:ac1/s:acd1";
+        }
+    }
+    leaf foo {
+        type string;
+    }
+}

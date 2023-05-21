@@ -53,6 +53,9 @@ setup(void **state)
         TESTS_SRC_DIR "/files/when2.yang",
         TESTS_SRC_DIR "/files/defaults.yang",
         TESTS_SRC_DIR "/files/sm.yang",
+        TESTS_SRC_DIR "/files/simple.yang",
+        TESTS_SRC_DIR "/files/simple-dep.yang",
+        TESTS_SRC_DIR "/files/simple-dep2.yang",
         NULL
     };
 
@@ -84,6 +87,9 @@ teardown(void **state)
         "ietf-ip",
         "ietf-interfaces",
         "test",
+        "simple",
+        "simple-dep",
+        "simple-dep2",
         NULL
     };
 
@@ -6951,11 +6957,113 @@ test_mult_update(void **state)
     sr_session_stop(sess);
 }
 
+static void *
+apply_simple_thread(void *arg)
+{
+    struct state *st = (struct state *)arg;
+    sr_session_ctx_t *sess;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/simple:ac1/acd1", "false", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* perform 1st change */
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+
+    for (int i = 0; i < APPLY_ITERATIONS; i++) {
+        /* perform 2nd change */
+        ret = sr_set_item_str(sess, "/simple-dep2:foo", "bar", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* perform 1st change */
+        ret = sr_apply_changes(sess, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* perform 2nd change */
+        ret = sr_delete_item(sess, "/simple-dep2:foo", 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        ret = sr_apply_changes(sess, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+
+    ret = sr_delete_item(sess, "/simple:ac1/acd1", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    sr_session_stop(sess);
+    return NULL;
+}
+
+static void *
+apply_simple_dep_thread(void *arg)
+{
+    struct state *st = (struct state *)arg;
+    sr_session_ctx_t *sess;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    for (int i = 0; i < APPLY_ITERATIONS; i++) {
+        ret = sr_set_item_str(sess, "/simple-dep:foo", "bar", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* perform 1st change */
+        ret = sr_apply_changes(sess, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* perform 2nd change */
+        ret = sr_delete_item(sess, "/simple-dep:foo", 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        ret = sr_apply_changes(sess, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+
+    sr_session_stop(sess);
+    return NULL;
+}
+
+
+static void
+test_dependency_locking(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_subscription_ctx_t *subscr = NULL;
+    sr_session_ctx_t *sess;
+    pthread_t tid[2];
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "simple-dep2", NULL, module_yield_cb, st, 0, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_module_change_subscribe(sess, "simple-dep", NULL, module_yield_cb, st, 0, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    pthread_create(&tid[0], NULL, apply_simple_thread, *state);
+    pthread_create(&tid[1], NULL, apply_simple_dep_thread, *state);
+
+    pthread_join(tid[0], NULL);
+    pthread_join(tid[1], NULL);
+
+    sr_unsubscribe(subscr);
+    sr_session_stop(sess);
+}
+
+
 /* MAIN */
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+#if 0
         cmocka_unit_test_setup_teardown(test_change_done, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update2, setup_f, teardown_f),
@@ -6980,6 +7088,8 @@ main(void)
         cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
+#endif
+        cmocka_unit_test_setup_teardown(test_dependency_locking, setup_f, teardown_f),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

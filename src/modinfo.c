@@ -2510,7 +2510,6 @@ sr_modinfo_consolidate(struct sr_mod_info_s *mod_info, sr_lock_mode_t mod_lock, 
         if (mod_info->mods[i].state & MOD_INFO_NEW) {
             /* new module */
             new = 1;
-
             /* consolidate without inverse dependencies to not lose track of new modules */
             if ((err_info = sr_modinfo_mod_new(mod_info->mods[i].ly_mod, mod_type, mod_info))) {
                 goto cleanup;
