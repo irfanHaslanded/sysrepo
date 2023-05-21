@@ -43,6 +43,7 @@ typedef struct {
 typedef enum {
     SR_LOCK_NONE = 0,           /**< Not locked. */
     SR_LOCK_READ,               /**< Read lock. */
+    SR_LOCK_READ_NOUPGR,        /**< Read lock and prevent any higher lock modes */
     SR_LOCK_READ_UPGR,          /**< Read lock with the upgrade capability. */
     SR_LOCK_WRITE,              /**< Write lock. */
     SR_LOCK_WRITE_URGE          /**< Write lock with priority forcing next readers to wait. */
@@ -61,8 +62,14 @@ typedef struct {
     pthread_mutex_t r_mutex;        /**< Mutex for accessing readers, needed because of concurrent reading. */
     sr_cid_t readers[SR_RWLOCK_READ_LIMIT]; /**< CIDs of all READ lock owners (including READ-UPGR), 0s otherwise. */
     uint8_t read_count[SR_RWLOCK_READ_LIMIT];   /**< Number of recursive read locks of the connection in readers. */
+
+    pthread_mutex_t r_noup_mutex;        /**< Mutex for accessing readers noupgr, needed because of concurrent reading. */
+    sr_cid_t rd_noups[SR_RWLOCK_READ_LIMIT]; /**< CIDs of all READ NO_UPGR lock owners 0s otherwise. */
+    uint8_t rd_noups_count[SR_RWLOCK_READ_LIMIT];   /**< Number of recursive read noup locks of the connection in readers. */
+
     sr_cid_t upgr;                  /**< CID of the READ-UPGR lock owner if locked, 0 otherwise. */
     sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, 0 otherwise. */
+    uint32_t id;
 } sr_rwlock_t;
 
 /**

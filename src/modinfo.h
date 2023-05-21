@@ -29,13 +29,14 @@
 #define MOD_INFO_TYPE_MASK  0x000F /* mask for all module types */
 
 #define MOD_INFO_RLOCK      0x0010 /* read-locked module (main DS) */
-#define MOD_INFO_RLOCK_UPGR 0x0020 /* read-upgr-locked module (main DS) */
-#define MOD_INFO_WLOCK      0x0040 /* write-locked module (main DS) */
-#define MOD_INFO_RLOCK2     0x0080 /* read-locked module (secondary DS, it can be only read locked) */
+#define MOD_INFO_RLOCK_NOUP 0x0020 /* read locked but don't allow others to upgrade */
+#define MOD_INFO_RLOCK_UPGR 0x0040 /* read-upgr-locked module (main DS) */
+#define MOD_INFO_WLOCK      0x0080 /* write-locked module (main DS) */
+#define MOD_INFO_RLOCK2     0x0100 /* read-locked module (secondary DS, it can be only read locked) */
 
-#define MOD_INFO_DATA       0x0100 /* module data were loaded */
-#define MOD_INFO_CHANGED    0x0200 /* module data were changed */
-#define MOD_INFO_XPATH_DYN  0x0400 /* module XPaths are dynamically allocated and need to be freed */
+#define MOD_INFO_DATA       0x0200 /* module data were loaded */
+#define MOD_INFO_CHANGED    0x0400 /* module data were changed */
+#define MOD_INFO_XPATH_DYN  0x0800 /* module XPaths are dynamically allocated and need to be freed */
 
 /**
  * @brief Mod info structure, used for keeping all relevant modules for a data operation.

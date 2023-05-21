@@ -56,6 +56,33 @@
 #include "shm_sub.h"
 #include "sysrepo.h"
 
+// Check if anyone is already holding lock in any mode
+#define SR_RWLOCK_READERS_EXIST(rwlock) ((rwlock)->readers[0] || (rwlock)->rd_noups[0])
+#define SR_RWLOCK_READERS_FULL(rwlock) ((rwlock)->readers[SR_RWLOCK_READ_LIMIT - 1])
+#define SR_RWLOCK_RD_NOUPGR_FULL(rwlock) ((rwlock)->rd_noups[SR_RWLOCK_READ_LIMIT - 1])
+
+// Readers are not full and there is no writer
+#define SR_RWLOCK_READ_AVAILABLE(rwlock) (!SR_RWLOCK_READERS_FULL(rwlock) && !(rwlock)->writer)
+
+// No prohibition on acquiring read upgr, no one else has upgr, and read lock is available
+#define SR_RWLOCK_READ_UPGR_AVAILABLE(rwlock) \
+    (!(rwlock)->rd_noups[0] && !(rwlock)->upgr && SR_RWLOCK_READ_AVAILABLE(rwlock))
+
+/* Read no upgrade list not full, no upgr, no writer */
+#define SR_RWLOCK_READ_NOUPGR_AVAILABLE(rwlock) \
+    (!SR_RWLOCK_RD_NOUPGR_FULL(rwlock) && !(rwlock)->upgr && !(rwlock)->writer)
+
+/* Is an upgrade impossible without waiting */
+#define SR_RWLOCK_CANT_UPGRADE(rwlock) \
+    ((rwlock)->rd_noups[0] || (rwlock)->readers[1] || ((rwlock)->read_count[0] > 1) || (rwlock)->writer)
+
+/* Is an upgrade impossible to write urge lock without waiting */
+#define SR_RWLOCK_CANT_UPGRADE_URGE(rwlock) \
+    ((rwlock)->readers[1] || ((rwlock)->read_count[0] > 1) || ((rwlock)->writer && !wr_urged))
+
+/* Any one holding lock in any mode */
+#define SR_RWLOCK_IN_USE(rwlock) ( SR_RWLOCK_READERS_EXIST(rwlock) || (rwlock)->writer)
+
 /**
  * @brief Internal DS plugin array.
  */
@@ -2293,6 +2320,7 @@ sr_munlock(pthread_mutex_t *lock)
 sr_error_info_t *
 sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
 {
+    static ATOMIC_T sr_rwlock_new_id = 1;
     sr_error_info_t *err_info = NULL;
 
     if ((err_info = sr_mutex_init(&rwlock->mutex, shared))) {
@@ -2311,7 +2339,7 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
     memset(rwlock->readers, 0, sizeof rwlock->readers);
     rwlock->upgr = 0;
     rwlock->writer = 0;
-
+    rwlock->id = ATOMIC_INC_RELAXED(sr_rwlock_new_id);
     return NULL;
 }
 
@@ -2330,45 +2358,59 @@ sr_rwlock_destroy(sr_rwlock_t *rwlock)
  * @param[in] cid Owner CID.
  */
 static void
-sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
+sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, sr_lock_mode_t mode)
 {
     sr_error_info_t *err_info = NULL;
     int ret;
     uint32_t i;
 
+    pthread_mutex_t *r_mutex = NULL;
+    sr_cid_t *readers = NULL;
+    uint8_t *read_count = NULL;
+
+    if (SR_LOCK_READ_NOUPGR == mode) {
+        r_mutex = &rwlock->r_noup_mutex;
+        readers = rwlock->rd_noups;
+        read_count = rwlock->rd_noups_count;
+    } else {
+        r_mutex = &rwlock->r_mutex;
+        readers = rwlock->readers;
+        read_count = rwlock->read_count;
+    }
+
     /* READ MUTEX LOCK */
-    ret = pthread_mutex_lock(&rwlock->r_mutex);
+    ret = pthread_mutex_lock(r_mutex);
     if (ret) {
         SR_ERRINFO_INT(&err_info);
         sr_errinfo_free(&err_info);
     }
 
     /* find this connection or first free item */
-    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i] && (rwlock->readers[i] != cid); ++i) {}
+    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && readers[i] && (readers[i] != cid); ++i) {}
     if (i == SR_RWLOCK_READ_LIMIT) {
         sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Concurrent reader limit %d reached!", SR_RWLOCK_READ_LIMIT);
         sr_errinfo_free(&err_info);
         goto unlock;
     }
 
-    if (!rwlock->readers[i]) {
+    if (!readers[i]) {
         /* first connection reader, assign owner cid */
-        rwlock->readers[i] = cid;
-        rwlock->read_count[i] = 1;
+        readers[i] = cid;
+        read_count[i] = 1;
     } else {
         /* recursive read lock on the connection */
-        if (rwlock->read_count[i] == UINT8_MAX) {
+        if (read_count[i] == UINT8_MAX) {
             sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Recursive reader limit %" PRIu8 " reached!", UINT8_MAX);
             sr_errinfo_free(&err_info);
             goto unlock;
         }
-        ++rwlock->read_count[i];
+        ++read_count[i];
     }
 
 unlock:
     if (!ret) {
         /* READ MUTEX UNLOCK */
-        pthread_mutex_unlock(&rwlock->r_mutex);
+        pthread_mutex_unlock(r_mutex);
     }
 }
 
@@ -2379,27 +2421,38 @@ unlock:
  * @param[in] i Index of the reader.
  */
 static void
-sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
+sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i, sr_lock_mode_t mode)
 {
-    /* decrease recursive read lock count */
-    assert(rwlock->read_count[i]);
-    --rwlock->read_count[i];
+    sr_cid_t *readers = NULL;
+    uint8_t *read_count = NULL;
 
-    if (rwlock->read_count[i]) {
+    if (SR_LOCK_READ_NOUPGR == mode) {
+        readers = rwlock->rd_noups;
+        read_count = rwlock->rd_noups_count;
+    } else {
+        readers = rwlock->readers;
+        read_count = rwlock->read_count;
+    }
+
+    /* decrease recursive read lock count */
+    assert(read_count[i]);
+    --read_count[i];
+
+    if (read_count[i]) {
         /* read lock is still recursively held */
         return;
     }
 
     /* move all the following CIDs so that there are no holes */
-    while ((i < (SR_RWLOCK_READ_LIMIT - 1)) && rwlock->readers[i + 1]) {
-        rwlock->readers[i] = rwlock->readers[i + 1];
-        rwlock->read_count[i] = rwlock->read_count[i + 1];
+    while ((i < (SR_RWLOCK_READ_LIMIT - 1)) && readers[i + 1]) {
+        readers[i] = readers[i + 1];
+        read_count[i] = read_count[i + 1];
         ++i;
     }
 
     /* remove the last CID */
-    rwlock->readers[i] = 0;
-    rwlock->read_count[i] = 0;
+    readers[i] = 0;
+    read_count[i] = 0;
 }
 
 /**
@@ -2409,22 +2462,33 @@ sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
  * @param[in] cid Owner CID.
  */
 static void
-sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
+sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid, sr_lock_mode_t mode)
 {
     sr_error_info_t *err_info = NULL;
     int ret;
     uint32_t i;
+    pthread_mutex_t *r_mutex = NULL;
+    sr_cid_t *readers = NULL;
+
+    if (SR_LOCK_READ_NOUPGR == mode) {
+        r_mutex = &rwlock->r_noup_mutex;
+        readers = rwlock->rd_noups;
+    } else {
+        r_mutex = &rwlock->r_mutex;
+        readers = rwlock->readers;
+    }
+
 
     /* READ MUTEX LOCK */
-    ret = pthread_mutex_lock(&rwlock->r_mutex);
+    ret = pthread_mutex_lock(r_mutex);
     if (ret) {
         SR_ERRINFO_INT(&err_info);
         sr_errinfo_free(&err_info);
     }
 
     /* find a CID match */
-    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i] && (rwlock->readers[i] != cid); ++i) {}
-    if ((i == SR_RWLOCK_READ_LIMIT) || (rwlock->readers[i] != cid)) {
+    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && readers[i] && (readers[i] != cid); ++i) {}
+    if ((i == SR_RWLOCK_READ_LIMIT) || (readers[i] != cid)) {
         /* CID not found */
         SR_ERRINFO_INT(&err_info);
         sr_errinfo_free(&err_info);
@@ -2432,12 +2496,12 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
     }
 
     /* remove the CID */
-    sr_rwlock_reader_del_(rwlock, i);
+    sr_rwlock_reader_del_(rwlock, i, mode);
 
 unlock:
     if (!ret) {
         /* READ MUTEX UNLOCK */
-        pthread_mutex_unlock(&rwlock->r_mutex);
+        pthread_mutex_unlock(r_mutex);
     }
 }
 
@@ -2453,33 +2517,40 @@ unlock:
 static void
 sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb, void *cb_data)
 {
-    uint32_t i = 0;
+    uint32_t i, j;
     sr_cid_t cid;
 
+    pthread_mutex_t *r_mutex[2] = {&rwlock->r_mutex, &rwlock->r_noup_mutex};
+    sr_cid_t *readers[2] = {rwlock->readers, rwlock->rd_noups};
+    sr_lock_mode_t mode[2] = {SR_LOCK_READ, SR_LOCK_READ_NOUPGR};
+
     /* readers */
-    while ((i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i]) {
-        if (!sr_conn_is_alive(rwlock->readers[i])) {
+    for (j = 0; j < 2; j++) {
+        i = 0;
+        while ((i < SR_RWLOCK_READ_LIMIT) && readers[j][i]) {
+            if (!sr_conn_is_alive(readers[j][i])) {
 
-            /* READ MUTEX LOCK */
-            if (pthread_mutex_lock(&rwlock->r_mutex)) {
-                /* ignore errors, should never occur */
-                continue;
+                /* READ MUTEX LOCK */
+                if (pthread_mutex_lock(r_mutex[j])) {
+                    /* ignore errors, should never occur */
+                    continue;
+                }
+
+                /* remove the dead reader */
+                cid = readers[j][i];
+                sr_rwlock_reader_del_(rwlock, i, mode[j]);
+
+                /* READ MUTEX UNLOCK */
+                pthread_mutex_unlock(r_mutex[j]);
+
+                /* recover */
+                if (cb) {
+                    cb(mode[j], cid, cb_data);
+                }
+                SR_LOG_WRN("Recovered a read-lock of CID %" PRIu32 " (%s).", cid, func);
+            } else {
+                ++i;
             }
-
-            /* remove the dead reader */
-            cid = rwlock->readers[i];
-            sr_rwlock_reader_del_(rwlock, i);
-
-            /* READ MUTEX UNLOCK */
-            pthread_mutex_unlock(&rwlock->r_mutex);
-
-            /* recover */
-            if (cb) {
-                cb(SR_LOCK_READ, cid, cb_data);
-            }
-            SR_LOG_WRN("Recovered a read-lock of CID %" PRIu32 " (%s).", cid, func);
-        } else {
-            ++i;
         }
     }
 
@@ -2521,6 +2592,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
 
     assert(mode && timeout_abs && cid);
 
+    SR_LOG_INF("%s: %s lock id %u mode %d by CID %u", __func__, func, rwlock->id, mode, cid);
     if (!has_mutex) {
         /* MUTEX LOCK */
         ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
@@ -2540,21 +2612,21 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
 
     if (mode == SR_LOCK_WRITE) {
         /* WRITE lock */
-        if (rwlock->readers[0] || rwlock->writer) {
+        if (SR_RWLOCK_IN_USE(rwlock)) {
             /* instead of waiting, try to recover the lock immediately */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
 
         /* wait until there are no readers or another writer waiting */
         ret = 0;
-        while (!ret && (rwlock->readers[0] || rwlock->writer)) {
+        while (!ret && SR_RWLOCK_IN_USE(rwlock)) {
             /* COND WAIT */
             ret = sr_cond_clockwait(&rwlock->cond, &rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
         }
         if (ret == ETIMEDOUT) {
             /* recover the lock again, the owner may have died while processing */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->readers[0] && !rwlock->writer) {
+            if (!SR_RWLOCK_IN_USE(rwlock)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2571,7 +2643,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
 
     } else if (mode == SR_LOCK_WRITE_URGE) {
         /* WRITE URGE lock */
-        if (rwlock->readers[0] || rwlock->writer) {
+        if (SR_RWLOCK_IN_USE(rwlock)) {
             /* instead of waiting, try to recover the lock immediately */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
@@ -2579,7 +2651,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
         /* wait until there are no readers or another writer waiting */
         ret = 0;
         wr_urged = 0;
-        while (!ret && (rwlock->readers[0] || (rwlock->writer && !wr_urged))) {
+        while (!ret && (SR_RWLOCK_READERS_EXIST(rwlock) || (rwlock->writer && !wr_urged))) {
             if (!rwlock->writer) {
                 /* urge waiting for write lock */
                 rwlock->writer = cid;
@@ -2592,7 +2664,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
         if (ret == ETIMEDOUT) {
             /* recover the lock again, the owner may have died while processing */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->readers[0] && (!rwlock->writer || wr_urged)) {
+            if (!SR_RWLOCK_READERS_EXIST(rwlock) && (!rwlock->writer || wr_urged)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2616,21 +2688,21 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
 
     } else if (mode == SR_LOCK_READ_UPGR) {
         /* READ UPGR lock */
-        if (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->upgr || rwlock->writer) {
+        if (SR_RWLOCK_READ_UPGR_AVAILABLE(rwlock)) {
             /* max reader count, probably some crashed, try to recover first */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
-
-        /* wait until there is no read-upgr lock */
+        /* FIXME irfan why not checking that readers are not full? */
+        /* wait until read-upgr lock is up for grabs */
         ret = 0;
-        while (!ret && (rwlock->upgr || rwlock->writer)) {
+        while (!ret && !SR_RWLOCK_READ_UPGR_AVAILABLE(rwlock)) {
             /* COND WAIT */
             ret = sr_cond_clockwait(&rwlock->cond, &rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
         }
         if (ret == ETIMEDOUT) {
             /* recover the lock again, the owner may have died while processing */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->upgr && !rwlock->writer) {
+            if (SR_RWLOCK_READ_UPGR_AVAILABLE(rwlock)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2643,28 +2715,28 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
         rwlock->upgr = cid;
 
         /* add a reader */
-        sr_rwlock_reader_add(rwlock, cid);
+        sr_rwlock_reader_add(rwlock, cid, mode);
 
         /* MUTEX UNLOCK */
         pthread_mutex_unlock(&rwlock->mutex);
 
-    } else {
-        /* READ lock */
-        if (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->writer) {
-            /* max reader count, probably some crashed, try to recover first */
+    } else if (SR_LOCK_READ_NOUPGR == mode) {
+        /* READ lock prohibiting other upgrades */
+        if (!SR_RWLOCK_READ_NOUPGR_AVAILABLE(rwlock)) {
+            /* probably some crashed, try to recover first */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
 
-        /* wait until there is no writer waiting for lock */
+        /* wait until it is available */
         ret = 0;
-        while (!ret && rwlock->writer) {
+        while (!ret && !SR_RWLOCK_READ_NOUPGR_AVAILABLE(rwlock)) {
             /* COND WAIT */
             ret = sr_cond_clockwait(&rwlock->cond, &rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
         }
         if (ret == ETIMEDOUT) {
             /* recover the lock again, the owner may have died while processing */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->writer) {
+            if (SR_RWLOCK_READ_NOUPGR_AVAILABLE(rwlock)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2674,12 +2746,43 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t 
         }
 
         /* add a reader */
-        sr_rwlock_reader_add(rwlock, cid);
+        sr_rwlock_reader_add(rwlock, cid, mode);
+
+        /* MUTEX UNLOCK */
+        pthread_mutex_unlock(&rwlock->mutex);
+    } else if (SR_LOCK_READ == mode) {
+        /* READ lock */
+        if (!SR_RWLOCK_READ_AVAILABLE(rwlock)) {
+            /* writer or max reader count, probably some crashed, try to recover first */
+            sr_rwlock_recover(rwlock, func, cb, cb_data);
+        }
+
+        /* wait until there is no writer waiting for lock */
+        ret = 0;
+        while (!ret && !SR_RWLOCK_READ_AVAILABLE(rwlock)) {
+            /* COND WAIT */
+            ret = sr_cond_clockwait(&rwlock->cond, &rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
+        }
+        if (ret == ETIMEDOUT) {
+            /* recover the lock again, the owner may have died while processing */
+            sr_rwlock_recover(rwlock, func, cb, cb_data);
+            if (SR_RWLOCK_READ_AVAILABLE(rwlock)) {
+                /* recovered */
+                ret = 0;
+            }
+        }
+        if (ret) {
+            goto error_cond_unlock;
+        }
+
+        /* add a reader */
+        sr_rwlock_reader_add(rwlock, cid, mode);
 
         /* MUTEX UNLOCK */
         pthread_mutex_unlock(&rwlock->mutex);
     }
 
+    SR_LOG_INF("%s: %s lock id %u mode %d by CID %u obtained rd_count: %u", __func__, func, rwlock->id, mode, cid, rwlock->read_count[0]);
     return NULL;
 
 error_cond_unlock:
@@ -2714,6 +2817,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
     assert(mode && cid);
     assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
 
+    SR_LOG_INF("%s: %s lock id %u mode %d by CID %u rd_count: %u", __func__, func, rwlock->id, mode, cid, rwlock->read_count[0]);
     if (mode == SR_LOCK_WRITE) {
         /*
          * upgrade from upgradeable read-lock to write-lock
@@ -2737,20 +2841,20 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         /* consistency checks */
         assert(rwlock->upgr == cid);
 
-        if (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer) {
+        if (SR_RWLOCK_CANT_UPGRADE(rwlock)) {
             /* instead of waiting, try to recover the lock immediately */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
 
         /* wait until there are no readers except for this one */
         ret = 0;
-        while (!ret && (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer)) {
+        while (!ret && SR_RWLOCK_CANT_UPGRADE(rwlock)) {
             /* COND WAIT */
             ret = sr_cond_clockwait(&rwlock->cond, &rwlock->mutex, COMPAT_CLOCK_ID, &timeout_abs);
         }
         if (ret == ETIMEDOUT) {
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->readers[1] && (rwlock->read_count[0] == 1) && !rwlock->writer) {
+            if (!SR_RWLOCK_CANT_UPGRADE(rwlock)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2764,7 +2868,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         assert((rwlock->upgr == cid) && (rwlock->readers[0] == cid));
 
         /* update flags */
-        sr_rwlock_reader_del(rwlock, cid);
+        sr_rwlock_reader_del(rwlock, cid, mode);
         rwlock->upgr = 0;
         rwlock->writer = cid;
 
@@ -2797,7 +2901,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         /* clear the flag, wanting write now */
         rwlock->upgr = 0;
 
-        if (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer) {
+        if (SR_RWLOCK_CANT_UPGRADE(rwlock)) {
             /* instead of waiting, try to recover the lock immediately */
             sr_rwlock_recover(rwlock, func, cb, cb_data);
         }
@@ -2805,9 +2909,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         /* wait until there are no readers except for this one */
         wr_urged = 0;
         ret = 0;
-        while (!ret && (rwlock->readers[1] || (rwlock->read_count[0] > 1) || (rwlock->writer && !wr_urged))) {
+        while (!ret && SR_RWLOCK_CANT_UPGRADE_URGE(rwlock)) {
             if (!rwlock->writer) {
-                /* waiting for write lock */
+                /* if there is no other writer, waiting for write lock */
                 rwlock->writer = cid;
                 wr_urged = 1;
             }
@@ -2817,7 +2921,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         }
         if (ret == ETIMEDOUT) {
             sr_rwlock_recover(rwlock, func, cb, cb_data);
-            if (!rwlock->readers[1] && (rwlock->read_count[0] == 1) && (!rwlock->writer || wr_urged)) {
+            if (!SR_RWLOCK_CANT_UPGRADE_URGE(rwlock)) {
                 /* recovered */
                 ret = 0;
             }
@@ -2837,7 +2941,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         assert(rwlock->readers[0] == cid);
 
         /* update flags */
-        sr_rwlock_reader_del(rwlock, cid);
+        sr_rwlock_reader_del(rwlock, cid, mode);
         if (!wr_urged) {
             rwlock->writer = cid;
         }
@@ -2862,7 +2966,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
     }
 
     /* add a reader */
-    sr_rwlock_reader_add(rwlock, cid);
+    sr_rwlock_reader_add(rwlock, cid, mode);
 
     /* redundant to broadcast on condition because we were holding write-lock, so something can only be
      * waiting on the mutex, never the condition */
@@ -2916,17 +3020,26 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         }
 
         /* remove this reader */
-        sr_rwlock_reader_del(rwlock, cid);
+        sr_rwlock_reader_del(rwlock, cid, mode);
     }
 
     /* write-unlock/last read-unlock, last read-unlock with read-upgr lock waiting for an upgrade,
      * writer waiting, or upgradeable read-unlock (there may be another upgr-read-lock waiting) */
-    if (!rwlock->readers[0] || (!rwlock->readers[1] && (rwlock->read_count[0] == 1) && rwlock->upgr) ||
-            rwlock->writer || (mode == SR_LOCK_READ_UPGR)) {
+    if (
+            !rwlock->readers[0] /* If there are no readers */
+            ||
+            /* there is only one reader, and it is an upgr, it may want to upgrade */
+            (!rwlock->readers[1] && (rwlock->read_count[0] == 1) && rwlock->upgr)
+            ||
+            rwlock->writer || /* writer unlocked */
+            (mode == SR_LOCK_READ_UPGR) || /* read upgrade unlocked */
+            (!rwlock->rd_noups[0] && mode == SR_LOCK_READ_NOUPGR) /* Last read_noupgr unlock */
+        ) {
         /* broadcast on condition */
         sr_cond_broadcast(&rwlock->cond);
     }
 
+    SR_LOG_INF("%s: %s lock id %u mode %d by CID %u unlocked rd_count: %u", __func__, func, rwlock->id, mode, cid, rwlock->read_count[0]);
     /* MUTEX UNLOCK */
     pthread_mutex_unlock(&rwlock->mutex);
 }

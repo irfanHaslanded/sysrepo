@@ -659,6 +659,10 @@ sr_modinfo_changesub_rdlock(struct sr_mod_info_s *mod_info)
 
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
+        // dep and inv_dep should not be changed according to comment in definition
+        assert(!((mod->state & MOD_INFO_CHANGED) && (mod->state & MOD_INFO_DEP)));
+        // assert(!((mod->state & MOD_INFO_CHANGED) && (mod->state & MOD_INFO_INV_DEP)));
+
         if (mod->state & MOD_INFO_CHANGED) {
             /* CHANGE SUB READ LOCK */
             if ((err_info = sr_rwlock(&mod->shm_mod->change_sub[mod_info->ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT,

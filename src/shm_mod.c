@@ -1271,6 +1271,7 @@ sr_shmmod_modinfo_lock(struct sr_mod_info_s *mod_info, sr_datastore_t ds, sr_loc
     uint32_t i, cur_bit;
     struct sr_mod_info_mod_s *mod;
     struct sr_mod_lock_s *shm_lock;
+    sr_lock_mode_t optimal_mode;
 
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
@@ -1282,7 +1283,7 @@ sr_shmmod_modinfo_lock(struct sr_mod_info_s *mod_info, sr_datastore_t ds, sr_loc
                 continue;
             }
         } else {
-            cur_bit = mod->state & (MOD_INFO_RLOCK | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK);
+            cur_bit = mod->state & (MOD_INFO_RLOCK | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK | MOD_INFO_RLOCK_NOUP);
             if (cur_bit >= lock_bit) {
                 /* already locked */
                 continue;
@@ -1290,14 +1291,21 @@ sr_shmmod_modinfo_lock(struct sr_mod_info_s *mod_info, sr_datastore_t ds, sr_loc
             assert(!cur_bit);
         }
 
+        if (mode == SR_LOCK_READ_UPGR && mod->state & MOD_INFO_DEP) {
+            optimal_mode = SR_LOCK_READ_NOUPGR;
+            cur_bit = MOD_INFO_RLOCK_NOUP;
+        } else {
+            optimal_mode = mode;
+            cur_bit = lock_bit;
+        }
         /* MOD LOCK */
-        if ((err_info = sr_shmmod_lock(mod->ly_mod, ds, shm_lock, timeout_ms, mode, ds_timeout_ms,
+        if ((err_info = sr_shmmod_lock(mod->ly_mod, ds, shm_lock, timeout_ms, optimal_mode, ds_timeout_ms,
                 mod_info->conn->cid, sid, mod->ds_plg[ds], 0))) {
             return err_info;
         }
 
         /* set the flag for unlocking */
-        mod->state |= lock_bit;
+        mod->state |= cur_bit;
     }
 
     return NULL;
@@ -1425,13 +1433,15 @@ sr_shmmod_modinfo_unlock(struct sr_mod_info_s *mod_info)
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
 
-        if (mod->state & (MOD_INFO_RLOCK | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK)) {
+        if (mod->state & (MOD_INFO_RLOCK | MOD_INFO_RLOCK_NOUP | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK)) {
             /* main DS */
             shm_lock = &mod->shm_mod->data_lock_info[mod_info->ds];
 
             /* learn lock mode */
             if (mod->state & MOD_INFO_RLOCK) {
                 mode = SR_LOCK_READ;
+            } else if (mod->state & MOD_INFO_RLOCK_NOUP) {
+                mode = SR_LOCK_READ_NOUPGR;
             } else if (mod->state & MOD_INFO_RLOCK_UPGR) {
                 mode = SR_LOCK_READ_UPGR;
             } else {
@@ -1451,7 +1461,7 @@ sr_shmmod_modinfo_unlock(struct sr_mod_info_s *mod_info)
         }
 
         /* clear all flags */
-        mod->state &= ~(MOD_INFO_RLOCK | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK | MOD_INFO_RLOCK2);
+        mod->state &= ~(MOD_INFO_RLOCK | MOD_INFO_RLOCK_UPGR | MOD_INFO_WLOCK | MOD_INFO_RLOCK2 | MOD_INFO_RLOCK_NOUP);
     }
 }
 

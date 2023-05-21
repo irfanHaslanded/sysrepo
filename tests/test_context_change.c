@@ -411,7 +411,7 @@ subscribe_feature_change_thread(void *arg)
     lyd_free_tree(ly_notif);
     sr_release_context(st->conn);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(st->cb_called, 1);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
 
     /* unsubscribe the second subscription */
     ret = sr_unsubscribe_sub(subscr, sub_id2);
@@ -425,7 +425,7 @@ subscribe_feature_change_thread(void *arg)
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(st->cb_called, 4);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 
     /* send action */
     ly_ctx = sr_acquire_context(st->conn);
@@ -435,7 +435,7 @@ subscribe_feature_change_thread(void *arg)
     sr_release_context(st->conn);
     sr_release_data(data);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(st->cb_called, 5);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 5);
 
     /* sync #6 */
     pthread_barrier_wait(&st->barrier);
