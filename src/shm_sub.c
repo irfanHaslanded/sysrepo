@@ -438,6 +438,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t 
     uint32_t last_request_id;
     int ret;
 
+    SR_LOG_INF("irfan: %s", __func__);
     assert((expected_ev == SR_SUB_EV_NONE) || (expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR));
     assert(shm_data_sub->fd > -1);
 
@@ -476,8 +477,13 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t 
             /* event failed */
             if (clear_ev_on_err) {
                 ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
+                SR_LOG_INF("irfan: stored multi_sub_shm->event as none");
+                usleep(30000000);
+
             } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
                 ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_ERROR);
+                SR_LOG_INF("irfan: stored multi_sub_shm->event as error");
+                usleep(30000000);
             }
         }
 
@@ -486,8 +492,10 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t 
             sr_munlock(&sub_shm->lock.mutex);
         } else {
             /* set the WRITE lock back */
+            SR_LOG_INF("irfan: Forcibly got write lock?");
             sub_shm->lock.writer = cid;
         }
+        SR_LOG_INF("irfan: %s errored", __func__);
         return err_info;
     }
 
@@ -557,6 +565,7 @@ event_handled:
             return err_info;
         }
     }
+    SR_LOG_INF("irfan: %s done", __func__);
 
     return NULL;
 }
@@ -3282,6 +3291,8 @@ process_event:
     /*
      * prepare additional event data written into subscription data SHM
      */
+    usleep(6000000);
+    SR_LOG_INF("irfan: load multi_sub_shm->event");
     switch (ATOMIC_LOAD_RELAXED(multi_sub_shm->event)) {
     case SR_SUB_EV_UPDATE:
         if (!err_code) {
@@ -3335,6 +3346,7 @@ process_event:
         goto cleanup;
     }
 
+    SR_LOG_INF("irfan: %s done", __func__);
 cleanup:
     if (sub_lock) {
         /* SUB UNLOCK */
