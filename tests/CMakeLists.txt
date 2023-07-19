@@ -49,11 +49,13 @@ if(ENABLE_TESTS)
     if(${SOURCE_FORMAT_ENABLED})
         add_test(NAME format WORKING_DIRECTORY ${CMAKE_BINARY_DIR} COMMAND cmake --build ${CMAKE_BINARY_DIR} --target format-check)
     endif()
-
     # lists of all the tests
-    set(tests test_modules test_context_change test_validation test_edit test_candidate test_oper_pull test_oper_push
-        test_lock test_apply_changes test_copy_config test_rpc_action test_notif test_get test_process
-        test_multi_connection test_nacm test_rotation)
+    file(GLOB test_files "test_*.c")
+
+    foreach(test_file IN LISTS test_files)
+        get_filename_component(test_name ${test_file} NAME_WE)
+        list(APPEND tests ${test_name})
+    endforeach(test_file)
 
     foreach(test_name IN LISTS tests)
         add_executable(${test_name} ${test_sources} ${test_name}.c)
