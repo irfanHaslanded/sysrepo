@@ -106,38 +106,18 @@ test_oper_mixed(void **arg)
             NULL, NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/enabled",
-            "false", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-//    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/type",
-//            "ethernetCsmacd", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_apply_changes(st->sess, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    // Deliberate redundant create the interface
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']",
-            NULL, NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
     ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/type",
             "ethernetCsmacd", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/oper-status",
-            "up", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/admin-status",
-            "up", NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_delete_item(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/speed", 0);
     assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_delete_item(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/last-change", 0);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/speed",
+            "0", NULL, SR_EDIT_ISOLATE);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_apply_changes(st->sess, 0);
@@ -149,30 +129,11 @@ test_oper_mixed(void **arg)
     sr_release_data(data);
     data = NULL;
 
-    // Create the interface again
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']",
-            NULL, NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/enabled",
-            "false", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_set_item_str(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/type",
-            "ethernetCsmacd", NULL, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_delete_item(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/speed", 0);
+    ret = sr_delete_item(st->sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']", 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_apply_changes(st->sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
-
-    ret = sr_get_data(oper_sess, "/ex-interfaces:interfaces/interface[name=\'mixed\']/type", 0, 0, 0, &data);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    sr_release_data(data);
-    data = NULL;
 
     sr_disconnect(conn);
 }
