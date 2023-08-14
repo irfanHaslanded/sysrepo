@@ -11,6 +11,10 @@ module test {
     import ietf-netconf-acm {
         prefix nacm;
     }
+    import ietf-interfaces {
+        prefix if;
+    }
+
 
     leaf test-leaf {
         type uint8;
@@ -21,6 +25,17 @@ module test {
             path "../test-leaf";
         }
         config false;
+    }
+
+    augment "/if:interfaces-state/if:interface" {
+      leaf new-test-leaf {
+        config false;
+        when "/if:interfaces-state/if:interface";
+        type leafref {
+          path "/t:test-leaf";
+        }
+        mandatory true;
+      }
     }
 
     list l1 {

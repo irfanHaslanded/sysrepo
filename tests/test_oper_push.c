@@ -45,8 +45,8 @@ setup(void **state)
 {
     struct state *st;
     const char *schema_paths[] = {
-        TESTS_SRC_DIR "/files/test.yang",
         TESTS_SRC_DIR "/files/ietf-interfaces.yang",
+        TESTS_SRC_DIR "/files/test.yang",
         TESTS_SRC_DIR "/files/iana-if-type.yang",
         TESTS_SRC_DIR "/files/ietf-if-aug.yang",
         TESTS_SRC_DIR "/files/ietf-interface-protection.yang",
@@ -194,12 +194,34 @@ test_conn_owner1(void **state)
 
     /* set some operational data */
     ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/type",
-            "iana-if-type:ethernetCsmacd", NULL, 0);
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_ISOLATE);
     assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/test:new-test-leaf",
+            "7", NULL, SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/test:new-test-leaf", SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
+
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     /* read the data */
+    ret = sr_get_data(sess, "/ietf-interfaces:interfaces-state", 0, 0, SR_OPER_WITH_ORIGIN, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+    sr_release_data(data);
+
+    ret = sr_delete_item(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/test:new-test-leaf", SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/test:new-test-leaf",
+            "8", NULL, SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
     ret = sr_get_data(sess, "/ietf-interfaces:interfaces-state", 0, 0, SR_OPER_WITH_ORIGIN, &data);
     assert_int_equal(ret, SR_ERR_OK);
 
@@ -207,7 +229,7 @@ test_conn_owner1(void **state)
     assert_int_equal(ret, 0);
 
     sr_release_data(data);
-
+    sleep(1000);
     str2 =
             "<interfaces-state xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\""
             " xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\" or:origin=\"or:unknown\">\n"
