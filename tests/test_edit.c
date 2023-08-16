@@ -1596,10 +1596,10 @@ test_edit_set_item_del_parent(void **state)
 
     /* Cannot create after delete, needs isolate */
     ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
-            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
-    assert_int_equal(ret, SR_ERR_OPERATION_FAILED);
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT | SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
+    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", SR_EDIT_ISOLATE);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
