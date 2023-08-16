@@ -87,6 +87,8 @@ teardown_f(void **state)
         "ietf-interfaces",
         "test",
         "mod",
+        "ex-yanggen",
+        "ex-yanggen-augments",
         NULL
     };
 
@@ -1576,6 +1578,38 @@ test_unknown_ns(void **state)
     sr_discard_changes(st->sess);
 }
 
+static void
+test_edit_set_item_del_parent(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* Cannot create after delete, needs isolate */
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
+    assert_int_equal(ret, SR_ERR_OPERATION_FAILED);
+
+    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
+            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT | SR_EDIT_ISOLATE);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
 int
 main(void)
 {
@@ -1601,6 +1635,7 @@ main(void)
         cmocka_unit_test(test_edit_forbid_node_types),
         cmocka_unit_test(test_anyxml),
         cmocka_unit_test(test_unknown_ns),
+        cmocka_unit_test(test_edit_set_item_del_parent),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);
