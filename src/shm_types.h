@@ -114,6 +114,7 @@ typedef struct {
                                      by this session. If 0, the DS lock is not held. */
         struct timespec ds_lock_ts; /**< Timestamp of the datastore lock. */
         uint32_t prio;              /**< Module change priority synchronized with applying data changes. */
+        uint32_t content_id;        /**< ID of the latest data content for cache validation */
     } data_lock_info[SR_DS_COUNT];  /**< Module data lock information for each datastore. */
     sr_rwlock_t replay_lock;    /**< Process-shared lock for accessing stored notifications for replay. */
 

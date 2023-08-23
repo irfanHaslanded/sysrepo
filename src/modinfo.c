@@ -3280,6 +3280,9 @@ sr_modinfo_data_store(struct sr_mod_info_s *mod_info)
                 goto cleanup;
             }
 
+            /* Update the content_id for cache invalidation */
+            mod->shm_mod->data_lock_info[mod_info->ds].content_id++;
+
             /* connect them back */
             lyd_insert_sibling(mod_info->diff, mod_diff, &mod_info->diff);
             if (mod_data) {

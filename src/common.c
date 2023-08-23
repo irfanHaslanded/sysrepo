@@ -3139,7 +3139,6 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
     sr_error_info_t *err_info = NULL, *tmp_err;
     struct sr_mod_info_mod_s *mod;
     struct sr_run_cache_s *cmod;
-    struct timespec mtime;
     struct lyd_node *mod_data;
     uint32_t i, j;
     void *mem;
@@ -3180,21 +3179,15 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
 
             cmod = &conn->run_cache_mods[j];
             cmod->mod = mod->ly_mod;
-            memset(&cmod->ts, 0, sizeof cmod->ts);
+            cmod->id = UINT32_MAX;
 
             ++conn->run_cache_mod_count;
         }
 
-        /* get last_modif timestamp of module running data */
-        if ((r = mod->ds_plg[SR_DS_RUNNING]->last_modif_cb(mod->ly_mod, SR_DS_RUNNING, &mtime))) {
-            SR_ERRINFO_DSPLUGIN(&err_info, r, "last_modif", mod->ds_plg[SR_DS_RUNNING]->name, mod->ly_mod->name);
-            goto cleanup;
-        }
-
         /* check whether the data are current */
-        if (!sr_time_cmp(&cmod->ts, &mtime)) {
+        if (cmod->id == mod->shm_mod->data_lock_info[SR_DS_RUNNING].content_id) {
             continue;
-        } /* older mtime can only mean an NTP change followed by data change */
+        }
 
         if (has_lock != SR_LOCK_WRITE) {
             /* CACHE READ UNLOCK */
@@ -3226,7 +3219,7 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
         }
 
         /* update the timestamp, be defensive and use the last_modif timestamp we got before */
-        cmod->ts = mtime;
+        cmod->id = mod->shm_mod->data_lock_info[SR_DS_RUNNING].content_id;
     }
 
 cleanup:
