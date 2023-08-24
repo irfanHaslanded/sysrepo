@@ -1854,11 +1854,34 @@ test_factory_reset(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void
+test_rpc_gnmi(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret = 0;
+    struct lyd_node *input = NULL, *data = NULL;
+    struct ly_in *in = NULL;
+    char *str = NULL;
+    ret = ly_in_new_memory("{\"l4\": \"some str\", \"l44\": \"some other str\"}", &in);
+
+    assert_int_equal(LY_SUCCESS, lyd_new_path(NULL, st->ly_ctx, "/ops:rpc3", NULL, 0, &input));
+
+    assert_non_null(input);
+
+    ret = lyd_parse_op(st->ly_ctx, input, in, LYD_JSON, LYD_TYPE_RPC_YANG, &data, NULL);
+    assert_int_equal(ret, LY_SUCCESS);
+
+    ret = lyd_print_mem(&str, input, LYD_JSON, LYD_PRINT_WITHSIBLINGS | LYD_PRINT_SHRINK);
+    assert_string_equal(str, "{\"ops:rpc3\":{\"l4\":\"some str\", \"l44\":\"some other str\"}}");
+    exit(ret);
+}
+
 /* MAIN */
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(test_rpc_gnmi),
         cmocka_unit_test(test_fail),
         cmocka_unit_test_teardown(test_rpc, clear_ops),
         cmocka_unit_test_teardown(test_action, clear_ops),
@@ -1873,6 +1896,7 @@ main(void)
         cmocka_unit_test(test_rpc_oper),
         cmocka_unit_test(test_schema_mount),
         cmocka_unit_test(test_factory_reset),
+        cmocka_unit_test(test_rpc_gnmi),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

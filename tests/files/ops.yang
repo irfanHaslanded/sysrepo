@@ -40,6 +40,9 @@ module ops {
             leaf l4 {
                 type string;
             }
+            leaf l44 {
+                type string;
+            }
         }
 
         output {
