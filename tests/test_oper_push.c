@@ -3132,10 +3132,56 @@ test_change_cb(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void
+test_oper_set_del_leaflist(void **arg)
+{
+    sr_conn_ctx_t *conn = NULL;
+    sr_session_ctx_t *oper_sess = NULL;
+    struct state *st = (struct state *)*arg;
+    int ret;
+    sr_data_t *data = NULL;
+#define xpath_base "/ietf-interfaces-new:interfaces/interface[name=\'eth0\']"
+    ret = sr_connect(0, &conn);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(oper_sess, xpath_base , "", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(oper_sess, xpath_base "/attributes", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(oper_sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("Added oper data");
+
+    ret = sr_get_data(oper_sess, xpath_base, 0, 0, 0, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    sr_release_data(data);
+
+    ret = sr_delete_item(oper_sess, xpath_base, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(oper_sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("Removed oper data");
+
+    ret = sr_session_stop(oper_sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    sr_disconnect(conn);
+#undef xpath_base
+    exit(0);
+}
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_set_del_leaflist, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
