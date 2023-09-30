@@ -95,6 +95,18 @@ module test {
                 type string;
             }
         }
+
+        container l3 {
+          container l3 {
+            list li1 {
+                key name;
+                leaf name {
+                    type string;
+                }
+            }
+          }
+        }
+
     }
 
     rpc r1;

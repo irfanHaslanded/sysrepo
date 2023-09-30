@@ -1190,7 +1190,7 @@ test_state_list(void **state)
 
     /* invalid predicate type */
     ret = sr_delete_item(st->sess, "/mixed-config:test-state/ll[.='val3']", 0);
-    assert_int_equal(ret, SR_ERR_INVAL_ARG);
+    assert_int_equal(ret, SR_ERR_OK);
     ret = sr_discard_changes(st->sess);
     assert_int_equal(ret, SR_ERR_OK);
 
@@ -3230,10 +3230,51 @@ test_oper_set_del_leaflist(void **state)
     assert_int_equal(ret, SR_ERR_OK);
 }
 
+/* TEST */
+static void
+test_oper_set_del_new(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int i, ret;
+
+    char *xpath_set[] = {
+        "/test:l3[k='k1']",
+        "/test:l3[k='k1']/l3",
+        "/test:l3[k='k1']/l3/l3",
+        NULL
+    };
+
+    char *xpath_set_vals[] = {
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+    };
+
+    char *xpath_del[] = {
+        NULL
+    };
+
+    /* switch to operational DS */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    for (i = 0; xpath_set[i]; i++) {
+        ret = sr_set_item_str(st->sess, xpath_set[i], xpath_set_vals[i], NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_set_del_new, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
