@@ -3166,10 +3166,54 @@ test_oper_set_del_leaflist(void **state)
     assert_int_equal(ret, SR_ERR_OK);
 }
 
+/* TEST */
+static void
+test_oper_set_del_new(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int i, ret;
+
+    char *xpath_set[] = {
+        NULL
+    };
+
+    char *xpath_set_vals[] = {
+        "iana-if-type:ethernetCsmacd",
+        "down",
+        NULL
+    };
+
+    char *xpath_del[] = {
+        "/ietf-interfaces:interfaces-state/interface[name='eth1']",
+        "/ietf-interfaces:interfaces-state/interface[name='eth1']/oper-status",
+        NULL
+    };
+
+    /* switch to operational DS */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    for (i = 0; xpath_set[i]; i++) {
+        ret = sr_set_item_str(st->sess, xpath_set[i], xpath_set_vals[i], NULL, SR_EDIT_ISOLATE);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+    assert_int_equal(ret, SR_ERR_OK);
+
+    for (i = 0; xpath_del[i]; i++) {
+        ret = sr_delete_item(st->sess, xpath_del[i], SR_EDIT_ISOLATE);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_set_del_new, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
