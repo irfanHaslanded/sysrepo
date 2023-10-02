@@ -2098,20 +2098,33 @@ test_xpath_check(void **state)
     subscr = NULL;
 
     /* subscribe as state data provider */
-    ret = sr_oper_get_subscribe(st->sess, "ietf-interfaces", "/ietf-interfaces:interfaces-state/interface[name='eth0']",
+    ret = sr_oper_get_subscribe(st->sess, "ietf-interfaces", "/ietf-interfaces:interfaces-state/interface/statistics",
             xpath_check_oper_cb, st, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* set some operational data */
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/type",
+          "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/oper-status",
+          "down", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     /* read interfaces from operational, callback not called */
     ATOMIC_STORE_RELAXED(st->cb_called, 0);
-    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']", 0, 0, 0, &data);
+    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface[not(derived-from-or-self(type, 'iana-if-type:softwareLoopback'))]/oper-status", 0, 0, 0, &data);
+
+//    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface/oper-status", 0, 0, 0, &data);
     assert_int_equal(ret, SR_ERR_OK);
     sr_release_data(data);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 0);
 
     /* read all from operational, callback called */
     ATOMIC_STORE_RELAXED(st->cb_called, 0);
-    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/type", 0, 0, 0, &data);
+    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']", 0, 0, 0, &data);
     assert_int_equal(ret, SR_ERR_OK);
     sr_release_data(data);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
@@ -3690,6 +3703,7 @@ int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_xpath_check, clear_up),
         cmocka_unit_test(test_yang_lib),
         cmocka_unit_test(test_sr_mon),
         cmocka_unit_test_teardown(test_enabled_partial, clear_up),
