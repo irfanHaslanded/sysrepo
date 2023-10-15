@@ -2282,6 +2282,7 @@ sr_munlock(pthread_mutex_t *lock)
 sr_error_info_t *
 sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
 {
+    static ATOMIC_T id;
     sr_error_info_t *err_info = NULL;
 
     if ((err_info = sr_mutex_init(&rwlock->mutex, shared))) {
@@ -2295,7 +2296,7 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
     memset(rwlock->readers, 0, sizeof rwlock->readers);
     rwlock->upgr = 0;
     rwlock->writer = 0;
-
+    rwlock->id = ATOMIC_INC_RELAXED(id);
     return NULL;
 }
 
@@ -2663,7 +2664,8 @@ error_cond_unlock:
         /* MUTEX UNLOCK */
         pthread_mutex_unlock(&rwlock->mutex);
     }
-
+    SR_LOG_WRN("condition failed");
+    usleep(200000);
     SR_ERRINFO_COND(&err_info, func, ret);
     return err_info;
 }
@@ -2868,9 +2870,8 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
     sr_error_info_t *err_info = NULL;
     struct timespec timeout_ts;
     int ret;
-
     assert(mode && cid);
-
+    SR_LOG_INF("%s Unlocking rwlock id %u mode %d by CID %u", func, rwlock->id, mode, cid);
     if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
         /* we are unlocking a write lock, there can be no readers */
         assert(!rwlock->readers[0] && !rwlock->upgr && (rwlock->writer == cid));
@@ -2879,9 +2880,13 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
         rwlock->writer = 0;
     } else {
         sr_timeouttime_get(&timeout_ts, timeout_ms);
-
-        /* MUTEX LOCK */
-        ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, &timeout_ts);
+        if (rwlock->id == 366 && !strcmp(func, "sr_shmsub_change_listen_process_module_events")) {
+            ret = ETIMEDOUT;
+            usleep(100000); /* dont remove the reader yet, cause some delay */
+        } else {
+            /* MUTEX LOCK */
+            ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, &timeout_ts);
+        }
         if (ret == EOWNERDEAD) {
             /* make it consistent */
             ret = pthread_mutex_consistent(&rwlock->mutex);
