@@ -1,0 +1,130 @@
+module gnmi-server-test {
+  yang-version 1.1;
+  namespace "https://graphiant.com/yang";
+  prefix test;
+
+  description
+    "gNMI Server Test module
+
+     Copyright (c) 2021 Graphiant, Inc.
+     All rights reserved.";
+
+  revision 2021-02-10 {
+    description
+      "Initial revision";
+  }
+
+  container test {
+    list things {
+      key "name";
+
+      leaf name {
+        type string;
+      }
+
+      leaf description {
+        type string;
+      }
+
+      leaf enabled {
+        type boolean;
+      }
+
+      leaf amount {
+        type uint32;
+      }
+
+      leaf signed-amount {
+        type int32;
+      }
+
+      leaf decimal-amount {
+        type decimal64 {
+          fraction-digits 2;
+        }
+      }
+    }
+  }
+
+  container test2 {
+    leaf enabled {
+      type boolean;
+    }
+
+    leaf enabled2 {
+      type boolean;
+    }
+
+    leaf custom-error {
+      type uint8;
+    }
+
+    leaf must-error {
+      must "current() > 42";
+      type uint8;
+    }
+  }
+
+  container test-state {
+    config false;
+    list things {
+      key "name";
+
+      leaf name {
+        type string;
+      }
+
+      leaf counter {
+        type uint64;
+      }
+    }
+
+    container cargo {
+      presence "some deep meaning";
+    }
+  }
+
+  container test3 {
+    list complex-list {
+      key "type name";
+
+      leaf type {
+        type string;
+      }
+
+      leaf name {
+        type string;
+      }
+
+      leaf data {
+        type string;
+      }
+    }
+  }
+
+  container test4 {
+    leaf-list params {
+        type string;
+    }
+  }
+
+  rpc clear-stats {
+    description
+      "An RPC with inputs and outputs.";
+    input {
+      leaf interface {
+        type string;
+      }
+      leaf errors {
+        type empty;
+        description
+          "clear only error stats";
+      }
+    }
+    output {
+      leaf old-stats {
+        type uint64;
+      }
+    }
+  }
+}

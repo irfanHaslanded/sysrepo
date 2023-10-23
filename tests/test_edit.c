@@ -50,6 +50,7 @@ setup_f(void **state)
         TESTS_SRC_DIR "/files/ops-ref.yang",
         TESTS_SRC_DIR "/files/ops.yang",
         TESTS_SRC_DIR "/files/mod.yang",
+        TESTS_SRC_DIR "/files/gnmi-server-test.yang",
         NULL
     };
 
@@ -1533,10 +1534,30 @@ test_unknown_ns(void **state)
     sr_discard_changes(st->sess);
 }
 
+static void
+test_lyd_new_path(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+    struct lyd_node *new_parent = NULL, *new_node = NULL;
+    const struct ly_ctx *ly_ctx = NULL;
+    struct ly_err_item *e = NULL;
+
+    ly_ctx = sr_acquire_context(st->conn);
+
+    ret = lyd_new_path2(NULL, ly_ctx, "/gnmi-server-test:test/things", "{\"name\":\"A\",\"enabled\":true}", 0, LYD_ANYDATA_STRING, 0, &new_parent, &new_node);
+    if (ret && (e = ly_err_first(ly_ctx))) {
+        TLOG_WRN("lyd_new_path2 ret %d err msg %s", ret, e->msg);
+    }
+    assert_int_equal(ret, 0);
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test(test_lyd_new_path),
         cmocka_unit_test(test_edit_item),
         cmocka_unit_test_teardown(test_delete, clear_interfaces),
         cmocka_unit_test_teardown(test_create1, clear_interfaces),
