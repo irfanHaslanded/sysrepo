@@ -2978,6 +2978,55 @@ test_schema_mount(void **state)
     free(str1);
 }
 
+static int
+modify_cb_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
+          uint32_t request_id, void *private_data)
+{
+    struct state *st = (struct state *)private_data;
+    sr_change_oper_t op;
+    sr_change_iter_t *iter;
+    sr_val_t *old_val, *new_val;
+    int ret;
+
+    (void)sub_id;
+    (void)request_id;
+
+    assert_string_equal(module_name, "ietf-interfaces");
+    assert_null(xpath);
+
+    switch (ATOMIC_LOAD_RELAXED(st->cb_called)) {
+    case 0:
+        /* get changes iter */
+        ret = sr_get_changes_iter(session, "/ietf-interfaces:*//.", &iter);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* 1st change */
+        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        assert_int_equal(op, SR_OP_CREATED);
+        break;
+
+    case 1:
+        /* get changes iter */
+        ret = sr_get_changes_iter(session, "/ietf-interfaces:*//.", &iter);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* 1st change */
+        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        assert_int_equal(op, SR_OP_MODIFIED);
+        break;
+
+    default:
+        fail();
+    }
+
+    ATOMIC_INC_RELAXED(st->cb_called);
+    return SR_ERR_OK;
+}
+
 /* TEST */
 static int
 change_cb_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
@@ -3230,10 +3279,48 @@ test_oper_set_del_leaflist(void **state)
     assert_int_equal(ret, SR_ERR_OK);
 }
 
+static void
+test_oper_modify_cb(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_data_t *data;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+
+    /* read all data from operational */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(st->sess, "ietf-interfaces", NULL, modify_cb_cb, st, 0, SR_SUBSCR_DONE_ONLY, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ATOMIC_STORE_RELAXED(st->cb_called, 0);
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='dummy']/type",
+            "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
+
+    /* now change it to loopback */
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='dummy']/type",
+            "iana-if-type:softwareLoopback", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+
+    sr_unsubscribe(subscr);
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_modify_cb, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
