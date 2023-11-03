@@ -2783,7 +2783,7 @@ sr_edit_merge_r(struct lyd_node **trg_root, struct lyd_node *trg_parent, const s
     if (trg_node) {
         /* learn whether even the value matches */
         val_equal = !lyd_compare_single(src_node, trg_node, LYD_COMPARE_DEFAULTS);
-
+        lyd_print_fd(1, trg_node, 1, 1);
         /* learn target operation */
         trg_op = sr_edit_diff_find_oper(trg_node, 1, &trg_op_own);
         if ((trg_op != EDIT_MERGE) && (trg_op != EDIT_REMOVE) && (trg_op != EDIT_ETHER)) {
@@ -2812,6 +2812,7 @@ sr_edit_merge_r(struct lyd_node **trg_root, struct lyd_node *trg_parent, const s
                 if ((src_op == EDIT_MERGE) && (trg_op == EDIT_MERGE) && !val_equal) {
                     /* only the value was changed */
                     diff_op = EDIT_REPLACE;
+                    assert(trg_node->schema);
                     prev_val = (trg_node->schema->nodetype == LYS_LEAF) ? lyd_get_value(trg_node) : NULL;
                 } else {
                     /* report the same operation */

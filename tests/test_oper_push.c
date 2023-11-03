@@ -3211,10 +3211,12 @@ test_oper_set_del_leaflist(void **state)
     ret = sr_delete_item(st->sess, xp_attr, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_set_item_str(st->sess, xp_attr, "2", NULL, 0);
+    ret = sr_set_item_str(st->sess, xp_attr, "1", NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_set_item_str(st->sess, xp_attr, "1", NULL, 0);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(st->sess, xp_attr, "2", NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_apply_changes(st->sess, 0);
@@ -3224,7 +3226,7 @@ test_oper_set_del_leaflist(void **state)
     assert_int_equal(ret, SR_ERR_OK);
     sr_release_data(data);
 
-    ret = sr_delete_item(st->sess, xp_base, 0);
+    ret = sr_delete_item(st->sess, xp_attr, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_apply_changes(st->sess, 0);
@@ -3235,6 +3237,7 @@ int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_set_del_leaflist, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
