@@ -45,7 +45,7 @@ sr_error_info_t *
 sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock, const char *func)
 {
     sr_error_info_t *err_info = NULL;
-    size_t shm_file_size;
+    size_t shm_file_size, second_size;
 
     if (ext_lock) {
         /* EXT LOCK */
@@ -69,6 +69,11 @@ sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock
         if ((err_info = sr_file_get_size(conn->ext_shm.fd, &shm_file_size))) {
             goto error_ext_remap_unlock;
         }
+        usleep(1000);
+        if ((err_info = sr_file_get_size(conn->ext_shm.fd, &second_size))) {
+            goto error_ext_remap_unlock;
+        }
+        assert(shm_file_size == second_size);
         if (shm_file_size != conn->ext_shm.size) {
             /* ext SHM size changed and we need to remap it */
             if (mode == SR_LOCK_READ_UPGR) {
