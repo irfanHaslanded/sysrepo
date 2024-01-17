@@ -1109,6 +1109,11 @@ module ietf-interfaces-new {
           reference
             "RFC 2863: The Interfaces Group MIB - ifOutErrors";
         }
+
+        leaf-list attributes {
+          description "Testing leaf-list.";
+          type uint32;
+        }
       }
     }
   }

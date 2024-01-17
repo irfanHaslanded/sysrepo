@@ -3421,6 +3421,9 @@ test_oper_set_del_leaflist(void **state)
     const char *xp_base = "/ietf-interfaces-new:interfaces/interface[name=\'eth0\']";
     const char *xp_attr = "/ietf-interfaces-new:interfaces/interface[name=\'eth0\']/attributes";
 
+    const char *xp_stats_base = "/ietf-interfaces-new:interfaces-state/interface[name=\'eth0\']";
+    const char *xp_stats_attr1 = "/ietf-interfaces-new:interfaces-state/interface[name=\'eth0\']/statistics/attributes[1]";
+
     /* switch to operational DS */
     ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
     assert_int_equal(ret, SR_ERR_OK);
@@ -3444,16 +3447,35 @@ test_oper_set_del_leaflist(void **state)
     ret = sr_get_data(st->sess, xp_base, 0, 0, 0, &data);
     assert_int_equal(ret, SR_ERR_OK);
     sr_release_data(data);
-
+#if 0
     ret = sr_delete_item(st->sess, "/ietf-interfaces-new:interfaces/interface", 0);
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_discard_items(st->sess, xp_base);
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_discard_items(st->sess, xp_attr);
     assert_int_equal(ret, SR_ERR_OK);
+#endif
+    ret = sr_set_item_str(st->sess, xp_stats_base, "", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, xp_stats_attr1, "1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_apply_changes(st->sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
+
+    /* delete parent and then some children */
+    ret = sr_delete_item(st->sess, xp_stats_base, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_discard_items(st->sess, xp_stats_attr1);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
     sleep(1000);
 }
 
