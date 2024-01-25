@@ -10,3 +10,4 @@
 0010-sysrepo-log-on-connection-session-destroy.patch
 0011-more-descriptive-debugs-for-no-datastore-changes.patch
 0012-Add-SR_SUBSCR_OPER_ONCE-option-for-oper-subscr.patch
+0013-Add-typedefs-for-compatibility.patch
