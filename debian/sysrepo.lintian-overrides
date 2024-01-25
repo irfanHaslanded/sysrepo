@@ -1,2 +1,0 @@
-sysrepo: binary-without-manpage usr/bin/sysrepocfg
-sysrepo: binary-without-manpage usr/bin/sysrepoctl
