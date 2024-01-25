@@ -1,0 +1,1368 @@
+sysrepo (2.2.152-1) UNRELEASED; urgency=medium
+
+  [ Nick Brown ]
+  * Revert "Restoring 1.4.100
+    (and resolving conflicts in patches because of recent commit)"
+  * Rediff patches
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX merging replace to none for leaf
+  * SOVERSION bump to version 5.6.60
+  * VERSION bump to version 1.4.144
+  * sysrepo CHANGE destroy functions may normally fail
+  * SOVERSION bump to version 5.6.61
+  * VERSION bump to version 1.4.145
+  * replay UPDATE always send replayComplete
+  * SOVERSION bump to version 5.6.62
+  * VERSION bump to version 1.4.146
+  * edit diff BUGFIX dlft flag change is a non-redudnant operation
+  * SOVERSION bump to version 5.6.63
+  * VERSION bump to version 1.4.147
+  * shm FEATURE event originator crash recovery
+  * SOVERSION bump to version 5.6.64
+  * VERSION bump to version 1.4.148
+
+  [ Rob Shearman ]
+  * Fix timeouts at startup
+
+  [ Nick Brown ]
+  * Rediff patches
+
+  [ Michal Vasko ]
+  * shm sub BUGFIX clear oper event error
+  * SOVERSION bump to version 5.6.65
+  * VERSION bump to version 1.4.149
+
+  [ Nick Brown ]
+  * Specify SYSREPO_SUPERUSER_UID
+
+  [ Duncan Eastoe ]
+  * Do not trigger pull callbacks with SR_SUBSCR_ENABLED
+  * Do not trigger pull callbacks with SR_SUBSCR_ENABLED
+
+  [ Reshad Rahman ]
+  * Use calloc() instead of malloc(), this ensures the value's
+    origin field is initialized. Enhanced a test to access a
+    value's origin to try to catch this issue. ENG-1038
+  * Replace malloc(...) by calloc(1, ...) in sr_get_item().
+    This ensures that the origin field is initialized.
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 5.6.66
+  * VERSION bump to version 1.4.150
+
+  [ Irfan Mohammad ]
+  * Fix for multithread race condition in sr_connect
+  * Revert "Fix for multithread race condition in sr_connect"
+
+  [ Michal Vasko ]
+  * sysrepo BUGFIX unhandled event timeout
+  * SOVERSION bump to version 5.6.67
+  * VERSION bump to version 1.4.151
+
+  [ Duncan Eastoe ]
+  * Add SR_SUBSCR_OPER_ONCE option for operational subs
+
+  [ Reshad Rahman ]
+  * Remove sticky-bit from /dev/shm so that sysrepo cleanup succeeds when some
+    daemons restart. If this works, we'll probably change the fix to do this
+    in a subdirectory of /dev/shm/ and make corresponding changes in sysrepo.
+  * Modified sysrepo-init.service to run as root.
+  * Reverting change to make sysrepo-init run as root.
+    Add the chmod in the sevice file.
+
+  [ Michal Vasko ]
+  * build FEATURE abicheck support
+  * shm main BUGFIX thread sync when creating connections
+  * shm main BUGFIX safe conn lock file creation
+  * SOVERSIOn bump to version 5.6.68
+  * VERSION bump to version 1.4.152
+  * shm sub BUGFIX clear oper event error
+  * SOVERSION bump to version 5.6.65
+  * VERSION bump to version 1.4.149
+
+  [ Duncan Eastoe ]
+  * Do not trigger pull callbacks with SR_SUBSCR_ENABLED
+
+  [ Reshad Rahman ]
+  * Replace malloc(...) by calloc(1, ...) in sr_get_item().
+    This ensures that the origin field is initialized.
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 5.6.66
+  * VERSION bump to version 1.4.150
+  * sysrepo BUGFIX unhandled event timeout
+  * SOVERSION bump to version 5.6.67
+  * VERSION bump to version 1.4.151
+  * build FEATURE abicheck support
+  * shm main BUGFIX thread sync when creating connections
+  * shm main BUGFIX safe conn lock file creation
+  * SOVERSIOn bump to version 5.6.68
+  * VERSION bump to version 1.4.152
+
+  [ Nick Brown ]
+  * specify debian and upstream branch in gbp.conf
+
+  [ Irfan Mohammad ]
+  * Dropping sysrepo subscr enable timeout patch
+
+  [ Michal Vasko ]
+  * sysrepocfg BUGFIX wrong bit shift direction
+  * VERSION bump to version 1.4.153
+  * shm sub BUGFIX clear oper event error
+  * SOVERSION bump to version 5.6.65
+  * VERSION bump to version 1.4.149
+
+  [ Duncan Eastoe ]
+  * Do not trigger pull callbacks with SR_SUBSCR_ENABLED
+
+  [ Reshad Rahman ]
+  * Replace malloc(...) by calloc(1, ...) in sr_get_item().
+    This ensures that the origin field is initialized.
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 5.6.66
+  * VERSION bump to version 1.4.150
+  * sysrepo BUGFIX unhandled event timeout
+  * SOVERSION bump to version 5.6.67
+  * VERSION bump to version 1.4.151
+  * build FEATURE abicheck support
+  * shm main BUGFIX thread sync when creating connections
+  * shm main BUGFIX safe conn lock file creation
+  * SOVERSIOn bump to version 5.6.68
+  * VERSION bump to version 1.4.152
+  * sysrepocfg BUGFIX wrong bit shift direction
+  * VERSION bump to version 1.4.153
+
+  [ Irfan ]
+  * test UPDATE use common logging for all tests (#2717)
+
+  [ Irfan Mohammad ]
+  * Fix measure_performance include
+  * ENG-1942 Make sr_open thread safe
+
+  [ Michal Vasko ]
+  * sysrepo BUGFIX do not use umask(2)
+  * SOVERSION bump to version 5.6.69
+  * VERSION bump to version 1.4.154
+  * common BUGFIX set file perms only if necessary
+  * SOVERSION bump to version 5.6.70
+  * VERSION bump to version 1.4.155
+
+  [ Irfan Mohammad ]
+  * Fix patches for 1.4.155
+  * Conditional logs for shm_ext
+
+  [ Michal Vasko ]
+  * modinfo BUGFIX skip read lock of read-upgr lock
+  * SOVERSION bump to version 5.6.71
+  * VERSION bump to version 1.4.156
+
+  [ Irfan Mohammad ]
+  * Enable on-demand rwlock tracing with env SR_LOG_RWLOCK
+    Increase rwlock reader limit to 20
+  * Do not need write lock during sr_disconnect
+
+  [ Duncan Eastoe ]
+  * debian: update .gitignore
+  * sysrepocfg: allow choosing datastore with shorthand
+  * sysrepocfg: change default export format to JSON
+  * sysrepocfg: add -s/--no-subs export argument
+
+  [ Michal Vasko ]
+  * common UPDATE always recover robust mutexes
+  * SOVERSION bump to version 5.6.72
+  * VERSION bump to version 1.4.157
+
+  [ Duncan Eastoe ]
+  * sysrepo: include leaf-list value as XPath predicate
+  * sysrepo: log on connection/session destroy
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX proper key skip
+  * SOVERSION bump to version 5.6.73
+  * VERSION bump to version 1.4.158
+
+  [ Irfan Mohammad ]
+  * Adjust patches for upstream 1.4.158
+  * Add unit-test for ENG-2075
+  * Filter subscription notification at producer side
+
+  [ Rob Shearman ]
+  * Fix conditional variable lock timeout on module change callback timeout
+
+  [ Duncan Eastoe ]
+  * sysrepo: allow use of SR_SUBSCR_ENABLED with SR_SUBSCR_PASSIVE
+
+  [ Michal Vasko ]
+  * modinfo OPTIMIZE generated filteres srmon data
+  * SOVERSION bump to version 5.6.74
+  * VERSION bump to version 1.4.159
+
+  [ Irfan Mohammad ]
+  * Adjust patches for v1.4.159
+  * UNRELEASED
+
+  [ Duncan Eastoe ]
+  * sysrepo: allow use of SR_SUBSCR_ENABLED with SR_SUBSCR_PASSIVE
+  * sr_modinfo_replace: don't link diff if there was an error
+  * sr_diff_ly2sr: initially set return pointer to NULL
+  * sr_modinfo_replace: don't link diff if there was an error
+  * sr_diff_ly2sr: initially set return pointer to NULL
+  * sr_diff_set_getnext: add missing set bounds checking
+  * sr_diff_set_getnext: add missing set bounds checking
+
+  [ Michal Vasko ]
+  * shm sub BUGFIX handle dead subscriptions
+  * SOVERSION bump to version 5.6.75
+  * VERSION bump to version 1.4.160
+
+  [ Irfan Mohammad ]
+  * Adjust patches for v1.4.160
+  * Fix producer side subscription filtering
+
+  [ Rob Shearman ]
+  * Fix subscription recovery with filtered xpaths during sr_apply_changes()
+  * tests: add tests for module change subscription recovery
+
+  [ Irfan Mohammad ]
+  * lyd_find_path returns NULL, when xpath "" given
+
+  [ Michal Vasko ]
+  * shm sub BUGFIX process events after timeout
+  * SOVERSION bump to version 5.6.76
+  * VERSION bump to version 1.4.161
+
+  [ Irfan Mohammad ]
+  * Adjust patches for V1.4.161
+
+  [ Nick Brown ]
+  * Remove sysrepo-tools package
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX update leafrefs in diff
+  * SOVERSION bump to version 5.6.77
+  * VERSION bump to version 1.4.162
+  * edit diff BUGFIX remove leafref links in diff
+  * SOVERSION bump to version 5.6.78
+  * VERSION bump to version 1.4.163
+
+  [ Irfan Mohammad ]
+  * Adjust patches for v1.4.163
+
+  [ Nick Brown ]
+  * UNRELEASED
+  * UNRELEASED
+
+  [ Rob Shearman ]
+  * Revert upstream edit-diff fixes
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX revert diff subtree duplication
+  * SOVERSION bump to version 5.6.79
+  * VERSION bump to version 1.4.164
+
+  [ Irfan Mohammad ]
+  * Adjust patches for v1.4.164
+  * Enhance unit-tests for valgrind and leafrefs
+  * Allow sysrepocfg for oper datastore
+  * Reduce noisy log for no ds changes
+
+  [ Duncan Eastoe ]
+  * values: better handling of common "empty" types
+
+  [ Irfan Mohammad ]
+  * Remove bad reverts for change sub with enable handling
+
+  [ Duncan Eastoe ]
+  * Remove sysrepo-init service
+
+  [ Irfan Mohammad ]
+  * Downgrade to RdUpgrade lock during enable sub add
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX proper merge of new diff nodes
+  * edit diff BUGFIX accept invalid op on NP containers
+  * SOVERSION bump to version 5.6.80
+  * VERSION bump to version 1.4.165
+  * edit diff BUGFIX skip duplicate diff check for state lists
+  * SOVERSION bump to version 5.6.81
+  * VERSION bump to version 1.4.166
+
+  [ Irfan Mohammad ]
+  * Adjust patches for v1.4.166
+
+  [ Duncan Eastoe ]
+  * Update ncid APIs to accept uint64
+  * Log originating session ncid on change processing
+  * Revert upstream 1.4.165-166 changes
+  * Revert "Revert upstream 1.4.165-166 changes"
+  * Update _sr_session_start() for 64-bit ncid
+  * common: add internal sr_val_ly2sr_with_opts() API
+  * common: add SR_VAL_LY2SR_UNDERLYING_VALUE option
+  * sysrepo: add SR_UNDERLYING_VALUE option
+
+  [ Irfan Mohammad ]
+  * Add instrumentation for rwlock debugging
+  * Fix crash in lock instrumentation log
+  * Add format check for printf like fns
+  * Make xpath_id uniq system-wide
+
+  [ Duncan Eastoe ]
+  * common: allow disabling connection liveliness check
+
+  [ Irfan Mohammad ]
+  * Do not load modules with no data by checking schema
+  * Add debugs for change subs
+  * Fix debugs for notification evpipe
+  * don't assume evpipe notif to process changes
+  *  Do not write event when not processed
+  * Work around for bad delete ops in stored oper data
+  * Add mutex lock error checking
+  * Discard oper changes on disconnect only when we have made some changes
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX support for change revert in single edit
+  * SOVERSION bump to version 5.6.82
+  * VERSION bump to version 1.4.167
+
+  [ Irfan Mohammad ]
+  * remove patches
+
+  [ Michal Vasko ]
+  * sysrepo BUGFIX tree changes of dup inst lists
+  * SOVERSION bump to version 7.11.12
+  * VERSION bump to version 2.2.16
+  * sysrepo UPDATE no message if no node is found
+
+  [ Irfan ]
+  * values FEATURE function for comparing sr_val_t (#2958)
+
+  [ Michal Vasko ]
+  * sysrepo CHANGE switch default ds from LYB to JSON
+  * SOVERSION bump to version 7.11.13
+  * VERSION bump to version 2.2.17
+  * ds json UPDATE check lseek return
+  * log UPDATE set ly log store for callback as well
+  * plugins datastore CHANGE new plugin API
+  * SOVERSION bump to version 7.11.14
+  * VERSION bump to version 2.2.18
+
+  [ Irfan Mohammad ]
+  * sysrepocfg: op_rpc default export format to JSON
+
+  [ Michal Vasko ]
+  * build UPDATE install YANG modules
+  * sr_cond BUGFIX ignore EINTR
+  * sysrepo UPDATE native support for schema-mount
+  * build UPDATE move base ABI check commit
+  * SOVERSION bump to version 7.12.0
+  * VERSION bump to version 2.2.19
+  * shm mod UPDATE custom mod lock timeout
+  * sr_cond UPDATE minor clarification
+  * common UPDATE new urgent write lock
+  * SOVERSION bump to version 7.12.1
+  * VERSION bump to version 2.2.20
+  * sysrepo DOC specify unsubscribe errors
+  * actions UPDATE new codeql action
+  * lgtm UPDATE obsolete config file
+  * sysrepo MAINTENANCE false-positive uninit vars
+  * edit diff MAINTENANCE uninit vars
+  * srpd common BUGFIX missing guards
+  * sysrepo MAINTENANCE minor improvements
+  * sysrepoctl MAINTENANCE extra safe large buffer
+  * sysrepo BUGFIX safe format string
+  * ds json BUGFIX missing plugin name in wrn messages
+  * SOVERSION bump to version 7.12.2
+  * VERSION bump to version 2.2.21
+  * actions BUGFIX obsolete test var
+  * common MAINTENANCE duplicate code moved to func
+  * edit diff BUGFIX avoid assert that may be false
+  * SOVERSION bump to version 7.12.3
+  * VERSION bump to version 2.2.22
+  * shm sub OPTIMIZE do not use READ UPGR lock when handling events
+  * common UPDATE write urge lock refactored
+  * nacm UPDATE getter for the user
+  * SOVERSION bump to version 7.13.0
+  * VERSION bump to version 2.2.23
+  * modinfo BUGFIX missing ext remap lock
+  * SOVERSION bump to version 7.13.1
+  * VERSION bump to version 2.2.24
+  * build UPDATE support for anyxml empty array
+  * modinfo BUGFIX subscription read locks
+  * SOVERSION bump to version 7.13.2
+  * VERSION bump to version 2.2.25
+  * ds json UPDATE do not set user/group of backups
+  * SOVESION bump to version 7.13.3
+  * VERSION bump to version 2.2.26
+  * ds json UPDATE use process owner/group when creating files
+  * SOVERSION bump to version 7.13.4
+  * VERSION bump to version 2.2.27
+  * sr cond UPDATE use absolute timeout for cond wait
+  * SOVERSION bump to version 7.13.5
+  * VERSION bump to version 2.2.28
+  * test BUGFIX oper subs are serialized
+  * sysrepo CHANGE lock order in change_subscribe
+  * SOVERSION bump to version 7.13.6
+  * VERSION bump to version 2.2.29
+  * shm ext UPDATE no remap on read lock
+  * shm ext BUGFIX avoid accessing non-locked ext data
+  * SOVERSION bump to version 7.13.7
+  * VERSION bump to version 2.2.30
+  * common BUGFIX lock readers when accessing them
+  * modinfo UPDATE avoid locks when reading SHM mod lock state
+
+  [ Irfan Mohammad ]
+  * sr_cond_futex with counters instead of 2 states
+
+  [ Michal Vasko ]
+  * sysrepo BUGFIX simplify conn free
+  * sr_cond MAINTENANCE minor improvements
+  * sr_cond MAINTENANCE unused members removed
+  * modinfo BUGFIX maintain changed flag
+  * SOVERSION bump to version 7.13.8
+  * VERSION bump to version 2.2.31
+  * shm ext BUGFIX always remap ext SHM when needed
+  * SOVERSION bump to version 7.13.9
+  * VERSION bump to version 2.2.32
+  * common MAINTENANCE sanity assert
+  * edit diff BUGFIX preserve edit userord order for replace
+  * SOVERSION bump to version 7.13.10
+  * VERSION bump to version 2.2.33
+  * shm sub BUGFIX wait for urge lock
+  * shm sub UPDATE lock-free new event checking
+  * SOVERSION bump to version 7.13.11
+  * VERSION bump to version 2.2.34
+  * shm sub BUGFIX access atomics properly
+  * tests UPDATE oper edit test with ether operation
+  * edit diff UPDATE allow oper edit op merge with op remove child
+  * SOVERSION bump to version 7.13.12
+  * VERSION bump to version 2.2.35
+  * shm sub UPDATE atomic access to remember event info
+  * modinfo BUGFIX avoid simultaneous read and write lock
+  * SOVERSION bump to version 7.13.13
+  * VERSION bump to version 2.2.36
+  * actions UPDATE remove scheduled CodeQL runs
+  * sysrepo DOC clarify priority meaning
+  * shm sub UPDATE use lock modes when storing lock state
+  * common UPDATE separate higher timeout for ext data
+  * sysrepo BUGFIX lock order dead lock
+  * SOVERSION bump to version 7.13.14
+  * VERSION bump to version 2.2.37
+  * subscr REFACTOR new file for subscription functions
+  * sysrepo BUGFIX revert the expected lock order
+  * subscr BUGFIX keep lock order to avoid dead locks
+  * nacm MAINTENANCE uninit var false positive
+  * modinfo BUGFIX check for top-level opaque nodes
+  * modinfo UPDATE when checking xpath, consider warnings as errors
+  * SOVERSION bump to version 7.13.15
+  * VERSION bump to version 2.2.38
+  * subscr UPDATE keep the original lock order
+  * SOVERSION bump to version 7.13.6
+  * VERSION bump to version 2.2.39
+  * shm sub UPDATE parallel module change subscription change notify
+  * shm sub UPDATE event logging major improvements
+  * shm sub UPDATE parallel module change subscription done/abort notify
+  * shm mod FEATURE module change module order
+  * SOVERSION bump to version 7.14.0
+  * VERSION bump to version 2.2.40
+  * modinfo BUGFIX do not put mounted modules into modinfo
+  * modinfo BUGFIX use error from mounted data, if needed
+  * SOVERSION bump to version 7.14.1
+  * VERSION bump to version 2.2.41
+  * modinfo BUGFIX do not overwrite set flags
+  * shm ext BUGFIX overwriting err_info
+  * sysrepo BUGFIX handling mounted operations/notifications
+  * SOVERSION bump to version 7.14.2
+  * VERSION bump to version 2.2.42
+  * compat UPDATE support for pthread_*_clock functions
+  * common FEATURE use monotonic clock if available
+  * sr_cond UPDATE remove redundnat consistency func
+  * tests UPDATE missing cmake include
+  * SOVERSION bump to version 7.14.3
+  * VERSION bump to version 2.2.43
+
+  [ Jan Kundrát ]
+  * srpd_rotation: prevent UB in closedir()
+
+  [ Michal Vasko ]
+  * modinfo UPDATE special return on invalid getter xpaths
+  * SOVERSION bump to version 7.14.4
+  * VERSION bump to version 2.2.44
+  * sysrepo BUGFIX nested notif check
+  * SOVERSION bump to version 7.14.5
+  * VERSION bump to version 2.2.45
+  * sysrepo BUGFIX err_info leaks
+  * sysrepo BUGFIX rwlock leak
+  * SOVERSION bump to version 7.14.6
+  * VERSIOn bump to version 2.2.46
+  * sysrepo BUGFIX more leaked err_info
+  * sysrepo BUGFIX lock candidate on discard changes
+  * SOVERSION bump to version 7.14.7
+  * VERSION bump to version 2.2.47
+  * test BUGFIX handle data race
+  * plugins UPDATE new init callback
+  * SOVERSION bump to version 7.14.8
+  * VERSION bump to version 2.2.48
+  * doc BUGFIX minor fixes and updates
+  * common OPTIMIZE creating NP containers
+  * SOVERSION bump to version 7.14.9
+  * VERSION bump to version 2.2.49
+  * log UPDATE libyang error reporting improvements
+  * tests UPDATE updating module with removed nodes
+  * SOVERSION bump to version 7.14.10
+  * VERSION bump to version 2.2.50
+  * context change BUGFIX get ly error from the context directly
+  * common UPDATE avoid dereferencing NULL pointer
+  * common UPDATE more NULL parent access
+  * tests BUGFIX avoid data race on checking cb_called
+
+  [ Irfan Mohammad ]
+  * path check
+  * define typedef enums _e
+  * Add SR_SUBSCR_OPER_ONCE option for oper subscr
+  * adjust typedefs
+  * ncid compat
+
+  [ Michal Vasko ]
+  * shm mod BUGFIX urge write lock revert
+  * nacm FEATURE support for USER variable as key value
+  * SOVERSION bump to version 7.14.11
+  * VERSION bump to version 2.2.51
+
+  [ Irfan Mohammad ]
+  * restore sr_set_module_access for compat
+
+  [ Jan Kundrát ]
+  * docs: clarify sr_get_node's return value
+
+  [ Michal Vasko ]
+  * modinfo REFACTOR param update
+  * modinfo UPDATE proper operational datastore validation
+  * subscr BUGFIX allow oper paths selecting invalid nodes
+  * SOVERSION bump to version 7.14.12
+  * VERSION bump to version 2.2.52
+  * modinfo UPDATE conn push oper data module cache
+  * SOVERSION bump to version 7.14.13
+  * VERSION bump to version 2.2.53
+  * uncrustify UPDATE moved to version 0.76
+  * ds json REFACTOR avoid use of internal sysrepo functions
+  * sysrepo BUGFIX zero timeout on copy-config
+  * SOVERSION bump to version 7.14.14
+  * VERSION bump to version 2.2.54
+  * shm sub UPDATE oper get event index in messages
+  * common BUGFIX invalid memory access
+  * SOVERSION bump to version 7.14.15
+  * VERSION bump to version 2.2.55
+  * replay UPDATE fixed replay-complete timestamp
+  * subsc REFACTOR use limited const
+  * SOVERSION bump to version 7.14.16
+  * VERSION bump to version 2.2.56
+  * sysrepo UPDATE explicit mention of unused execute bits
+  * tests REFACTOR use global setup for faster test
+  * sysrepo BUGFIX context update before SHM access
+  * sysrepo FEATURE support for factory-default DS
+  * sysrepo FEATURE support for factory-reset internal RPC
+  * doc UPDATE mention details about factory-default datastore
+  * SOVERSION bump to version 7.14.17
+  * VERSION bump to version 2.2.57
+  * plugins UPDATE remove redundant load return value
+  * modules BUGFIX forgotten modules
+  * ds json UPDATE use nsec precision for last_modif timestamp
+  * plugins datastore UPDATE move caching back to sysrepo
+  * SOVERSION bump to version 7.14.18
+  * VERSION bump to version 2.2.58
+  * modinfo BUGFIX out-of-bounds access
+  * replay BUGFIX leftover buffered notifications
+  * replay BUGFIX notif buf thread error handling
+  * SOVERSION bump to version 7.14.19
+  * VERSION bump to version 2.2.59
+
+  [ Irfan Mohammad ]
+  * underlying val
+
+  [ Michal Vasko ]
+  * doc UPDATE install callback clarification
+  * sysrepo BUGFIX use sr_get_items opts
+  * SOVERSION bump to version 7.14.20
+  * VERSION bump to version 2.2.60
+
+  [ Irfan Mohammad ]
+  * Adjust patches
+  * Add tests and enable asserts
+
+  [ Michal Vasko ]
+  * shm ext BUGFIX handle dead subscriptions
+  * SOVERSION bump to version 7.14.21
+  * VERSION bump to version 2.2.61
+
+  [ Irfan Mohammad ]
+  * Adjust patches for upstream/v2.2.61
+
+  [ Michal Vasko ]
+  * sysrepo DOC doxygen param
+  * sysrepo BUGFIX keep required locks
+  * SOVERSION bump to version 7.14.22
+  * VERSION bump to version 2.2.61
+  * doc UPDATE clarify purge op limitation
+
+  [ Irfan Mohammad ]
+  * Enable debug package
+
+  [ Michal Vasko ]
+  * lyd mods UPDATE use context hash instead of simple counter
+  * SOVERSION bump to version 7.14.23
+  * VERSION bump to version 2.2.63
+  * common BUGFIX running cache NTP change handling
+  * SOVERSION bump to version 7.14.24
+  * VERSION bump to version 2.2.64
+  * sysrepo UPDATE skip existing modules when installing new ones
+  * SOVERSION bump to version 7.14.25
+  * VERSION bump to version 2.2.65
+  * compat BUGFIX pthread rwlock feature macro
+  * sysrepo BUGFIX typo
+  * sysrepo BUGFIX buffer overflow
+  * SOVERSION bump to version 7.14.26
+  * VERSION bump to version 2.2.66
+  * doc UPDATE ref discard_oper_changes usage
+
+  [ Irfan Mohammad ]
+  * Fix Debian tests for sysrepo groups
+
+  [ Michal Vasko ]
+  * examples UPDATE oper data push using data in a file
+  * modinfo UPDATE use hex hash as yang-library content-id
+  * sysrepo UPDATE include compat first
+  * tests UPDATE libyang updated
+  * edit diff BUGFIX purge for edits without a diff
+  * edit diff BUGFIX memory leak
+  * edit diff FEATURE support purge for push oper data
+  * SOVERSION bump to version 7.14.27
+  * VERSION bump to version 2.2.67
+  * sysrepo UPDATE avoid redundant inf message
+
+  [ Irfan Mohammad ]
+  * Update patches for upstream/v2.2.67
+
+  [ Michal Vasko ]
+  * sysrepocfg BUGFIX default format of RPC output print
+  * VERSION bump to version 2.2.68
+  * sysrepo MAINTENANCE clarify code execution condition
+  * sysrepo UPDATE remove redundant results when getting data
+  * nacm UPDATE data are no longer modified by NACM
+  * sysrepo BUGFIX explicit get_data tree build
+  * SOVERSION bump to version 7.14.28
+  * VERSION bump to version 2.2.69
+  * subscr UPDATE forbid oper_get subscribe on list keys
+  * sysrepo FEATURE discard oper changes as part of a transaction
+  * edit diff BUGFIX missing error
+  * SOVERSION bump to version 7.14.29
+  * VERSION bump to version 2.2.70
+
+  [ Irfan Mohammad ]
+  * update patches for upstream/v2.2.70
+
+  [ Michal Vasko ]
+  * sysrepocfg BUGFIX default format of RPC output print
+  * VERSION bump to version 2.2.68
+  * sysrepo MAINTENANCE clarify code execution condition
+  * sysrepo UPDATE remove redundant results when getting data
+  * nacm UPDATE data are no longer modified by NACM
+  * sysrepo BUGFIX explicit get_data tree build
+  * SOVERSION bump to version 7.14.28
+  * VERSION bump to version 2.2.69
+  * subscr UPDATE forbid oper_get subscribe on list keys
+  * sysrepo FEATURE discard oper changes as part of a transaction
+  * edit diff BUGFIX missing error
+  * SOVERSION bump to version 7.14.29
+  * VERSION bump to version 2.2.70
+
+  [ Irfan Mohammad ]
+  * More debugs
+
+  [ Michal Vasko ]
+  * modinfo REFACTOR redundant parameter changed into a flag
+  * shm mod REFACTOR redundant lock parameters
+  * shm mod DOC minor clarification
+  * tests UPDATE libyang updated
+
+  [ Irfan Mohammad ]
+  * debug test failures
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX oper edit opaque nodes handling
+  * SOVERSION bump to version 7.14.30
+  * VERSION bump to version 2.2.71
+  * tests BUGFIX missing module
+
+  [ Irfan Mohammad ]
+  * Update patches for upstream/v2.2.71
+  * new test changes
+
+  [ Michal Vasko ]
+  * common BUGFIX do not allow infinite timeout for locks
+  * SOVERSION bump to version 7.14.31
+  * VERSION bump to version 2.2.72
+  * common UPDATE finding parents in generic trees
+  * SOVERSION bump to version 7.14.32
+  * VERSION bump to version 2.2.73
+  * uncrustify UPDATE use version 0.77.1
+  * shm sub BUGFIX always zero out params
+
+  [ Alex Yin ]
+  * tests UPDATE missing include required by cmocka (#3065)
+
+  [ Michal Vasko ]
+  * tests UPDATE state list test
+  * tests UPDATE do not depend on local timezone
+  * shm sub BUGFIX async notif invalid subscription handling
+  * SOVERSION bump to version 7.14.33
+  * VERSION bump to version 2.2.74
+  * tests UPDATE use key-less list
+  * sysrepo UPDATE allow discard-items opaque node in batch edit
+  * common REFACTOR var name unification
+  * nacm BUGFIX add iterative buffer increase if needed
+  * SOVERSION bump to version 7.14.34
+  * VERSION bump to version 2.2.75
+  * common BUGFIX proper memory handling
+  * error format UPDATE multiple NETCONF error support
+  * SOVERSION bump to version 7.15.0
+  * VERSION bump to version 2.2.76
+  * modinfo BUGFIX missing notif lock when sending a notification
+  * sysrepo UPDATE locked notification timestamp generation
+  * SOVERSION bump to version 7.15.1
+  * VERSION bump to version 2.2.77
+  * common UPDATE libyang updates
+  * SOVERSION bump to version 7.15.2
+  * VERSION bump to version 2.2.78
+  * subscr UPDATE monotonic prior notification check
+  * SOVERSION bump to version 7.15.3
+  * VERSION bump to version 2.2.79
+  * error format BUGFIX avoid unaligned memory read
+  * SOVERSION bump to version 7.15.4
+  * VERSION bump to version 2.2.80
+  * error format UPDATE function for dynamic error info creation
+  * SOVERSION bump to version 7.16.0
+  * VERSION bump to version 2.2.81
+  * edit diff BUGFIX proper none operation support
+  * SOVERSION bump to version 7.16.1
+  * VERSION bump to version 2.2.82
+  * subscr BUGFIX hold sub lock when removing subscriptions
+  * SOVERSION bump to version 7.16.2
+  * VERSION bump to version 2.2.83
+  * tests REFACTOR format using uncrustify
+  * shm ext BUGFIX safe subscription recovery
+  * shm sub BUGUFIX handle unprocessed events
+  * shm sub BUGFIX error on held lock
+  * SOVERSION bump to version 7.16.3
+  * VERSION bump to version 2.2.84
+  * doc UPDATE clarify default datastore usage
+  * examples UPDATE print file parsing error
+  * sysrepocfg UPDATE support for factory-default datastore
+  * sysrepocfg REFACTOR obsolete operation mention removed
+  * VERSION bump to version 2.2.85
+  * lyd mods UPDATE allow custom start data for internal modules
+  * SOVERSION bump to version 7.16.4
+  * VERSION bump to version 2.2.86
+  * build UPDATE do not support lyb format for start data
+  * shm sub UPDATE safer fake lock reacquire
+  * shm sub REFACTOR unify function use
+  * shm sub BUGFIX handle specific subscription timeout
+  * SOVERSION bump to version 7.16.5
+  * VERSION bump to version 2.2.87
+  * shm sub BUGFIX cleared events on timeout
+
+  [ Jan Kundrát ]
+  * refactor: compat: simplify waiting
+  * compat: return ETIMEDOUT when timing out
+
+  [ Michal Vasko ]
+  * edit diff UPDATE oper dup-inst list absolute position
+  * SOVERSION bump to version 7.16.6
+  * VERSION bump to version 2.2.88
+  * srpd UPDATE avoid tar messages
+  * common UPDATE cover all entry-not-found errors
+  * common UPDATE check for mutex unlock errors
+  * shm sub BUGFIX ignored write lock
+  * SOVERSION bump to version 7.16.7
+  * VERSION bump to version 2.2.89
+  * nacm BUGFIX do not stop at the first node with operation
+  * SOVERSION bump to version 7.16.8
+  * VERSION bump to version 2.2.90
+  * ds json BUGFIX prevent double free
+  * edit diff UPDATE support dup-inst lists without predicates
+  * SOVERSION bump to version 7.16.9
+  * VERSION bump to version 2.2.91
+  * ds json UPDATE only warn on modification time update fail
+  * SOVERSION bump to version 7.16.10
+  * VERSION bump to version 2.2.92
+  * sysrepo UPDATE auto dup-inst position added into edit
+  * examples UPDATE improve notif_send example
+  * doc BUGFIX minor updates
+  * sysrepo UPDATE special notif for reached stop time
+  * subscr BUGUFIX avoid releasing subs locks on termination
+  * SOVERSION bump to version 7.17.0
+  * VERSION bump to version 2.2.93
+  * sysrepo BUGFIX keep unified lock order
+  * sysrepocfg UPDATE setting and getting single nodes
+  * VERSION bump to version 2.2.94
+
+  [ Antonio Prcela ]
+  *  doc BUGFIX minor update
+
+  [ Michal Vasko ]
+  * subscr REFACTOR redundant parameter
+  * subscr REFACTOR separate removing a subscription(s)
+  * subscr BUGFIX keep lock order to prevent dead locks
+  * shm sub UPDATE wait for previous notif without EXT lock
+  * common REFACTOR formatting
+  * subscr BUGFIX avoid data race on lock relock
+  * sysrepo UPDATE access to diff directly in change callbacks
+  * SOVERSION bump to version 7.18.0
+  * VERSION bump to version 2.2.95
+  * subscr REFACTOR simplify removing all subscriptions
+  * build REFACTOR redundant generated file
+  * context change BUGFIX update data of all modules with data
+  * SOVERSION bump to version 7.18.1
+  * VERSION bump to version 2.2.96
+
+  [ Irfan Mohammad ]
+  * refactor patches
+  * update patches for upstream/v2.2.96
+
+  [ Michal Vasko ]
+  * context change BUGFIX condition when no data could have been changed
+  * SOVERSION bump to version 7.18.2
+  * VERSION bump to version 2.2.97
+  * ds json UPDATE redundant implicit data creation
+  * edit diff BUGFIX proper insert with a parent
+  * SOVERSION bump to version 7.18.3
+  * VERSION bump to version 2.2.98
+  * doc UPDATE callback threading details
+
+  [ Rob Shearman ]
+  * Correct name of inet-inet-types YANG module to match libyang
+  * Add sysrepo-config package needed by image-manifest
+  * Fix yang YANG module link
+  * Rename sysrepo7-tools back to sysrepo-tools
+  * Add a provides for sysrepo7-tools
+  * debian/control: sysrepo-tools compatibility with sysrepo v1
+
+  [ IrfanMohammad ]
+  * add rwlock debug and improve tests
+  * Import libyang1 patches into sysrepo v2
+  * bugfix predicate skip must handle quotes correctly
+  * Allow tests to be run in parallel
+  * more descriptive debugs for sr_apply_changes
+
+  [ Michal Vasko ]
+  * common BUGFIX skipping quotes in predicates
+  * common UPDATE generate errors on reader lock changes fail
+  * SOVERSION bump to version 7.18.4
+  * VERSION bump to version 2.2.99
+
+  [ IrfanMohammad ]
+  * rwlock debug improvements for shm_sub
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX stored oper data opaque nodes
+  * SOVERSION bump to version 7.18.5
+  * VERSION bump to version 2.2.100
+  * doc UPDATE added details about access checks
+
+  [ IrfanMohammad ]
+  * Update patches for upstream/v2.2.100
+
+  [ Michal Vasko ]
+  * common BUGFIX robust rwlock readers mutex
+  * sysrepo UPDATE allow not using cached running data
+  * SOVERSION bump to version 7.19.0
+  * VERSION bump to version 2.2.101
+
+  [ IrfanMohammad ]
+  * default format for sysrepocfg as json
+  * rwlock debug reader lock limit useful info
+  * NULL check for empty main_shm
+  * Enable valgrind tests for debian
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX do not overwrite created meta
+  * edit diff BUGFIX merging data node into opaque node
+  * SOVERSION bump to version 7.19.1
+  * VERSION bump to version 2.2.102
+  * edit diff BUGFIX wrong printf param
+  * config UPDATE use printf compiler attributes and generate warnings
+  * sysrepo OPTIMIZE skip discard changes if redundant
+  * distro BUGFIX installed yang modules
+  * modules UPDATE add key to prevent invalid data
+  * common UPDATE remove readers mutex
+  * doc UPDATE update writer description
+  * sysrepo UPDATE oper poll sub lock order
+  * modinfo BUGFIX update list creation with the new key value
+  * common UPDATE readers waiting on full read lock list
+  * SOVERSION bump to version 7.19.2
+  * VERSION bump to version 2.2.103
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.103
+
+  [ Michal Vasko ]
+  * common UPDATE avoid duplicate readers when removing one
+
+  [ IrfanMohammad ]
+  * Multiple fixes to enable tests and build v2.2.103
+  * unlock session held ly_ctx locks on session stop
+  * Disable tests in pkg
+
+  [ Michal Vasko ]
+  * test UPDATE oper opaq edit libyang fix
+  * edit diff BUGFIX proper opaque node handling
+  * SOVERSION bump to version 7.19.3
+  * VERSION bump to version 2.2.104
+
+  [ IrfanMohammad ]
+  * implement sr_install_module_perm
+  * rwlock_info file improvements
+  * update patches for upstream/v2.2.104
+  * disable test_edit_set_item_del_parent due to breakage
+
+  [ Michal Vasko ]
+  * doc UPDATE mention edits order
+  * sysrepocfg UPDATE allow space for optional arguments
+  * VERSION bump to version 2.2.105
+
+  [ IrfanMohammad ]
+  * bugfix install ignores permission for existing mods
+
+  [ Michal Vasko ]
+  * test UPDATE create and delete for push oper data
+  * test REFACTOR formatting
+  * modinfo BUGFIX do not merge data and oper edit
+  * SOVERSION bump to version 7.19.4
+  * VERSION bump to version 2.2.106
+
+  [ IrfanMohammad ]
+  * Verify data parse before store
+  * cache invalidation without file m_time
+  * update patches for upstream/v2.2.106
+  * Revert complex wrong logic to handle rwlock readers
+  * handle EINTR for write to json datastore
+  * bugfix for assert in set_sort_compare
+  * Update cache invalidation without file m_time
+
+  [ Michal Vasko ]
+  * sysrepo UPDATE cache id instead of modification time
+  * sysrepo UPDATE libyang updates
+  * SOVERSION bump to version 7.19.5
+  * VERSION bump to version 2.2.107
+  * context change UPDATE message specifying the datastore with invalid data
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.107
+  * relax cb timeout and minor logging improvements
+  * Refactor rwlock debug
+
+  [ Antonio Prcela ]
+  * doc UPDATE link to example
+
+  [ Michal Vasko ]
+  * ds json BUGFIX use sysrepo group for JSON files
+  * SOVERSION bump to version 7.19.6
+  * VERSION bump to version 2.2.108
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.108
+  * Fix don't set gid for test env patch
+  * bugfix shm_sub new_wrlock race
+  * Capture failed to store ds file upon failure
+
+  [ Michal Vasko ]
+  * common UPDATE libyang updates
+  * SOVERSION bump to version 7.19.7
+  * VERSION bump to version 2.2.109
+  * tests UPDATE purge on leaf-list load
+  * VERSION bump to version 2.2.110
+  * test REFACTOR formatting
+  * sysrepocfg UPDATE read input from stdin
+  * VERSION bump to version 2.2.111
+
+  [ IrfanMohammad ]
+  * Update patches for upstream/v2.2.111
+
+  [ Michal Vasko ]
+  * lyd mods UPDATE double nacm YANG install
+  * sysrepoctl UPDATE print running permissions as well in list
+  * VERSION bump to version 2.2.112
+  * examples UPDATE improve moved value print
+
+  [ lolok0lo ]
+  * edit_diff BUGFIX equality of nodes from different data tree (#3162)
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 7.19.8
+  * VERSION bump to version 2.2.113
+
+  [ IrfanMohammad ]
+  * rwlock improvements for debugging
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX handle comparison of 2 default nodes
+  * tests BUGFIX avoid data race
+  * SOVERSION bump to version 7.19.9
+  * VERSION bump to version 2.2.14
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.114
+  * minor typo fixes in logs for rwlock
+  * Optimize xpath filtering for oper get subscr
+  * rwlock retry mutex acquire for debugging
+
+  [ R. Christian McDonald ]
+  * CMakeLists.txt: install SR_PLUGINS_PATH directory
+
+  [ Michal Vasko ]
+  * rpm UPDATE install sysrepo plugins dir
+
+  [ IrfanMohammad ]
+  * xpath with descendents in oper get for oper pull
+
+  [ Michal Vasko ]
+  * common UPDATE support for recursive XPath filter expr
+  * SOVERSION bump to version 7.19.10
+  * VERSION bump to version 2.2.115
+  * edit diff BUGFIX do not assume metadata always present
+  * SOVERSION bump to version 7.19.11
+  * VERSION bump to version 2.2.116
+  * sysrepo BUGFIX locked module data access
+  * SOVERSION bump to version 7.19.12
+  * VERSION bump to version 2.2.117
+
+  [ IrfanMohammad ]
+  * ignore child del after parent del with isolate
+
+  [ Jan Kundrát ]
+  * docs: more cross-references for originator data
+  * docs: link to Netopeer2's originator data
+  * docs: reserve originator names for RESTCONF (rousette) and sysrepo-cli
+
+  [ Michal Vasko ]
+  * sysrepo BUGFIX track connection before locking
+
+  [ IrfanMohammad ]
+  * sysrepo BUGFIX change_sub rd lock iterates wrong
+
+  [ Michal Vasko ]
+  * doc UPDATE added missing doxygen
+
+  [ IrfanMohammad ]
+  * Update patches for upstream/v2.2.117
+
+  [ Michal Vasko ]
+  * edit diff UPDATE forbid isolated oper edits
+
+  [ IrfanMohammad ]
+  * Bugfix cached oper pull stop subscriptions in get
+
+  [ Michal Vasko ]
+  * edit diff UPDATE support for merging edit operations
+  * SOVERSION bump to version 7.19.13
+  * VERSION bump to version 2.2.118
+  * edit diff BUGFIX memory leak
+  * edit diff UPDATE forbid invalid leaf-list predicates
+  * edit diff UPDATE improve error message
+  * SOVERSION bump to version 7.19.14
+  * VERSION bump to version 2.2.119
+
+  [ Jeremie Leska ]
+  * sysrepo UPDATE don't check feature '*'
+
+  [ Michal Vasko ]
+  * doc UPDATE support for '*' feature
+  * SOVERSION bump to version 7.19.15
+  * VERSION bump to version 2.2.120
+  * sysrepo BUGFIX null check
+  * test UPDATE removing push oper data before setting them
+  * shm sub UPDATE avoid obsolete select
+
+  [ IrfanMohammad ]
+  * sysrepo BUGFIX run_cache realloc wrong array index
+
+  [ Michal Vasko ]
+  * modinfo BUGFIX merge diffs to create a single tree
+  * common BUGFIX kepp order of selected subtrees
+  * SOVERSION bump to version 7.19.16
+  * VERSION bump to version 2.2.121
+
+  [ IrfanMohammad ]
+  * Atomic readers list for rwlock
+  * subscription memory check for validity
+  * update patches for upstream/v2.2.121
+
+  [ Michal Vasko ]
+  * edit diff UPDATE use libyang error message
+  * SOVERSION bump to version 7.19.17
+  * VERSION bump to version 2.2.122
+  * context change BUGFIX handle cases when diff cannot be created
+  * SOVERSION bump to version 7.19.18
+  * VERSION bump to version 2.2.123
+
+  [ Jeremie Leska ]
+  * sysrepo BUGFIX null check
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.123
+
+  [ Michal Vasko ]
+  * common BUGFIX avoid invalid cond broadcast/mutex unlock
+  * shm sub BUGFIX keep track of mutex being locked
+  * SOVERSION bump to version 7.19.19
+  * VERSION bump to version 2.2.124
+  * shm mod UPDATE use module change order for SHM init
+  * SOVERSION bump to version 7.19.20
+  * VERSION bump to version 2.2.125
+
+  [ IrfanMohammad ]
+  * update changelog for upstream/v2.2.125
+
+  [ Michal Vasko ]
+  * modules UPDATE use module revisions in the name
+  * common UPDATE ignore sleep errors
+  * modinfo REFACTOR simplify function flow
+  * modinfo BUGFIX invalid memory access
+
+  [ IrfanMohammad ]
+  * broadcast unlock even if not holding mutex
+  * unsubscr until success or abort
+  * bugfix edit_diff add followed by del
+  * sr_delete_item ignore isolate for oper ds
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX depth-based parent node skip
+  * SOVERSION bump to version 7.19.21
+  * VERSION bump to version 2.2.126
+
+  [ Irfan ]
+  * shm_sub BUGFIX abort notify when subscriber dies (#3187)
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.126
+
+  [ Michal Vasko ]
+  * doc UPDATE change callback clarification
+  * shm mod UPDATE redundant debug message
+
+  [ IrfanMohammad ]
+  * add revision to module debian install
+  * remove unnecessary debian postrm
+
+  [ Michal Vasko ]
+  * edit diff UPDATE support for modified op in oper data edit
+  * SOVERSION bump to version 7.19.22
+  * VERSION bump to version 2.2.127
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.127
+  * discard instead of delete for oper only lists
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX existing node search
+  * SOVERSION bump to version 7.19.23
+  * VERSION bump to version 2.2.128
+  * tests UPDATE libyang updates
+  * lyd_mods UPDATE sort modules based on dependencies
+  * SOVERSION bump to version 7.19.24
+  * VERSION bump to version 2.2.129
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.129
+  * update test oper push error check
+
+  [ Michal Vasko ]
+  * modinfo UPDATE proper per-module validation
+  * SOVERSION bump to version 7.19.25
+  * VERSION bump to version 2.2.130
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.130
+
+  [ Michal Vasko ]
+  * modinfo REFACTOR function made static
+  * modinfo BUGFIX both req and invdep modules can be changed
+  * SOVERSION bump to version 7.19.26
+  * VERSION bump to version 2.2.131
+  * edit diff BUGFIX merge the whole diff
+  * SOVERSION bump to version 7.19.27
+  * VERSION bump to version 2.2.132
+
+  [ IrfanMohammad ]
+  * do not inform subscribers of moves for oper list
+  * Fix memleak in relevant indices on subscr death
+
+  [ Michal Vasko ]
+  * doc UPDATE detailed behavior on install
+
+  [ IrfanMohammad ]
+  * Optimize reading sysrepo-monitoring
+
+  [ Irfan ]
+  * shm_main BUGFIX unlink empty main_shm (#3191)
+  * sysrepocfg UPDATE support for shortened DS (#3192)
+
+  [ Michal Vasko ]
+  * plugins datastore UPDATE conn init & destroy
+  * nacm BUGFIX always locked nacm access
+  * SOVERSION bump to version 7.19.28
+  * VERSION bump to version 2.2.133
+  * modinfo UPDATE invalid xpath error
+  * edit diff BUGFIX dup-inst-list values cannot be matched
+  * modinfo BUGFIX do not merge diffs but rather edits
+  * SOVERSION bump to version 7.19.29
+  * VERSION bump to version 2.2.134
+
+  [ Tomáš Pecka ]
+  * doc: fix path of factory reset path RPC
+
+  [ Michal Vasko ]
+  * edit diff REFACTOR formatting
+  * edit diff BUGFIX previous value of an any node
+  * SOVERSION bump to version 7.19.30
+  * VERSION bump to version 2.2.135
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.135
+
+  [ Michal Vasko ]
+  * modinfo UPDATE do not use diff for oper DS store
+
+  [ IrfanMohammad ]
+  * modinfo UPDATE do not use diff for oper DS store
+  * remove unnecessary module install logs
+
+  [ Michal Vasko ]
+  * sysrepo-plugind BUGFIX proper plugin cleanup
+  * VERSION bump to version 2.2.136
+
+  [ Irfan ]
+  * modinfo UPDATE skip dead subscriptions (#3205)
+
+  [ IrfanMohammad ]
+  * relax datastore specification for sysrepocfg
+
+  [ Michal Vasko ]
+  * doc UPDATE clarify non-modified candidate store behavior
+  * edit_diff BUGFIX handle xpath whitespaces
+  * SOVERSION bump to version 7.19.31
+  * VERSION bump to version 2.2.137
+  * edit_diff REFACTOR formatting
+  * nacm UPDATE print NACM deny details
+  * SOVERSION bump to version 7.19.32
+  * VERSION bump to version 2.2.138
+  * sysrepo BUGFIX check return value
+  * sub notif UPDATE initial commit
+  * SOVERSION bump to version 7.20.0
+  * VERSION bump to version 2.2.139
+  * yang push BUGFIX invalid macro usage
+  * sn common UPDATE check return value
+  * sn common REFACTOR safety asserts
+  * sn common BUGFIX uninitialized memory access
+  * sn yang push BUGFIX double lock
+  * sub notif BUGFIX invalid memory access
+  * sub notif BUGFIX comparison typo
+  * SOVERSION bump to version 7.20.1
+  * VERSION bump to version 2.2.140
+  * common REFACTOR uninit variables
+  * test UPDATE check asprintf return
+  * sysrepo UPDATE optional originator-side filtering
+  * SOVERSION bump to version 7.21.1
+  * VERSION bump to version 2.2.141
+  * shm sub BUGFIX avoid invalid event processing
+  * sysrepo UPDATE allow disabling running DS
+  * SOVERSION bump to version 7.21.1
+  * VERSION bump to version 2.2.142
+  * sysrepoctl UPDATE support for factory-default DS
+  * VERSION bump to version 2.2.143
+  * common BUGFIX missing check for disabled DS
+  * SOVERSION bump to version 7.21.2
+  * VERSION bump to version 2.2.144
+  * test BUGFIX missing initializer braces
+
+  [ IrfanMohammad ]
+  * API to check sr_module_has_change_sub efficiently
+  * increase upgr mod lock timeout
+  * downgrade mod locks to read after store
+
+  [ Irfan ]
+  * shm_sub OPTIMIZE use read locks instead of read-upgr locks (#3218)
+
+  [ Michal Vasko ]
+  * common BUGFIX allocate zeroed data
+  * shm sub BUGFIX no abort event if filtered out
+  * SOVERSION bump to version 7.21.3
+  * VERSION bump to version 2.2.145
+  * shm mod BUGFIX notify about factory-reset changes
+  * SOVERSION bump to version 7.21.4
+  * VERSION bump to version 2.2.146
+  * common BUGFIX missing mutex lock
+  * SOVERSION bump to version 7.21.5
+  * VERSION bump to version 2.2.147
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.147
+
+  [ Michal Vasko ]
+  * common UPDATE libyang updates
+  * sn_common BUGFIX ignore opaque nodes without metadata
+  * sn_common BUGFIX missing size increase
+  * sn_common BUGFIX reused filter size
+  * sub notif UPDATE subtree-to-xpath func error support
+  * SOVERSION bump to version 7.22.0
+  * VERSION bump to version 2.2.148
+  * plugins UPDATE return err_info from callbacks
+  * lyd_mods BUGFIX delete empty sysrepo data on error
+  * SOVERSION bump to version 7.23.0
+  * VERSION bump to version 2.2.149
+  * plugins UPDATE function for freeing err_info
+  * SOVERSION bump to version 7.23.1
+  * VERSION bump to version 2.2.150
+  * ds json BUGFIX wrong return value
+  * edit diff BUGFIX invalid memory access
+  * SOVERSION bump to version 7.23.2
+  * VERSION bump to version 2.2.152
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.152
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Thu, 18 Jan 2024 12:10:55 +0000
+
+sysrepo (1.4.100-3) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * log: Add sr_errinfo_new_with_level()
+  * sysrepo: Disable sr_get_item() "No data found" log
+
+  [ Reshad Rahman ]
+  * https://graphiant.atlassian.net/browse/ENG-670
+  * https://graphiant.atlassian.net/browse/ENG-683
+    For read-only data, need to use LYD_OPT_GET flag
+  * sysrepocfg can not iimport read-only (config false) data
+    Fix for ENG-670 was incomplete ENG-683:
+    For read-only data, need to use LYD_OPT_GET flag
+
+  [ Nick Brown ]
+  * sysctl.d file that disables shared write protection
+
+  [ Duncan Eastoe ]
+  * log: avoid sr_log_msg() assert from _sr_errinfo_new_with_level()
+
+  [ Nick Brown ]
+  * debian: makes build system explict in rules
+  * debian: rename sysrepo-tools to sysrepo
+  * debian: gitignore correct package dir
+
+ -- Nick Brown <nickbroon@graphiant.com>  Fri, 22 Oct 2021 14:42:59 +0100
+
+sysrepo (1.4.100-1) unstable; urgency=medium
+
+  * Initial release
+
+ -- Rob Shearman <rob@graphiant.com>  Wed, 17 Feb 2021 17:32:00 +0000

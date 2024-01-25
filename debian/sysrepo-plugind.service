@@ -1,0 +1,14 @@
+[Unit]
+Description=sysrepo Plugin Daemon
+Before=graphnos-mgmt.target
+PartOf=graphnos-mgmt.target
+After=graphnos-mgmt-init.target
+
+[Service]
+ExecStart=/usr/bin/sysrepo-plugind
+Restart=on-failure
+User=sysrepo
+Group=sysrepo
+
+[Install]
+WantedBy=graphnos-mgmt.target

@@ -1,0 +1,4 @@
+d /run/sysrepo 0775 root sysrepo
+x /run/sysrepo
+d /run/sysrepo/yang 0775 root sysrepo
+x /run/sysrepo/yang

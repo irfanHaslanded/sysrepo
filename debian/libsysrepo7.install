@@ -1,0 +1,7 @@
+usr/lib/*/libsysrepo.so.*
+modules/ietf-netconf-notifications@*.yang usr/share/sysrepo/yang
+modules/ietf-netconf-with-defaults@*.yang usr/share/sysrepo/yang
+modules/ietf-origin@*.yang usr/share/sysrepo/yang
+modules/sysrepo-monitoring@*.yang usr/share/sysrepo/yang
+modules/sysrepo-plugind@*.yang usr/share/sysrepo/yang
+modules/sysrepo@*.yang usr/share/sysrepo/yang
