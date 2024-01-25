@@ -22,3 +22,4 @@
 0022-Enable-instrumentation-for-locks.patch
 0023-Enable-per-module-rwlock-debugging.patch
 0024-Add-type-check-of-format-str-for-printf-like-fns.patch
+0025-Add-PTHREAD_MUTEX_ERRORCHECK-attr.patch
