@@ -1,0 +1,72 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 23 Aug 2023 09:11:18 +0000
+Subject: Revert complex wrong logic to handle rwlock readers
+
+The commit
+"common UPDATE avoid duplicate readers when removing one"
+does not solve correctly.
+
+the two arrays readers, and read_count will be out of sync, no matter
+what, because there is no lock guarding.
+
+srmon data will remain inaccurate, but we can live with it.
+
+This reverts commit 10a14c2712dd7159eaa4d98ea758cc95b16658b5.
+---
+ src/common.c | 34 ++++++++--------------------------
+ 1 file changed, 8 insertions(+), 26 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index a95e5e8..ef979ee 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -2476,10 +2476,6 @@ cleanup:
+ static void
+ sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
+ {
+-    uint32_t move_count;
+-    sr_cid_t last_reader;
+-    uint8_t last_read_count;
+-
+     /* decrease recursive read lock count */
+     assert(rwlock->read_count[i]);
+     --rwlock->read_count[i];
+@@ -2489,30 +2485,16 @@ sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
+         return;
+     }
+ 
+-    /* move all the readers to replace the deleted one, avoid duplicates and try to keep the arrays consistent for
+-     * sysrepo monitoring */
+-    move_count = 0;
+-    while ((move_count < SR_RWLOCK_READ_LIMIT - i - 1) && rwlock->readers[i + move_count + 1]) {
+-        ++move_count;
+-    }
+-
+-    /* temporarily remove the last reader to avoid duplicating it */
+-    last_reader = rwlock->readers[i + move_count];
+-    last_read_count = rwlock->read_count[i + move_count];
+-    rwlock->readers[i + move_count] = 0;
+-    rwlock->read_count[i + move_count] = 0;
+-
+-    if (!move_count) {
+-        /* no readers left */
+-        return;
++    /* move all the following CIDs so that there are no holes */
++    while ((i < (SR_RWLOCK_READ_LIMIT - 1)) && rwlock->readers[i + 1]) {
++        rwlock->readers[i] = rwlock->readers[i + 1];
++        rwlock->read_count[i] = rwlock->read_count[i + 1];
++        ++i;
+     }
+ 
+-    memmove(&rwlock->readers[i], &rwlock->readers[i + 1], move_count * sizeof *rwlock->readers);
+-    memmove(&rwlock->read_count[i], &rwlock->read_count[i + 1], move_count * sizeof *rwlock->read_count);
+-
+-    /* restore the last reader */
+-    rwlock->readers[i + move_count - 1] = last_reader;
+-    rwlock->read_count[i + move_count - 1] = last_read_count;
++    /* remove the last CID */
++    rwlock->readers[i] = 0;
++    rwlock->read_count[i] = 0;
+ }
+ 
+ /**
