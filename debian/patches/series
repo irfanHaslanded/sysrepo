@@ -48,3 +48,4 @@
 0048-increase-upgr-mod-lock-timeout.patch
 0049-rwlock-with-retry-for-better-visibility.patch
 0050-Optimize-xpath-filtering-for-oper-get-subscr.patch
+0051-ignore-isolate-for-set-items-in-oper.patch
