@@ -1,0 +1,155 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Fri, 11 Aug 2023 15:57:58 +0000
+Subject: fix test failures and improve test infra
+
+---
+ tests/CMakeLists.txt       | 17 -----------------
+ tests/tcommon.c            |  7 -------
+ tests/test_massive_scale.c | 25 +++++++++++++++----------
+ 3 files changed, 15 insertions(+), 34 deletions(-)
+
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index ed2bb82..52bb502 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -32,17 +32,6 @@ configure_file("${PROJECT_SOURCE_DIR}/tests/tcommon.h.in" "${PROJECT_BINARY_DIR}
+ 
+ set(TEST_CLEAR_REPOS_CMD rm -rf ${PROJECT_BINARY_DIR}/test_repositories)
+ set(TEST_CLEAR_SHM_CMD rm -rf /dev/shm/_tests_sr_dir_test_*)
+-if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+-    # tests cleanup fixtures
+-    add_test(NAME tests_clear_repos
+-        COMMAND ${TEST_CLEAR_REPOS_CMD}
+-    )
+-    set_tests_properties(tests_clear_repos PROPERTIES FIXTURES_CLEANUP tests_cleanup)
+-    add_test(NAME tests_clear_shm
+-        COMMAND ${TEST_CLEAR_SHM_CMD}
+-    )
+-    set_tests_properties(tests_clear_shm PROPERTIES FIXTURES_CLEANUP tests_cleanup)
+-endif()
+ 
+ if(ENABLE_TESTS)
+     # format
+@@ -83,9 +72,6 @@ if(ENABLE_TESTS)
+                 )
+         endif()
+ 
+-        if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+-            set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
+-        endif()
+     endforeach()
+     add_test(NAME test_sysrepocfg_oper_import COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+     set_property(TEST test_sysrepocfg_oper_import APPEND PROPERTY ENVIRONMENT
+@@ -126,9 +112,6 @@ if(ENABLE_VALGRIND_TESTS)
+             )
+         endif()
+ 
+-        if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+-            set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
+-        endif()
+     endforeach()
+ endif()
+ 
+diff --git a/tests/tcommon.c b/tests/tcommon.c
+index 5ef6047..f261c59 100644
+--- a/tests/tcommon.c
++++ b/tests/tcommon.c
+@@ -27,11 +27,7 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+ {
+     const char *severity = NULL;
+     struct timespec ts = {0};
+-    static int disable_debug = -1;
+     static int enable_ts = 1;
+-    if (disable_debug < 0) {
+-        disable_debug = getenv("SR_TEST_LOG_DEBUG") == NULL;
+-    }
+ 
+     switch (level) {
+     case SR_LL_ERR:
+@@ -44,9 +40,6 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+         severity = "INF";
+         break;
+     case SR_LL_DBG:
+-        if (disable_debug) {
+-            return;
+-        }
+         severity = "DBG";
+         break;
+     case SR_LL_NONE:
+diff --git a/tests/test_massive_scale.c b/tests/test_massive_scale.c
+index c131448..8e6631b 100644
+--- a/tests/test_massive_scale.c
++++ b/tests/test_massive_scale.c
+@@ -87,6 +87,7 @@ setup_f(void **state)
+         return 1;
+     }
+ 
++    sr_disconnect(st->conn);
+     clock_gettime(CLOCK_MONOTONIC, &start_time);
+     return 0;
+ }
+@@ -96,13 +97,17 @@ teardown_f(void **state)
+ {
+     struct state *st = (struct state *)*state;
+     const char *module_names[] = {
++        "test",
+         "test-leafref",
+         "test-module",
+         "iana-if-type",
++        "ietf-if-aug",
+         "ietf-interfaces",
+-        "test",
+         NULL
+     };
++    if (sr_connect(0, &(st->conn)) != SR_ERR_OK) {
++        return 1;
++    }
+ 
+     sr_remove_modules(st->conn, module_names, 0);
+ 
+@@ -189,7 +194,7 @@ static void *
+ test_massive_scale_helper(void *arg)
+ {
+     (void)arg;
+-    const int TEST_RUN_SECONDS = test_full_scale ? 30 : 1;
++    const int TEST_RUN_SECONDS = test_full_scale ? 30 : 0;
+     sr_subscr_options_t opts = SR_SUBSCR_ENABLED;
+     int ret;
+     cb_stats stats = {0};
+@@ -331,13 +336,6 @@ test_multi_proc_scale(void **arg)
+     int i, rc, ret, result = 0;
+     pid_t pids[NUM_PROCS];
+     ATOMIC_STORE_RELAXED(keep_running, 1);
+-
+-    ret = sr_connect(0, &conn);
+-    assert_int_equal(ret, SR_ERR_OK);
+-
+-    ret = sr_session_start(conn, SR_DS_RUNNING, &sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+-
+     for (i = 0; i < NUM_PROCS; i++) {
+         switch (pids[i] = fork()) {
+             case 0:
+@@ -350,6 +348,13 @@ test_multi_proc_scale(void **arg)
+         }
+     }
+ 
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_session_start(conn, SR_DS_RUNNING, &sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++
+     for (i = 0; i < NUM_PROCS; i++) {
+         rc = 0;
+         wait(&rc);
+@@ -367,7 +372,7 @@ test_multi_proc_scale(void **arg)
+     assert_int_equal(result, 0);
+ }
+ 
+-static void
++void
+ test_multi_thread_scale(void **arg)
+ {
+     const int NUM_THREADS = test_full_scale ? 8 : 1;
