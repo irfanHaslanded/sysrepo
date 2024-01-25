@@ -1,0 +1,51 @@
+From: Duncan Eastoe <duncan@graphiant.com>
+Date: Tue, 2 Aug 2022 13:56:38 +0100
+Subject: common: add internal sr_val_ly2sr_with_opts() API
+
+This will allow the addition of optional behaviours when converting
+libyang data into a sysrepo value.
+---
+ src/common.c |  6 ++++++
+ src/common.h | 14 ++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/src/common.c b/src/common.c
+index 60eb5a1..ca703bc 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -3960,6 +3960,12 @@ sr_ev2api(sr_sub_event_t ev)
+ 
+ sr_error_info_t *
+ sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)
++{
++    return sr_val_ly2sr_with_opts(node, SR_VAL_LY2SR_DEFAULT, sr_val);
++}
++
++sr_error_info_t *
++sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val)
+ {
+     sr_error_info_t *err_info = NULL;
+     char *ptr, *origin;
+diff --git a/src/common.h b/src/common.h
+index 7a43dda..d76710f 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -1385,4 +1385,18 @@ sr_error_info_t *sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_
+  */
+ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name);
+ 
++typedef enum sr_val_ly2sr_opts_e {
++    SR_VAL_LY2SR_DEFAULT = 0,             /**< Standard behaviour */
++} sr_val_ly2sr_opts_t;
++
++/**
++ * @brief Transform a libyang node into sysrepo value.
++ *
++ * @param[in] node libyang node to transform.
++ * @param[in] opts Options to adjust default behaviour.
++ * @param[out] sr_val sysrepo value.
++ * @return err_info, NULL on success.
++ */
++sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
++
+ #endif /* _COMMON_H */
