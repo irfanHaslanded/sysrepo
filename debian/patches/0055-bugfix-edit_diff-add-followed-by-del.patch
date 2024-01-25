@@ -1,0 +1,168 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Sun, 29 Oct 2023 14:10:33 +0000
+Subject: bugfix edit_diff add followed by del
+
+When delete follows a set in an edit, they are both deleted. However this
+is not correct. The delete should act on all previous sets, and also on
+the stored data.
+
+Closes: ENG-5756
+---
+ src/edit_diff.c        | 17 +++++++++++------
+ src/sysrepo.c          | 10 ++++++----
+ tests/test_oper_push.c | 34 +++++++++++++++++++++++++++++++---
+ 3 files changed, 48 insertions(+), 13 deletions(-)
+
+diff --git a/src/edit_diff.c b/src/edit_diff.c
+index 6b8c405..8fdcd19 100644
+--- a/src/edit_diff.c
++++ b/src/edit_diff.c
+@@ -3071,17 +3071,18 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char *value, enum edit_op op)
++sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char *value, enum edit_op op, int *same_op)
+ {
+     sr_error_info_t *err_info = NULL;
+     const struct lysc_node *schema;
+     struct lyd_node *parent = NULL, *sibling = NULL;
+     enum edit_op cur_op;
+     int own_oper;
+-
++    *same_op = 0;
+     cur_op = sr_edit_diff_find_oper(match, 1, &own_oper);
+     if (op == cur_op) {
+         /* same node with same operation, silently ignore */
++        *same_op = 1;
+         goto cleanup;
+     }
+ 
+@@ -3597,13 +3598,14 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+     const char *meta_val = NULL, *def_origin;
+     char *rel_xpath = NULL;
+     enum edit_op op;
+-    int opts, own_oper;
++    int opts, own_oper, same_op = 0;
+     LY_ERR lyrc;
+-
++    int removal = 0;
+     assert(!origin || strchr(origin, ':'));
+ 
+     opts = LYD_NEW_PATH_WITH_OPAQ;
+     if (!strcmp(operation, "remove") || !strcmp(operation, "delete") || !strcmp(operation, "purge")) {
++        removal = 1;
+         opts |= LYD_NEW_PATH_OPAQ;
+     }
+ 
+@@ -3615,10 +3617,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+         }
+         if (match) {
+             /* node exists, nothing to create, just merge operations if possible */
+-            if ((err_info = sr_edit_add_merge_op(match, &session->dt[session->ds].edit->tree, value, sr_edit_str2op(operation)))) {
++            if ((err_info = sr_edit_add_merge_op(match, &session->dt[session->ds].edit->tree, value, sr_edit_str2op(operation), &same_op))) {
+                 goto error_safe;
+             }
+-            goto success;
++            /* We want to delete not just what's in the edit but what's in datastore as well */
++            if (same_op || !removal) {
++                goto success;
++            }
+         }
+     }
+ 
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 7be0945..e5700f4 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -3377,16 +3377,18 @@ cleanup:
+ }
+ 
+ API int
+-sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_options_t opts)
++sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_options_t in_opts)
+ {
+     sr_error_info_t *err_info = NULL;
+     const char *operation;
+     const struct lysc_node *snode;
+     int ly_log_opts;
+-    int isolate = SR_EDIT_ISOLATE & opts;
+ 
+-    if (isolate && SR_DS_OPERATIONAL == session->ds) {
+-        return sr_discard_items(session, path);
++    sr_edit_options_t opts = in_opts;
++
++    if (session && session->ds == SR_DS_OPERATIONAL) {
++        /* operational datastore does not support isolate flag */
++        opts &= ~SR_EDIT_ISOLATE;
+     }
+ 
+     SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
+diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
+index 6dff3b0..06e5050 100644
+--- a/tests/test_oper_push.c
++++ b/tests/test_oper_push.c
+@@ -3457,6 +3457,8 @@ test_oper_set_del_new(void **state)
+ {
+     struct state *st = (struct state *)*state;
+     int i, ret;
++    sr_data_t *data = NULL;
++    char *str1 = NULL, *str2 = NULL;
+ 
+     char *xpath_set[] = {
+         "/ietf-interfaces:interfaces-state/interface[name='eth1']/type",
+@@ -3481,18 +3483,43 @@ test_oper_set_del_new(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+ 
+     for (i = 0; xpath_set[i]; i++) {
+-        ret = sr_set_item_str(st->sess, xpath_set[i], xpath_set_vals[i], NULL, SR_EDIT_ISOLATE);
++        ret = sr_set_item_str(st->sess, xpath_set[i], xpath_set_vals[i], NULL, 0);
+         assert_int_equal(ret, SR_ERR_OK);
+     }
+-    assert_int_equal(ret, SR_ERR_OK);
+ 
+     for (i = 0; xpath_del[i]; i++) {
+-        ret = sr_delete_item(st->sess, xpath_del[i], SR_EDIT_ISOLATE);
++        ret = sr_delete_item(st->sess, xpath_del[i], /* SR_EDIT_ISOLATE */ 0);
++        assert_int_equal(ret, SR_ERR_OK);
++    }
++
++    for (i = 0; xpath_set[i]; i++) {
++        ret = sr_set_item_str(st->sess, xpath_set[i], xpath_set_vals[i], NULL, 0);
+         assert_int_equal(ret, SR_ERR_OK);
+     }
++
+     ret = sr_apply_changes(st->sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
+ 
++    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state", 0, 0, 0, &data);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
++    assert_int_equal(ret, 0);
++
++    str2 = "<interfaces-state xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\">\n"
++"  <interface>\n"
++"    <name>eth1</name>\n"
++"    <type xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type>\n"
++"    <oper-status>down</oper-status>\n"
++"  </interface>\n"
++"</interfaces-state>\n";
++
++    assert_string_equal(str1, str2);
++    free(str1);
++
++    sr_release_data(data);
++
++
+ }
+ 
+ 
+@@ -3500,6 +3527,7 @@ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
++        cmocka_unit_test_teardown(test_oper_set_del_new, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),

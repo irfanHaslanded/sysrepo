@@ -52,3 +52,4 @@
 0052-enable-atomic-readers-list.patch
 0053-subscription-memory-check-for-validity.patch
 0054-Revert-edit-diff-UPDATE-forbid-invalid-leaf-list-pre.patch
+0055-bugfix-edit_diff-add-followed-by-del.patch
