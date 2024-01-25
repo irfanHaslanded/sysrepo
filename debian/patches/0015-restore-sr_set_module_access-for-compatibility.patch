@@ -1,0 +1,44 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Tue, 28 Feb 2023 13:15:30 +0000
+Subject: restore sr_set_module_access for compatibility
+
+---
+ src/sysrepo.c | 12 ++++++++++++
+ src/sysrepo.h |  4 ++++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 6acab1b..e7107a2 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -7237,3 +7237,15 @@ sr_session_get_event_nc_id(sr_session_ctx_t *session)
+     return nc_id ? *nc_id : 0;
+ }
+ 
++API int
++sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *owner, const char *group,
++        mode_t perm)
++{
++    int i, ret;
++    for (i = 0; i < SR_MOD_DS_PLUGIN_COUNT; ++i) {
++        if ((ret = sr_set_module_ds_access(conn, module_name, i, owner, group, perm))) {
++            return ret;
++        }
++    }
++    return ret;
++}
+diff --git a/src/sysrepo.h b/src/sysrepo.h
+index 76fc622..fc1f916 100644
+--- a/src/sysrepo.h
++++ b/src/sysrepo.h
+@@ -623,6 +623,10 @@ int sr_get_module_replay_support(sr_conn_ctx_t *conn, const char *module_name, s
+ int sr_set_module_ds_access(sr_conn_ctx_t *conn, const char *module_name, int mod_ds, const char *owner,
+         const char *group, mode_t perm);
+ 
++/* Same as above but for compatibility */
++int sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *owner,
++        const char *group, mode_t perm);
++
+ /**
+  * @brief Learn about module permissions.
+  *
