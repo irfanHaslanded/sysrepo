@@ -1,1 +1,2 @@
 0001-Enable-tests-in-package-build.patch
+0002-Don-t-set-group-id-if-SR_SHM_PREFIX_ENV-is-set.patch

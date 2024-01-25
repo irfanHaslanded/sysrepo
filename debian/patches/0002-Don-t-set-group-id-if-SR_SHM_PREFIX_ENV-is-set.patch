@@ -1,0 +1,208 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Sat, 10 Dec 2022 03:55:12 +0000
+Subject: Don't set group id if SR_SHM_PREFIX_ENV is set
+
+Fix the use of sysrepo in unit test environments when SYSREPO_GROUP is
+set by detecting when the shared memory prefix is set to be different
+from the default (via environment variable) and not attempting to
+change the group of data files in this case.
+---
+ src/common.c              | 35 +++++++++++++++++++++++++++++------
+ src/plugins/common_json.c | 36 +++++++++++++++++++++++++++++++-----
+ 2 files changed, 60 insertions(+), 11 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index 687b6ff..60eb5a1 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -56,6 +56,8 @@
+ #include "shm_sub.h"
+ #include "sysrepo.h"
+ 
++static int sr_is_priviliged(void);
++
+ /**
+  * @brief Internal datastore plugin array.
+  */
+@@ -854,7 +856,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
+     }
+ 
+     /* update group */
+-    if (strlen(SR_GROUP)) {
++    if (sr_is_priviliged() && strlen(SR_GROUP)) {
+         if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
+             goto cleanup;
+         }
+@@ -3505,7 +3507,7 @@ sr_open(const char *path, int flags, mode_t mode)
+         }
+ 
+         /* set correct group if needed */
+-        if (strlen(SR_GROUP)) {
++        if (sr_is_priviliged() && strlen(SR_GROUP)) {
+             /* get GID */
+             if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
+                 sr_errinfo_free(&err_info);
+@@ -3532,13 +3534,16 @@ sr_mkpath(char *path, mode_t mode)
+     int r;
+     gid_t gid;
+ 
+-    assert(path[0] == '/');
++    if (sr_is_priviliged()) {
++        /* Test environments may use relative paths */
++        assert(path[0] == '/');
++    }
+ 
+     /* apply umask on mode */
+     mode &= ~SR_UMASK;
+ 
+     /* get GID of the group */
+-    if (strlen(SR_GROUP) && (err_info = sr_get_gid(SR_GROUP, &gid))) {
++    if (sr_is_priviliged() && strlen(SR_GROUP) && (err_info = sr_get_gid(SR_GROUP, &gid))) {
+         goto cleanup;
+     }
+ 
+@@ -3556,7 +3561,8 @@ sr_mkpath(char *path, mode_t mode)
+                 SR_ERRINFO_SYSERRNO(&err_info, "chmod");
+                 goto cleanup;
+             }
+-            if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
++
++            if (sr_is_priviliged() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+                 SR_ERRINFO_SYSERRNO(&err_info, "chown");
+                 goto cleanup;
+             }
+@@ -3576,7 +3582,7 @@ sr_mkpath(char *path, mode_t mode)
+             SR_ERRINFO_SYSERRNO(&err_info, "chmod");
+             goto cleanup;
+         }
+-        if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
++        if (sr_is_priviliged() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+             SR_ERRINFO_SYSERRNO(&err_info, "chown");
+             goto cleanup;
+         }
+@@ -5674,3 +5680,20 @@ sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name)
+ cleanup:
+     return err_info;
+ }
++
++/**
++ * @brief Checks whether the current process has privileged access to default shared memory locations.
++ * The function returns 1 if the process has privileged access, or 0 if it does not.
++ * Privileged access is assumed to be absent when the SR_SHM_PREFIX_ENV is set.
++ * This function caches the result of the environment variable check to improve performance.
++ * @return 1 if the process has privileged access to default shared memory, 0 otherwise.
++ * */
++static int sr_is_priviliged(void)
++{
++    static int is_priviliged  = -1;
++
++    if (is_priviliged < 0) {
++        is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
++    }
++    return is_priviliged;
++}
+diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
+index 3468884..71fb66e 100644
+--- a/src/plugins/common_json.c
++++ b/src/plugins/common_json.c
+@@ -38,6 +38,8 @@
+ #include "config.h"
+ #include "sysrepo.h"
+ 
++static int srlyb_is_privileged(void);
++
+ sr_error_info_t *
+ srpjson_writev(const char *plg_name, int fd, struct iovec *iov, int iovcnt)
+ {
+@@ -127,6 +129,12 @@ sr_error_info_t *
+ srpjson_shm_prefix(const char *plg_name, const char **prefix)
+ {
+     sr_error_info_t *err_info = NULL;
++    static char * srlyb_shm_prefix_cached = NULL;
++
++    if (srlyb_shm_prefix_cached) {
++        *prefix = srlyb_shm_prefix_cached;
++        return err_info;
++    }
+ 
+     *prefix = getenv(SR_SHM_PREFIX_ENV);
+     if (*prefix == NULL) {
+@@ -137,6 +145,7 @@ srpjson_shm_prefix(const char *plg_name, const char **prefix)
+         return err_info;
+     }
+ 
++    srlyb_shm_prefix_cached = *prefix;
+     return NULL;
+ }
+ 
+@@ -220,6 +229,9 @@ srpjson_open(const char *plg_name, const char *path, int flags, mode_t mode)
+             return -1;
+         }
+ 
++        if (!srlyb_is_privileged()) {
++            return fd;
++        }
+         /* set correct permissions if not already */
+         if (((st.st_mode & 00777) != mode) && (fchmod(fd, mode) == -1)) {
+             close(fd);
+@@ -447,7 +459,7 @@ srpjson_chmodown(const char *plg_name, const char *path, const char *owner, cons
+     }
+ 
+     /* we are going to change the group */
+-    if (group && (err_info = srpjson_get_grp(plg_name, &gid, (char **)&group))) {
++    if (srlyb_is_privileged() && group && (err_info = srpjson_get_grp(plg_name, &gid, (char **)&group))) {
+         return err_info;
+     }
+ 
+@@ -528,13 +540,16 @@ srpjson_mkpath(const char *plg_name, char *path, mode_t mode)
+     const char *group = SR_GROUP;
+     gid_t gid;
+ 
+-    assert(path[0] == '/');
++    if (srlyb_is_privileged()) {
++        /* Test environments may use relative paths */
++        assert(path[0] == '/');
++    }
+ 
+     /* apply umask on mode */
+     mode &= ~SR_UMASK;
+ 
+     /* get GID of the group */
+-    if (strlen(SR_GROUP) && (err_info = srpjson_get_grp(plg_name, &gid, (char **)&group))) {
++    if (srlyb_is_privileged() && strlen(SR_GROUP) && (err_info = srpjson_get_grp(plg_name, &gid, (char **)&group))) {
+         goto cleanup;
+     }
+ 
+@@ -554,7 +569,7 @@ srpjson_mkpath(const char *plg_name, char *path, mode_t mode)
+                         path, strerror(errno));
+                 goto cleanup;
+             }
+-            if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
++            if (srlyb_is_privileged() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+                 srplg_log_errinfo(&err_info, plg_name, NULL, SR_ERR_SYS, "Changing group of directory \"%s\" failed (%s).",
+                         path, strerror(errno));
+                 goto cleanup;
+@@ -578,7 +593,7 @@ srpjson_mkpath(const char *plg_name, char *path, mode_t mode)
+                     path, strerror(errno));
+             goto cleanup;
+         }
+-        if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
++        if (srlyb_is_privileged() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+             srplg_log_errinfo(&err_info, plg_name, NULL, SR_ERR_SYS, "Changing group of directory \"%s\" failed (%s).",
+                     path, strerror(errno));
+             goto cleanup;
+@@ -766,3 +781,14 @@ srpjson_module_has_data(const struct lys_module *ly_mod, int state_data)
+ 
+     return 0;
+ }
++
++static int srlyb_is_privileged(void)
++{
++    static int is_priviliged  = -1;
++
++    if (is_priviliged < 0) {
++        is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
++    }
++    return is_priviliged;
++}
++
