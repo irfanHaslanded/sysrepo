@@ -7,3 +7,4 @@
 0007-relax-datastore-specification-for-sysrepocfg.patch
 0008-Increase-rwlock-reader-limit-to-20.patch
 0009-Improve-test-log-debugs-and-readability.patch
+0010-sysrepo-log-on-connection-session-destroy.patch
