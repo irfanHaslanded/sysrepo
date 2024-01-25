@@ -1,0 +1,203 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Fri, 3 Nov 2023 19:06:19 +0000
+Subject: discard instead of delete for oper only lists
+
+ it's not possible to combine the purge operation with merge for lists.
+ for config data, using isolate options works.
+
+ For config false nodes, sr_delete_item must be used.
+
+ Making this change within sysrepo instead of having applications to use
+ different api to delete should simplify usage.
+
+Closes: ENG-5817
+
+Fix delete of oper leaf-list entry with predicate
+
+In the operational datastore, leaf-list entries must be discarded and
+not deleted. This is to allow combining with other operations
+subsequently in the same edit.
+
+Closes: ENG-6050
+---
+ src/sysrepo.c          | 34 ++++++++++++++++++++++++--
+ tests/test_oper_push.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 94 insertions(+), 6 deletions(-)
+
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index e5700f4..404eecc 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -33,6 +33,7 @@
+ #include <sys/types.h>
+ #include <time.h>
+ #include <unistd.h>
++#include <ctype.h>
+ 
+ #include <libyang/hash_table.h>
+ #include <libyang/libyang.h>
+@@ -3383,6 +3384,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+     const char *operation;
+     const struct lysc_node *snode;
+     int ly_log_opts;
++    struct lyd_node *node = NULL;
++    int path_len = 0;
+ 
+     sr_edit_options_t opts = in_opts;
+ 
+@@ -3407,11 +3410,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+         }
+     }
+ 
++    snode = lys_find_path(session->conn->ly_ctx, NULL, path, 0);
++    path_len = strlen(path);
++
++    if (SR_DS_OPERATIONAL == session->ds && snode && (snode->flags & LYS_CONFIG_R) && snode->nodetype == LYS_LEAFLIST) {
++        if (path[path_len - 1] == ']' && strcmp((path + path_len) - strlen(snode->name), snode->name)) {
++            /* look for non-positional predicate */
++            if (!isdigit(path[path_len - 2])) {
++                goto discard_items;
++            }
++        }
++    }
++
+     /* turn off logging */
+     ly_log_opts = ly_log_options(0);
+-    if ((path[strlen(path) - 1] != ']') && (snode = lys_find_path(session->conn->ly_ctx, NULL, path, 0)) &&
++    if ((path[path_len - 1] != ']') && snode &&
+             (snode->nodetype & (LYS_LEAFLIST | LYS_LIST)) &&
+-            !strcmp((path + strlen(path)) - strlen(snode->name), snode->name)) {
++            !strcmp((path + path_len) - strlen(snode->name), snode->name)) {
++
++        if (SR_DS_OPERATIONAL == session->ds && snode && snode->flags & LYS_CONFIG_R) {
++            /* delete entire list */
++            goto discard_items;
++        }
++
+         operation = "purge";
+     } else if (opts & SR_EDIT_STRICT) {
+         operation = "delete";
+@@ -3423,6 +3444,15 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+     /* add the operation into edit */
+     err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
+             NULL, opts & SR_EDIT_ISOLATE);
++    goto cleanup;
++
++discard_items:
++    /* config false node discard instead of delete in order to allow combining other operations */
++    if (lyd_new_opaq(NULL, session->conn->ly_ctx, "discard-items", path, "sysrepo", "sysrepo", &node)) {
++        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
++        goto cleanup;
++    }
++    lyd_insert_sibling(session->dt[session->ds].edit->tree, node, &session->dt[session->ds].edit->tree);
+ 
+ cleanup:
+     if (session->dt[session->ds].edit && !session->dt[session->ds].edit->tree) {
+diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
+index 06e5050..e34f588 100644
+--- a/tests/test_oper_push.c
++++ b/tests/test_oper_push.c
+@@ -1187,6 +1187,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+         ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
+         assert_int_equal(ret, SR_ERR_NOT_FOUND);
+ 
++        sr_free_change_iter(iter);
++        break;
++    case 14:
++    case 15:
++        if (ATOMIC_LOAD_RELAXED(st->cb_called) % 2 == 0) {
++            assert_int_equal(event, SR_EV_CHANGE);
++        } else {
++            assert_int_equal(event, SR_EV_DONE);
++        }
++
++        /* get changes iter */
++        ret = sr_get_changes_iter(session, "/mixed-config:*//.", &iter);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* 1st change */
++        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        assert_int_equal(op, SR_OP_DELETED);
++        assert_string_equal(node->schema->name, "ll");
++
++        /* no more changes */
++        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
++        assert_int_equal(ret, SR_ERR_NOT_FOUND);
++
+         sr_free_change_iter(iter);
+         break;
+     default:
+@@ -1403,12 +1428,17 @@ test_state_list(void **state)
+     assert_string_equal(str1, str2);
+     free(str1);
+ 
+-    /* invalid predicate type */
+-    ret = sr_delete_item(st->sess, "/mixed-config:test-state/ll[.='val3']", 0);
++    /* implicitly convert delete to discard */
++    ret = sr_delete_item(st->sess, "/mixed-config:test-state/ll[.='val1']", 0);
+     assert_int_equal(ret, SR_ERR_OK);
+-    ret = sr_discard_changes(st->sess);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_get_data(st->sess, "/mixed-config:test-state/ll[.='val1']", 0, 0, SR_OPER_WITH_ORIGIN, &data);
+     assert_int_equal(ret, SR_ERR_OK);
+ 
++    assert_null(data);
++
+     sr_unsubscribe(subscr);
+ }
+ 
+@@ -3441,6 +3471,15 @@ test_oper_set_del_leaflist(void **state)
+     ret = sr_apply_changes(st->sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
+ 
++    /* delete followed by set of rw data is unsupported, will need to use discard */
++    ret = sr_delete_item(st->sess, xp_attr, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(st->sess, xp_attr, "1", NULL, 0);
++    assert_int_equal(ret, SR_ERR_UNSUPPORTED);
++
++    sr_discard_changes(st->sess);
++
+     ret = sr_get_data(st->sess, xp_base, 0, 0, 0, &data);
+     assert_int_equal(ret, SR_ERR_OK);
+     sr_release_data(data);
+@@ -3449,6 +3488,26 @@ test_oper_set_del_leaflist(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     ret = sr_apply_changes(st->sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
++
++    /* test for del and then set of config false list */
++    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces-state/interface", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth1']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    /* cleanup */
++    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces-state/interface", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ /* TEST */
+@@ -3527,7 +3586,6 @@ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
+-        cmocka_unit_test_teardown(test_oper_set_del_new, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
+         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
