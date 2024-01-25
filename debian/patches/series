@@ -35,3 +35,4 @@
 0035-cached-module-read-locks-info-for-srmon.patch
 0036-include-leaf-list-value-as-XPath-predicate.patch
 0037-fix-skip-predicate.patch
+0038-Allow-runtime-configurable-shm-dir.patch
