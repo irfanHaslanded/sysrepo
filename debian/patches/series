@@ -3,3 +3,4 @@
 0003-Accept-empty-xpath-as-NULL.patch
 0004-Allow-sysrepocfg-to-import-oper-data.patch
 0005-sysrepocfg-change-default-export-format-to-JSON.patch
+0006-sysrepocfg-add-s-no-subs-export-argument.patch
