@@ -4,3 +4,4 @@
 0004-Allow-sysrepocfg-to-import-oper-data.patch
 0005-sysrepocfg-change-default-export-format-to-JSON.patch
 0006-sysrepocfg-add-s-no-subs-export-argument.patch
+0007-relax-datastore-specification-for-sysrepocfg.patch
