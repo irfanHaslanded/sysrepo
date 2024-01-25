@@ -1,0 +1,206 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 26 Jul 2023 11:03:58 +0000
+Subject: Enable per module rwlock debugging Allow tracking context lock
+
+cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
+---
+ src/common.c                 |  7 +++++--
+ src/common.h                 |  5 +++++
+ src/executables/sysrepoctl.c | 40 +++++++++++++++++++++++++++++++++++++++-
+ src/sysrepo.c                | 32 ++++++++++++++++++++++++++++++++
+ src/sysrepo.h                | 17 +++++++++++++++++
+ 5 files changed, 98 insertions(+), 3 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index 1acf7a8..03e63e2 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -87,7 +87,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
+     char buf[512] = "";
+     cursor = snprintf(buf, sizeof(buf), "%s CID wr %" PRIu32 " upgr %" PRIu32 " rd", msg, rwlock->writer, rwlock->upgr);
+     for (i = 0; SR_IS_READER_VALID(rwlock, i); i++) {
+-        cursor += snprintf(buf + cursor, sizeof(buf) - cursor, " %" PRIu32 " [%" PRIu32 "]", rwlock->readers[i], rwlock->read_count[i]);
++        cursor += snprintf(buf + cursor, sizeof(buf) - cursor, " %" PRIu32, rwlock->readers[i]);
++        if (rwlock->read_count[i] > 1) {
++            cursor += snprintf(buf + cursor, sizeof(buf) - cursor, "[%" PRIu32 "]", rwlock->read_count[i]);
++        }
+     }
+ 
+     _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
+@@ -5815,7 +5818,7 @@ sr_is_priviliged(void)
+ }
+ 
+ void
+-sr_rwlock_debug_set(sr_rwlock_t *rwlock, int enable)
++sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable)
+ {
+     if (enable) {
+         /* Set the MSB to enable debug logs */
+diff --git a/src/common.h b/src/common.h
+index 5b33dac..e0d64a1 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -1411,4 +1411,9 @@ typedef enum sr_val_ly2sr_opts_e {
+  */
+ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
+ 
++/**
++ * @brief Enable/Disable rwlock debug logs
++ * */
++void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
++
+ #endif /* _COMMON_H */
+diff --git a/src/executables/sysrepoctl.c b/src/executables/sysrepoctl.c
+index faa26f1..15a3b74 100644
+--- a/src/executables/sysrepoctl.c
++++ b/src/executables/sysrepoctl.c
+@@ -136,6 +136,16 @@ help_print(void)
+             "  -v, --verbosity <level>\n"
+             "                       Change verbosity to a level (none, error, warning, info, debug) or\n"
+             "                       number (0, 1, 2, 3, 4). Accepted by all op.\n"
++            "  -T, --trace-rwlock <module>\n"
++            "                       Trace rwlock events for specified module\n"
++            "                       sr_context_lock if no module"
++            "  -M, --mask <mask>\n"
++            "                       Trace rwlock mask data running 0x1, operational 0x2\n"
++            "                       change_sub running 0x4, change_sub operational 0x8\n"
++            "                       oper get (pull data provider) 0x10\n"
++            "                       oper poll subscription 0x20\n"
++            "                       notif subscription 0x40\n"
++            "                       ext rpc subscription 0x80\n"
+             "\n");
+ }
+ 
+@@ -632,6 +642,9 @@ main(int argc, char **argv)
+     const char *file_path = NULL, *search_dirs = NULL, **module_names = NULL, *data_path = NULL;
+     char *ptr;
+     int r, rc = EXIT_FAILURE, opt, operation = 0, force = 0;
++
++    char *module_name = NULL;
++    uint32_t mask = 0;
+     struct option options[] = {
+         {"help",            no_argument,       NULL, 'h'},
+         {"version",         no_argument,       NULL, 'V'},
+@@ -654,6 +667,8 @@ main(int argc, char **argv)
+         {"init-data",       required_argument, NULL, 'I'},
+         {"force",           no_argument,       NULL, 'f'},
+         {"verbosity",       required_argument, NULL, 'v'},
++        {"track-rwlock",    required_argument, NULL, 'T'},
++        {"rwlock-mask",     required_argument, NULL, 'M'},
+         {NULL,              0,                 NULL, 0},
+     };
+ 
+@@ -664,7 +679,7 @@ main(int argc, char **argv)
+ 
+     /* process options */
+     opterr = 0;
+-    while ((opt = getopt_long(argc, argv, "hVli:u:c:U:LP:s:e:d:r:o:g:p:D:m:I:fv:", options, NULL)) != -1) {
++    while ((opt = getopt_long(argc, argv, "hVli:u:c:U:LP:s:e:d:r:o:g:p:D:m:I:fv:T:M:", options, NULL)) != -1) {
+         switch (opt) {
+         case 'h':
+             /* help */
+@@ -893,6 +908,23 @@ main(int argc, char **argv)
+                 goto cleanup;
+             }
+             break;
++        case 'T':
++            if (operation) {
++                error_print(0, "Operation already specified");
++                goto cleanup;
++            }
++            operation = 't';
++            module_name = optarg;
++            printf("rwlock track for module %s ", optarg);
++            break;
++        case 'M':
++            if (mask) {
++                error_print(0, "mask already specified");
++                goto cleanup;
++            }
++            mask = atoi(optarg);
++            printf("mask %X\n", mask);
++            break;
+         default:
+             error_print(0, "Invalid option or missing argument: -%c", optopt);
+             goto cleanup;
+@@ -972,6 +1004,12 @@ main(int argc, char **argv)
+             goto cleanup;
+         }
+         break;
++    case 't':
++        if (SR_ERR_OK != (r = sr_module_rwlock_debug(conn, module_name, mask))) {
++            error_print(r, "Failed to set rwlock for %s tracing to %X", module_name, mask);
++            goto cleanup;
++        }
++        break;
+     case 0:
+         error_print(0, "No operation specified");
+         goto cleanup;
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 2d7c299..e0724fa 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -7265,3 +7265,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+     }
+     return ret;
+ }
++
++API int
++sr_module_rwlock_debug(sr_conn_ctx_t *conn, const char *module_name, uint32_t mask)
++{
++#define CHECK_NEXT_BIT (mask & (1u << bit++))
++    sr_main_shm_t *main_shm = SR_CONN_MAIN_SHM(conn);
++    uint32_t bit = 0;
++    sr_error_info_t *err_info = NULL;
++    if (!strcmp("sr_context_lock", module_name)) {
++        sr_rwlock_debug_set(&main_shm->context_lock, mask > 0);
++        return 0;
++    }
++
++    sr_mod_t *shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), module_name);
++    SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
++
++    sr_rwlock_debug_set(&shm_mod->data_lock_info[SR_DS_RUNNING].data_lock, CHECK_NEXT_BIT);
++    sr_rwlock_debug_set(&shm_mod->data_lock_info[SR_DS_OPERATIONAL].data_lock, CHECK_NEXT_BIT);
++
++    sr_rwlock_debug_set(&shm_mod->change_sub[SR_DS_RUNNING].lock, CHECK_NEXT_BIT);
++    sr_rwlock_debug_set(&shm_mod->change_sub[SR_DS_OPERATIONAL].lock, CHECK_NEXT_BIT);
++
++    sr_rwlock_debug_set(&shm_mod->oper_get_lock, CHECK_NEXT_BIT);
++    sr_rwlock_debug_set(&shm_mod->oper_poll_lock, CHECK_NEXT_BIT);
++    sr_rwlock_debug_set(&shm_mod->notif_lock, CHECK_NEXT_BIT);
++    sr_rwlock_debug_set(&shm_mod->rpc_ext_lock, CHECK_NEXT_BIT);
++
++#undef CHECK_NEXT_BIT
++cleanup:
++    return sr_api_ret(NULL, err_info);
++}
++
+diff --git a/src/sysrepo.h b/src/sysrepo.h
+index fc1f916..49c5e2f 100644
+--- a/src/sysrepo.h
++++ b/src/sysrepo.h
+@@ -1862,6 +1862,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
+ uint64_t sr_session_get_event_nc_id(sr_session_ctx_t *session);
+ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
+ 
++/**
++ * @brief Enable tracing for module_name with mask
++ * @param[in] module_name
++ * @param[in] mask, combination of bitmask
++ *
++ * mask options:
++ * data running       0x1
++ * data operational   0x2
++ * change_sub running 0x4
++ * change_sub oper    0x8
++ * oper_get subscr   0x10
++ * oper_poll subscr   0x20
++ * notif 0x40
++ * rpc_ext 0x80
++ * */
++int sr_module_rwlock_debug(sr_conn_ctx_t *conn, const char *module_name, uint32_t mask);
++
+ #ifdef __cplusplus
+ }
+ #endif
