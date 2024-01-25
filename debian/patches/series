@@ -32,3 +32,4 @@
 0032-Add-unit-test-for-ENG-2075.patch
 0033-add-tests-for-module-change-subscription-recovery.patch
 0034-descriptive-lock-debugs.patch
+0035-cached-module-read-locks-info-for-srmon.patch
