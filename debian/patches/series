@@ -26,3 +26,4 @@
 0026-Log-error-when-subscr-thread-exits.patch
 0027-allow-disabling-connection-liveliness-check.patch
 0028-remove-noisy-log-of-sr_get_item-no-data.patch
+0029-Add-change_sub-with-minimal-locks.patch
