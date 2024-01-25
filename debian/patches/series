@@ -38,3 +38,4 @@
 0038-Allow-runtime-configurable-shm-dir.patch
 0039-TESTS-sleep-and-retry-with-bigger-step.patch
 0040-fix-test-failures-and-improve-test-infra.patch
+0041-TMPFIX-disable-urge-lock.patch
