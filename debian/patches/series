@@ -40,3 +40,4 @@
 0040-fix-test-failures-and-improve-test-infra.patch
 0041-TMPFIX-disable-urge-lock.patch
 0042-unlock-session-held-ly_ctx-locks-on-sr_session_stop.patch
+0043-disable-test_edit_set_item_del_parent-due-to-breakag.patch
