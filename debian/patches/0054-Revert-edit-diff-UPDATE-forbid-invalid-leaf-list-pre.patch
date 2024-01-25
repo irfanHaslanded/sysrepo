@@ -1,0 +1,67 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Mon, 16 Oct 2023 19:46:51 +0000
+Subject: Revert "edit diff UPDATE forbid invalid leaf-list predicates"
+
+This reverts commit 7fc371580d0d89dbf148930851ba45f4ebd16f74.
+
+We may need to solve this in another way later on, but for now reverting
+the upstream change that breaks tests.
+
+Closes: ENG-5693
+---
+ src/edit_diff.c        | 27 ++++++++++-----------------
+ tests/test_oper_push.c |  2 +-
+ 2 files changed, 11 insertions(+), 18 deletions(-)
+
+diff --git a/src/edit_diff.c b/src/edit_diff.c
+index c446040..6b8c405 100644
+--- a/src/edit_diff.c
++++ b/src/edit_diff.c
+@@ -3435,24 +3435,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
+             /* find dup-inst list with this position, if exists */
+             inst_pos = 1;
+             *match = NULL;
+-            if (pos) {
+-                LYD_LIST_FOR_INST(siblings, schema, iter) {
+-                    m = lyd_find_meta(iter->meta, NULL, "sysrepo:dup-inst-list-position");
+-                    assert(m);
+-                    cur_pos = strtoul(lyd_get_meta_value(m), NULL, 10);
+-                    if (cur_pos && (cur_pos == pos)) {
+-                        /* instance exists */
+-                        *match = iter;
+-                        break;
+-                    }
+-
+-                    ++inst_pos;
++            LYD_LIST_FOR_INST(siblings, schema, iter) {
++                m = lyd_find_meta(iter->meta, NULL, "sysrepo:dup-inst-list-position");
++                assert(m);
++                cur_pos = strtoul(lyd_get_meta_value(m), NULL, 10);
++                if (cur_pos && (cur_pos == pos)) {
++                    /* instance exists */
++                    *match = iter;
++                    break;
+                 }
+-            } else if (pred != pred_end) {
+-                sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Invalid predicate \"%.*s\" of duplicate-instance %s \"%s\", "
+-                        "expected a positional predicate.", (int)(pred_end - pred), pred,
+-                        lys_nodetype2str(schema->nodetype), schema->name);
+-                goto cleanup;
++
++                ++inst_pos;
+             }
+ 
+             if (*match) {
+diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
+index 4b9bc11..6dff3b0 100644
+--- a/tests/test_oper_push.c
++++ b/tests/test_oper_push.c
+@@ -1405,7 +1405,7 @@ test_state_list(void **state)
+ 
+     /* invalid predicate type */
+     ret = sr_delete_item(st->sess, "/mixed-config:test-state/ll[.='val3']", 0);
+-    assert_int_equal(ret, SR_ERR_INVAL_ARG);
++    assert_int_equal(ret, SR_ERR_OK);
+     ret = sr_discard_changes(st->sess);
+     assert_int_equal(ret, SR_ERR_OK);
+ 

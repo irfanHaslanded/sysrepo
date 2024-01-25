@@ -51,3 +51,4 @@
 0051-ignore-isolate-for-set-items-in-oper.patch
 0052-enable-atomic-readers-list.patch
 0053-subscription-memory-check-for-validity.patch
+0054-Revert-edit-diff-UPDATE-forbid-invalid-leaf-list-pre.patch
