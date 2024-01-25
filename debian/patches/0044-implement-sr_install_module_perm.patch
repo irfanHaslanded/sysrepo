@@ -1,0 +1,235 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Tue, 15 Aug 2023 10:45:23 +0000
+Subject: implement sr_install_module_perm
+
+---
+ src/lyd_mods.c       |  7 ------
+ src/sysrepo.c        | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+ src/sysrepo.h        | 16 ++++++++++++
+ tests/test_modules.c | 40 ++++++++++++++++++++++++++++++
+ 4 files changed, 125 insertions(+), 8 deletions(-)
+
+diff --git a/src/lyd_mods.c b/src/lyd_mods.c
+index a1b4f43..86e8933 100644
+--- a/src/lyd_mods.c
++++ b/src/lyd_mods.c
+@@ -1026,7 +1026,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+     struct lyd_node *sr_mods = NULL;
+     sr_int_install_mod_t *new_mods = NULL;
+     uint32_t i, new_mod_count = 0;
+-    const char *mod_origin;
+ 
+ #define SR_INSTALL_INT_MOD(ctx, yang_mod, dep, new_mods, new_mod_count) \
+     if (lys_parse_mem(ctx, yang_mod, LYS_IN_YANG, &ly_mod)) { \
+@@ -1037,7 +1036,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+             strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &(new_mods), &(new_mod_count)))) { \
+         goto cleanup; \
+     } \
+-    SR_LOG_INF("Sysrepo internal%s module \"%s\" was installed.", dep ? " dependency" : "", ly_mod->name)
+ 
+     ly_mod = ly_ctx_get_module_implemented(ly_ctx, "sysrepo");
+     SR_CHECK_INT_GOTO(!ly_mod, err_info, cleanup);
+@@ -1060,9 +1058,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+                 strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &new_mods, &new_mod_count))) {
+             goto cleanup;
+         }
+-
+-        mod_origin = (i < ly_ctx_internal_modules_count(ly_ctx)) ? "Libyang" : "Sysrepo";
+-        SR_LOG_INF("%s internal module \"%s\" was installed.", mod_origin, ly_mod->name);
+     }
+ 
+     /* install ietf-yang-library */
+@@ -1209,11 +1204,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
+                 (*new_mods)[i].owner, (*new_mods)[i].group, (*new_mods)[i].perm, new_mods, new_mod_count))) {
+             goto cleanup;
+         }
+-        SR_LOG_INF("Module \"%s\" was installed.", (*new_mods)[i].ly_mod->name);
+     }
+     for ( ; i < *new_mod_count; ++i) {
+         /* all dependencies already installed */
+-        SR_LOG_INF("Dependency module \"%s\" was installed.", (*new_mods)[i].ly_mod->name);
+     }
+ 
+     /* delete all dependencies */
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 1411176..e63c1b6 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -57,6 +57,9 @@
+ static sr_error_info_t *sr_session_notif_buf_stop(sr_session_ctx_t *session);
+ static sr_error_info_t *_sr_session_stop(sr_session_ctx_t *session);
+ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
++static sr_error_info_t *
++_sr_set_module_ds_access(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, sr_mod_t *shm_mod, int mod_ds,
++        const char *owner, const char *group, mode_t perm);
+ 
+ /**
+  * @brief Allocate a new connection structure.
+@@ -1323,6 +1326,32 @@ sr_install_modules_check_features(const struct lys_module *ly_mod, const char **
+     return NULL;
+ }
+ 
++static sr_error_info_t *
++sr_update_access(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_mod)
++{
++    sr_error_info_t *err_info = NULL;
++
++    if (!new_mod->perm) {
++        /* use default permissions */
++        new_mod->perm = sr_module_default_mode(new_mod->ly_mod);
++    } else {
++        if (new_mod->perm & SR_UMASK) {
++            SR_LOG_WRN("Ignoring permission bits %03o forbidden by Sysrepo umask.", new_mod->perm & SR_UMASK);
++            new_mod->perm &= ~SR_UMASK;
++        }
++
++        /* ignore execute bits */
++        new_mod->perm &= 00666;
++    }
++
++    if (!new_mod->group && strlen(SR_GROUP)) {
++        /* use default group */
++        new_mod->group = SR_GROUP;
++    }
++    sr_set_module_access(conn, new_mod->ly_mod->name, new_mod->owner, new_mod->group, new_mod->perm);
++    return err_info;
++}
++
+ /**
+  * @brief Prepare members of a new module to be installed.
+  *
+@@ -1357,8 +1386,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
+             /* module installed with different features */
+             goto cleanup;
+         }
+-        SR_LOG_WRN("Module \"%s\" is already in sysrepo.", mod_name);
+         *installed = 1;
++        if (!strcmp(mod_name, "sysrepo")) {
++            goto cleanup;
++        }
++        /* check and install permissions */
++        new_mod->ly_mod = ly_mod;
++        sr_update_access(conn, new_mod);
++
+         goto cleanup;
+     }
+ 
+@@ -7339,3 +7374,36 @@ cleanup:
+     return sr_api_ret(NULL, err_info);
+ }
+ 
++API int
++sr_install_modules_perm(sr_conn_ctx_t *conn, const char **schema_paths, uint32_t new_mod_count,
++        const char *search_dirs, const char *owner, const char *group, mode_t perm)
++{
++    sr_error_info_t *err_info = NULL;
++    sr_int_install_mod_t *new_mods = NULL;
++    uint32_t i;
++    int rc = SR_ERR_OK;
++
++    SR_CHECK_ARG_APIRET(!conn || !schema_paths, NULL, err_info);
++    /* alloc */
++    new_mods = calloc(new_mod_count, sizeof *new_mods);
++    SR_CHECK_MEM_GOTO(!new_mods, err_info, cleanup);
++
++    /* fill all the items */
++    for (i = 0; i < new_mod_count; ++i) {
++        new_mods[i].schema_path = schema_paths[i];
++        new_mods[i].owner = owner;
++        new_mods[i].group = group;
++        new_mods[i].perm = perm;
++    }
++    /* install */
++    rc = _sr_install_modules(conn, search_dirs, NULL, NULL, 0, &new_mods, &new_mod_count);
++
++cleanup:
++    free(new_mods);
++    if (err_info) {
++        return sr_api_ret(NULL, err_info);
++    } else {
++        return rc;
++    }
++}
++
+diff --git a/src/sysrepo.h b/src/sysrepo.h
+index 49c5e2f..ec54bd8 100644
+--- a/src/sysrepo.h
++++ b/src/sysrepo.h
+@@ -538,6 +538,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
+ int sr_install_modules2(sr_conn_ctx_t *conn, const sr_install_mod_t *modules, uint32_t module_count,
+         const char *search_dirs, const char *data, const char *data_path, LYD_FORMAT format);
+ 
++/**
++ * @brief Convenience function to install yang modules with owner, group and permissions
++ *
++ * @param[in] conn Connection context.
++ * @param[in] schema_paths Array of schema file paths.
++ * @param[in] new_mod_count Number of new modules to install.
++ * @param[in] search_dirs Search directories.
++ * @param[in] owner Owner of the module files.
++ * @param[in] group Group of the module files.
++ * @param[in] perm Permissions for the module files.
++ *
++ * @return Error code (SR_ERR_OK on success).
++ */
++int sr_install_modules_perm(sr_conn_ctx_t *conn, const char **schema_paths, uint32_t module_count, const char *search_dirs,
++        const char *owner, const char *group, mode_t perm);
++
+ /**
+  * @brief Remove an installed module from sysrepo.
+  *
+diff --git a/tests/test_modules.c b/tests/test_modules.c
+index 331bd99..271338d 100644
+--- a/tests/test_modules.c
++++ b/tests/test_modules.c
+@@ -1560,10 +1560,50 @@ test_running_disabled(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
++static void
++test_install_modules_perm(void **state)
++{
++    struct state *st = (struct state *)*state;
++    int ret;
++    const char *paths[] = {
++        TESTS_SRC_DIR "/../modules/sysrepo-plugind.yang",
++        TESTS_SRC_DIR "/../modules/sysrepo.yang",
++        TESTS_SRC_DIR "/files/test.yang",
++        NULL
++    };
++    char *owner = NULL, *group = NULL;
++    mode_t perm;
++    mode_t set_perms[] = {0604, 0600, 0660, 0644, 0644};
++    int i;
++
++    for (i = 0; i < 5; i++) {
++        /* install test-module */
++        ret = sr_install_modules_perm(st->conn, paths, 3, TESTS_SRC_DIR "/files", NULL, NULL, set_perms[i]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        owner = NULL;
++        group = NULL;
++        ret = sr_get_module_ds_access(st->conn, "test", SR_DS_RUNNING, &owner, &group, &perm);
++        assert_int_equal(ret, SR_ERR_OK);
++        assert_int_equal(perm, set_perms[i]);
++        free(owner);
++        free(group);
++        ret = sr_get_module_ds_access(st->conn, "sysrepo-plugind", SR_DS_RUNNING, &owner, &group, &perm);
++        free(owner);
++        free(group);
++        assert_int_equal(ret, SR_ERR_OK);
++        assert_int_equal(perm, set_perms[i]);
++    }
++
++    ret = sr_remove_module(st->conn, "test", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++}
++
+ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
++        cmocka_unit_test_setup_teardown(test_install_modules_perm, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_install_module, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_data_deps, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_op_deps, setup_f, teardown_f),

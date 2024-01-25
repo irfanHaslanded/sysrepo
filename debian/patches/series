@@ -41,3 +41,4 @@
 0041-TMPFIX-disable-urge-lock.patch
 0042-unlock-session-held-ly_ctx-locks-on-sr_session_stop.patch
 0043-disable-test_edit_set_item_del_parent-due-to-breakag.patch
+0044-implement-sr_install_module_perm.patch
