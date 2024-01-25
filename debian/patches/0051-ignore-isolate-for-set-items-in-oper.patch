@@ -5,12 +5,12 @@ Subject: ignore isolate flag for operational datastore
 ignore child deletes after parent delete with isolate
 ignore isolate for set items in oper
 ---
- src/sysrepo.c          | 22 ++++++++++++++++++++--
+ src/sysrepo.c          | 21 +++++++++++++++++++--
  tests/test_oper_push.c | 46 ++++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 66 insertions(+), 2 deletions(-)
+ 2 files changed, 65 insertions(+), 2 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index c72affc..7182519 100644
+index 62ca51f..ace9db8 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3291,10 +3291,16 @@ sr_free_values(sr_val_t *values, size_t count)
@@ -49,7 +49,7 @@ index c72affc..7182519 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
-@@ -3371,10 +3383,16 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3370,6 +3382,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
      int ly_log_opts;
@@ -61,11 +61,6 @@ index c72affc..7182519 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
-     SR_LOG_INF("%s for %s %d", __func__, path, opts);
-+
-     if (!session->dt[session->ds].edit) {
-         /* CONTEXT LOCK */
-         if ((err_info = sr_lycc_lock(session->conn, SR_LOCK_READ, 0, __func__))) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
 index fa19f17..4b9bc11 100644
 --- a/tests/test_oper_push.c

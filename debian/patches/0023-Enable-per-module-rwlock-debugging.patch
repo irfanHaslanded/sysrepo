@@ -137,10 +137,10 @@ index faa26f1..15a3b74 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 2d7c299..e0724fa 100644
+index 1698ac8..0de807b 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7265,3 +7265,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7261,3 +7261,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }

@@ -72,10 +72,10 @@ index 6b8c405..8fdcd19 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 7be0945..e5700f4 100644
+index 5e9939e..118047e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3377,16 +3377,18 @@ cleanup:
+@@ -3376,16 +3376,18 @@ cleanup:
  }
  
  API int

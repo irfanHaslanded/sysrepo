@@ -52,7 +52,7 @@ index a1b4f43..86e8933 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 1411176..e63c1b6 100644
+index 474ecc3..f322146 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -57,6 +57,9 @@
@@ -114,7 +114,7 @@ index 1411176..e63c1b6 100644
          goto cleanup;
      }
  
-@@ -7339,3 +7374,36 @@ cleanup:
+@@ -7335,3 +7370,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  

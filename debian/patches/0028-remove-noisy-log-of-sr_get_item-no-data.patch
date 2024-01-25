@@ -94,7 +94,7 @@ index 5949775..ac0576e 100644
 +        sr_error_t err_code, const char *msg_format, ...) __attribute__ ((format (printf, 4, 5)));
  #endif
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e0724fa..3c624f0 100644
+index 0de807b..6039642 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -2715,7 +2715,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr

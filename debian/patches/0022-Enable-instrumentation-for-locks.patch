@@ -900,7 +900,7 @@ index 6ea990d..3cc0faf 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 1975ef2..2d7c299 100644
+index 9e7a91c..1698ac8 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -68,6 +68,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -1005,7 +1005,7 @@ index 1975ef2..2d7c299 100644
          goto cleanup;
      }
  
-@@ -5117,7 +5118,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5113,7 +5114,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);

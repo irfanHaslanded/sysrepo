@@ -18,7 +18,6 @@
 0018-sysrepo-add-SR_UNDERLYING_VALUE-option.patch
 0019-Fix-ncid-originator-name.patch
 0020-Enable-asserts-and-improve-tests.patch
-0021-enable-log-for-set-and-delete.patch
 0022-Enable-instrumentation-for-locks.patch
 0023-Enable-per-module-rwlock-debugging.patch
 0024-Add-type-check-of-format-str-for-printf-like-fns.patch
