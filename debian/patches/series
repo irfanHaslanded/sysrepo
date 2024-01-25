@@ -1,3 +1,4 @@
 0001-Enable-tests-in-package-build.patch
 0002-Don-t-set-group-id-if-SR_SHM_PREFIX_ENV-is-set.patch
 0003-Accept-empty-xpath-as-NULL.patch
+0004-Allow-sysrepocfg-to-import-oper-data.patch
