@@ -1,0 +1,363 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Fri, 28 Jul 2023 11:20:56 +0000
+Subject: include leaf-list value as XPath predicate
+
+Revert upstream commit 97c6fabbd6c82c8643c0286e129635231472ee59 (and
+make requisite updates to match intervening changes to the code)
+which removed the predicate from leaf-list XPaths when generating
+sr_val_t objects for return from sr_get_change_next(), purportedly
+for compatibility with older versions of sysrepo.
+
+We don't care about such compatibility and including the predicate
+makes it easier to generically deal with changes in components where
+we don't want to understand a specific schema.
+
+For example, to delete a specific element from a leaf-list, the value
+must be provided by predicate in the XPath passed to sr_delete_item(),
+otherwise the entire list is deleted. This change allows the XPath
+provided by a sr_val_t from sr_get_change_next() to be passed into
+sr_delete_item() to remove that specific element, and without the
+component needing to know that the XPath refers to a leaf-list (which
+it cannot infer from other details in the sr_val_t, hence would
+otherwise need to be aware of the schema).
+
+cherry-picked from libyang1 patch
+ 0019-sysrepo-include-leaf-list-value-as-XPath-predicate.patch
+---
+ src/sysrepo.c              |  2 +-
+ tests/test_apply_changes.c | 64 +++++++++++++++++++++++-----------------------
+ tests/test_copy_config.c   | 16 ++++++------
+ 3 files changed, 41 insertions(+), 41 deletions(-)
+
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 0d9c937..e3e3c58 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -5591,7 +5591,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
+     } else if (node->schema->nodetype == LYS_LEAFLIST) {
+         /* do not include the value predicate */
+         free(sr_val->xpath);
+-        sr_val->xpath = lyd_path(node, LYD_PATH_STD_NO_LAST_PRED, NULL, 0);
++        sr_val->xpath = lyd_path(node, LYD_PATH_STD, NULL, 0);
+         SR_CHECK_MEM_GOTO(!sr_val->xpath, err_info, cleanup);
+     }
+ 
+diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
+index f39b14c..62b741a 100644
+--- a/tests/test_apply_changes.c
++++ b/tests/test_apply_changes.c
+@@ -3626,7 +3626,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(old_val);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='1']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3638,7 +3638,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(old_val);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='2']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3650,7 +3650,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(old_val);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='3']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3674,7 +3674,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(old_val);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='4']");
+         assert_int_equal(new_val->data.uint16_val, 4);
+ 
+         sr_free_val(new_val);
+@@ -3686,11 +3686,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+         assert_int_equal(old_val->dflt, 1);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='5']");
+         assert_int_equal(old_val->data.uint16_val, 4);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='5']");
+         assert_int_equal(new_val->data.uint16_val, 5);
+ 
+         sr_free_val(old_val);
+@@ -3703,11 +3703,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+         assert_int_equal(old_val->dflt, 1);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='6']");
+         assert_int_equal(old_val->data.uint16_val, 5);
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='6']");
+         assert_int_equal(new_val->data.uint16_val, 6);
+ 
+         sr_free_val(old_val);
+@@ -3740,7 +3740,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 0);
+         assert_int_equal(new_val->data.uint16_val, 4);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='4']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3753,7 +3753,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(new_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 1);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll[.='1']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3766,7 +3766,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(new_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 3);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll[.='3']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3794,11 +3794,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(old_val);
+         assert_int_equal(old_val->dflt, 0);
+         assert_int_equal(old_val->data.uint16_val, 4);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='8']");
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 0);
+         assert_int_equal(new_val->data.uint16_val, 8);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='8']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -3812,7 +3812,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(new_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 5);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='5']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3825,7 +3825,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_null(new_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 6);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='6']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3855,7 +3855,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(old_val);
+         assert_null(new_val);
+         assert_int_equal(old_val->data.uint16_val, 4);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll[.='4']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3868,7 +3868,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+         assert_int_equal(new_val->data.uint16_val, 1);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='1']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3881,7 +3881,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+         assert_int_equal(new_val->data.uint16_val, 3);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll[.='3']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -3893,7 +3893,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(old_val);
+         assert_null(new_val);
+         assert_int_equal(old_val->data.uint16_val, 8);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='8']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -3905,11 +3905,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(old_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 4);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='5']");
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+         assert_int_equal(new_val->data.uint16_val, 5);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='5']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -3922,11 +3922,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+         assert_non_null(old_val);
+         assert_int_equal(old_val->dflt, 1);
+         assert_int_equal(old_val->data.uint16_val, 5);
+-        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(old_val->xpath, "/defaults:pcont/ll2[.='6']");
+         assert_non_null(new_val);
+         assert_int_equal(new_val->dflt, 1);
+         assert_int_equal(new_val->data.uint16_val, 6);
+-        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2");
++        assert_string_equal(new_val->xpath, "/defaults:pcont/ll2[.='6']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -5121,7 +5121,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:cont/ll2");
++        assert_string_equal(new_val->xpath, "/test:cont/ll2[.='3210']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -5258,7 +5258,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+         assert_int_equal(op, SR_OP_DELETED);
+         assert_non_null(old_val);
+         assert_null(new_val);
+-        assert_string_equal(old_val->xpath, "/test:cont/ll2");
++        assert_string_equal(old_val->xpath, "/test:cont/ll2[.='3210']");
+ 
+         sr_free_val(old_val);
+ 
+@@ -6191,7 +6191,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l1[k='k1']/ll12");
++        assert_string_equal(new_val->xpath, "/test:l1[k='k1']/ll12[.='ahoy']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -6237,7 +6237,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l1[k='k2']/ll12");
++        assert_string_equal(new_val->xpath, "/test:l1[k='k2']/ll12[.='mate']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -6330,7 +6330,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='5']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -6340,9 +6340,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+ 
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+-        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3[.='10']");
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='10']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -6353,9 +6353,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+ 
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+-        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3[.='15']");
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='15']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+diff --git a/tests/test_copy_config.c b/tests/test_copy_config.c
+index 519f5f0..fb513a2 100644
+--- a/tests/test_copy_config.c
++++ b/tests/test_copy_config.c
+@@ -1011,10 +1011,10 @@ module_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
+ 
+         assert_int_equal(op, SR_OP_MOVED);
+         assert_non_null(old_val);
+-        assert_string_equal(old_val->xpath, "/test:cont/ll2");
++        assert_string_equal(old_val->xpath, "/test:cont/ll2[.='1']");
+         assert_int_equal(old_val->data.uint16_val, 2);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:cont/ll2");
++        assert_string_equal(new_val->xpath, "/test:cont/ll2[.='1']");
+         assert_int_equal(new_val->data.uint16_val, 1);
+ 
+         sr_free_val(old_val);
+@@ -1290,7 +1290,7 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='5']");
+ 
+         sr_free_val(new_val);
+ 
+@@ -1300,9 +1300,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+ 
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+-        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3[.='10']");
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='10']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -1313,9 +1313,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+ 
+         assert_int_equal(op, SR_OP_CREATED);
+         assert_non_null(old_val);
+-        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(old_val->xpath, "/test:l3[k='k1']/ll3[.='15']");
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3");
++        assert_string_equal(new_val->xpath, "/test:l3[k='k1']/ll3[.='15']");
+ 
+         sr_free_val(old_val);
+         sr_free_val(new_val);
+@@ -1656,7 +1656,7 @@ module_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
+         assert_int_equal(op, SR_OP_MOVED);
+         assert_null(old_val);
+         assert_non_null(new_val);
+-        assert_string_equal(new_val->xpath, "/test:cont/ll2");
++        assert_string_equal(new_val->xpath, "/test:cont/ll2[.='2']");
+         assert_int_equal(new_val->data.uint16_val, 2);
+ 
+         sr_free_val(new_val);
