@@ -1,0 +1,44 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Tue, 11 Apr 2023 11:37:30 +0000
+Subject: enable log for set and delete
+
+---
+ src/sysrepo.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 9e7a91c..1975ef2 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -3278,6 +3278,7 @@ sr_set_item_str(sr_session_ctx_t *session, const char *path, const char *value,
+ 
+     SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
+ 
++    SR_LOG_INF("%s for %s to %s opts %d", __func__, path, value, opts);
+     /* we do not need any lock, ext SHM is not accessed */
+ 
+     if (origin) {
+@@ -3325,6 +3326,7 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+ 
+     SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
+ 
++    SR_LOG_INF("%s for %s %d", __func__, path, opts);
+     if (!session->dt[session->ds].edit) {
+         /* CONTEXT LOCK */
+         if ((err_info = sr_lycc_lock(session->conn, SR_LOCK_READ, 0, __func__))) {
+@@ -3376,6 +3378,7 @@ sr_discard_items(sr_session_ctx_t *session, const char *xpath)
+ 
+     SR_CHECK_ARG_APIRET(!session || (session->ds != SR_DS_OPERATIONAL), session, err_info);
+ 
++    SR_LOG_INF("%s %s", __func__, xpath);
+     /* we do not need any lock, ext SHM is not accessed */
+ 
+     if (!session->dt[session->ds].edit) {
+@@ -3850,6 +3853,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+         return sr_api_ret(session, NULL);
+     }
+ 
++    SR_LOG_INF("%s for %d", __func__, session->ds);
+     if (!timeout_ms) {
+         timeout_ms = SR_CHANGE_CB_TIMEOUT;
+     }

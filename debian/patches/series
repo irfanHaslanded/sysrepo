@@ -18,3 +18,4 @@
 0018-sysrepo-add-SR_UNDERLYING_VALUE-option.patch
 0019-Fix-ncid-originator-name.patch
 0020-Enable-asserts-and-improve-tests.patch
+0021-enable-log-for-set-and-delete.patch
