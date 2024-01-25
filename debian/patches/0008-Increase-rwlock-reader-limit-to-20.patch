@@ -1,0 +1,21 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Sat, 10 Dec 2022 16:23:33 +0000
+Subject: Increase rwlock reader limit to 20
+
+---
+ src/common_types.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/common_types.h b/src/common_types.h
+index e5eee8e..4753c63 100644
+--- a/src/common_types.h
++++ b/src/common_types.h
+@@ -49,7 +49,7 @@ typedef enum {
+ } sr_lock_mode_t;
+ 
+ /** maximum number of system-wide concurrent connection owners of a read lock */
+-#define SR_RWLOCK_READ_LIMIT 16
++#define SR_RWLOCK_READ_LIMIT 20
+ 
+ /**
+  * @brief Sysrepo read-write lock.

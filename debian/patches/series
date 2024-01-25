@@ -5,3 +5,4 @@
 0005-sysrepocfg-change-default-export-format-to-JSON.patch
 0006-sysrepocfg-add-s-no-subs-export-argument.patch
 0007-relax-datastore-specification-for-sysrepocfg.patch
+0008-Increase-rwlock-reader-limit-to-20.patch
