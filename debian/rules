@@ -6,17 +6,12 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all reproducible=+fixfilepath
 
 include /usr/share/dpkg/default.mk
 
-ifeq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-  PARALLEL :=
-else
-  PARALLEL := \
-        -j$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
-endif
-
 SYSREPO_UID = 62410
 
+NPROCS:=$(shell grep -c ^processor /proc/cpuinfo)
+
 %:
-	dh $@ --buildsystem=cmake --with graphnos-yang
+	dh $@ -j --buildsystem=cmake --with graphnos-yang
 
 override_dh_auto_configure:
 	dh_auto_configure -- \
@@ -32,6 +27,6 @@ override_dh_auto_configure:
 
 override_dh_auto_test:
 ifeq ($(filter nocheck,$(DEB_BUILD_OPTIONS)),)
-	make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS='$(PARALELL) -V -E test_notif'
+	make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS=' -j $(NPROCS) -V -E test_notif'
 	make -C obj-$(DEB_HOST_GNU_TYPE) test_clean
 endif
