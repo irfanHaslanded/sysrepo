@@ -1,0 +1,69 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Sat, 12 Aug 2023 12:08:36 +0000
+Subject: unlock session held ly_ctx locks on sr_session_stop
+
+---
+ src/common_types.h |  1 +
+ src/sysrepo.c      | 16 ++++++++++++++--
+ 2 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/common_types.h b/src/common_types.h
+index ee834e1..3d0f8f4 100644
+--- a/src/common_types.h
++++ b/src/common_types.h
+@@ -206,6 +206,7 @@ struct sr_session_ctx_s {
+         } *first;                   /**< First stored notification buffer node. */
+         struct sr_sess_notif_buf_node *last;    /**< Last stored notification buffer node. */
+     } notif_buf;                    /**< Notification buffering attributes. */
++    ATOMIC_T lyctx_lock_rdcount;    /**< Number of context locks held in read mode */
+ };
+ 
+ /**
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 288fc64..474ecc3 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -434,7 +434,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)
+ API const struct ly_ctx *
+ sr_session_acquire_context(sr_session_ctx_t *session)
+ {
+-    return sr_acquire_context(session->conn);
++    const struct ly_ctx * ctx = sr_acquire_context(session->conn);
++    if (ctx) {
++        ATOMIC_INC_RELAXED(session->lyctx_lock_rdcount);
++    }
++    return ctx;
+ }
+ 
+ API void
+@@ -448,6 +452,7 @@ API void
+ sr_session_release_context(sr_session_ctx_t *session)
+ {
+     sr_release_context(session->conn);
++    ATOMIC_DEC_RELAXED(session->lyctx_lock_rdcount);
+ }
+ 
+ API uint32_t
+@@ -831,6 +836,7 @@ _sr_session_stop(sr_session_ctx_t *session)
+ {
+     sr_error_info_t *err_info = NULL, *tmp_err;
+     sr_datastore_t ds;
++    uint32_t i, lycc_lock_count;
+ 
+     /* subscriptions need to be freed before, with a WRITE lock */
+     assert(!session->subscription_count && !session->subscriptions);
+@@ -853,7 +859,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+     sr_shmmod_release_locks(session->conn, session->sid);
+ 
+     /* CONTEXT UNLOCK */
+-    sr_lycc_unlock(session->conn, SR_LOCK_READ, 0, __func__);
++    lycc_lock_count = 1 + ATOMIC_LOAD_RELAXED(session->lyctx_lock_rdcount);
++    if (lycc_lock_count > 1) {
++        SR_LOG_WRN("Session %u unlocking %u lycc_count", session->sid, lycc_lock_count);
++    }
++    for (i = 0; i < lycc_lock_count; i++) {
++        sr_lycc_unlock(session->conn, SR_LOCK_READ, 0, __func__);
++    }
+ 
+     /* free attributes */
+     free(session->user);

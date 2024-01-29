@@ -1,0 +1,1016 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Tue, 25 Jul 2023 23:11:41 +0000
+Subject: Enable instrumentation for locks
+
+cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
+---
+ src/common.c       | 152 ++++++++++++++++++++++++++++++++++++++++++++++-------
+ src/common.h       |  11 +++-
+ src/common_types.h |   1 +
+ src/shm_ext.c      |  75 +++++++++++++++-----------
+ src/shm_main.c     |   5 +-
+ src/shm_mod.c      |  78 +++++++++++++++------------
+ src/shm_mod.h      |   4 +-
+ src/shm_sub.c      |   4 +-
+ src/shm_sub.h      |   2 +-
+ src/shm_types.h    |   1 +
+ src/sysrepo.c      |  25 ++++-----
+ 11 files changed, 256 insertions(+), 102 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index c0ddb08..1acf7a8 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -58,6 +58,41 @@
+ 
+ static int sr_is_priviliged(void);
+ 
++#define SR_RWLOCK_ID(rwlock_ptr) (~(1u<<31) & (rwlock_ptr)->id)
++#define _SR_LOG_RWLOCK(rwlock_ptr, mode, cid, func, str)                   \
++    SR_LOG_DBG("%s: %s rwlock %" PRIu32 " in mode %d by CID %" PRIu32, \
++            func, str, SR_RWLOCK_ID(rwlock_ptr), mode, cid)
++
++static int
++sr_log_rwlock_enabled(sr_rwlock_t *rwlock)
++{
++    /* if MSB is set for lock_id, enable debugging */
++    if (rwlock->id > (1u<<31)) {
++        return 1;
++    }
++    static int sr_log_rwlock_is_enabled = -1;
++    if (sr_log_rwlock_is_enabled >= 0) {
++        return sr_log_rwlock_is_enabled;
++    }
++    /* First time, initialize and return */
++    return (sr_log_rwlock_is_enabled = (getenv("SR_LOG_RWLOCK") != NULL));
++}
++
++#define SR_LOG_RWLOCK(rwlock_ptr, ...) sr_log_rwlock_enabled(rwlock_ptr) ? sr_log_rwlock_details(rwlock_ptr, __VA_ARGS__) : (void)0
++
++static void
++sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, const char *func_name, const char *msg)
++{
++    size_t i, cursor = 0;
++    char buf[512] = "";
++    cursor = snprintf(buf, sizeof(buf), "%s CID wr %" PRIu32 " upgr %" PRIu32 " rd", msg, rwlock->writer, rwlock->upgr);
++    for (i = 0; SR_IS_READER_VALID(rwlock, i); i++) {
++        cursor += snprintf(buf + cursor, sizeof(buf) - cursor, " %" PRIu32 " [%" PRIu32 "]", rwlock->readers[i], rwlock->read_count[i]);
++    }
++
++    _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
++}
++
+ /**
+  * @brief Internal datastore plugin array.
+  */
+@@ -2281,8 +2316,57 @@ sr_munlock(pthread_mutex_t *lock)
+     }
+ }
+ 
++FILE *
++sr_get_log_file(void)
++{
++    char *logpath = NULL;
++    static FILE *logfile = NULL;
++    int logfd = -1;
++    struct stat fstats;
++
++    if (!logfile) {
++        asprintf(&logpath, "%s/rwlock_info", sr_get_repo_path());
++        logfd = sr_open(logpath, O_WRONLY | O_CREAT | O_APPEND, SR_SHM_PERM);
++        if (logfd < 0) {
++            SR_LOG_WRN("%s Unable to open logpath for writing errno %d", __func__, errno);
++            return NULL;
++        }
++        logfile = fdopen(logfd, "a");
++        free(logpath);
++        /* Create a header for the file */
++        fstat(logfd, &fstats);
++        if (fstats.st_size == 0) {
++            fputs(  "1 ly_ext_data\n"
++                    "2 mod_remap\n"
++                    "3 ext_remap\n"
++                    "4 run_cache\n"
++                    "5 oper_cache\n"
++                    "99 context\n"
++                    "[CLOCK_REALTIME] [getpid][gettid] [progname]   lock_id\tdescr\n", logfile);
++        }
++    }
++    return logfile;
++}
++
++static void
++sr_rwlock_create_debug_info(uint32_t id, const char *desc)
++{
++    FILE *logfile = NULL;
++    extern char * __progname;
++    struct timespec ts = {0};
++    clock_gettime(CLOCK_REALTIME, &ts);
++    logfile = sr_get_log_file();
++    if (!logfile) {
++        return;
++    }
++
++    fprintf(logfile, "[%ld.%03ld] [%u][%u] [%s] %u    %s\n", ts.tv_sec, ts.tv_nsec/1000000,
++            getpid(), gettid(), __progname, id, desc ? desc : "");
++    fflush(logfile);
++}
++
+ sr_error_info_t *
+-sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
++sr_rwlock_init(sr_rwlock_t *rwlock, int shared, uint32_t id, const char *desc)
+ {
+     sr_error_info_t *err_info = NULL;
+ 
+@@ -2297,7 +2381,10 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
+     memset(rwlock->readers, 0, sizeof rwlock->readers);
+     rwlock->upgr = 0;
+     rwlock->writer = 0;
+-
++    rwlock->id = id;
++    if (desc && id > SR_RWLOCK_RESERVED_ID_MAX) {
++        sr_rwlock_create_debug_info(id, desc);
++    }
+     return NULL;
+ }
+ 
+@@ -2316,7 +2403,7 @@ sr_rwlock_destroy(sr_rwlock_t *rwlock)
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
++sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
+ {
+     sr_error_info_t *err_info = NULL;
+     uint32_t i;
+@@ -2324,8 +2411,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
+     /* find this connection or first free item */
+     for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i] && (rwlock->readers[i] != cid); ++i) {}
+     if (i == SR_RWLOCK_READ_LIMIT) {
+-        sr_errinfo_new(&err_info, SR_ERR_LOCKED, "Concurrent reader limit %d reached, possibly because of missing unlocks.",
+-                SR_RWLOCK_READ_LIMIT);
++        sr_errinfo_new(&err_info, SR_ERR_TIME_OUT, "reader limit reached for lock %" PRIu32
++                    " cid %" PRIu32, SR_RWLOCK_ID(rwlock), cid);
++        sr_log_rwlock_details(rwlock, SR_LOCK_READ, cid, func, "reader limit");
+         goto cleanup;
+     }
+ 
+@@ -2336,8 +2424,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
+     } else {
+         /* recursive read lock on the connection */
+         if (rwlock->read_count[i] == UINT8_MAX) {
+-            sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Recursive reader limit %" PRIu8
+-                    " reached, possibly because of missing unlocks.", UINT8_MAX);
++            sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Recursive reader limit reached for lock %" PRIu32
++                    " cid %" PRIu32, SR_RWLOCK_ID(rwlock), cid);
++            sr_log_rwlock_details(rwlock, SR_LOCK_READ, cid, func, "reader recursive limit");
+             goto cleanup;
+         }
+         ++rwlock->read_count[i];
+@@ -2409,7 +2498,7 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
+     uint32_t i;
+ 
+     /* find a CID match */
+-    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i] && (rwlock->readers[i] != cid); ++i) {}
++    for (i = 0; SR_IS_READER_VALID(rwlock, i) && (rwlock->readers[i] != cid); ++i) {}
+     if ((i == SR_RWLOCK_READ_LIMIT) || (rwlock->readers[i] != cid)) {
+         /* CID not found */
+         SR_ERRINFO_INT(&err_info);
+@@ -2439,7 +2528,7 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
+     sr_cid_t cid;
+ 
+     /* readers */
+-    while ((i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i]) {
++    while (SR_IS_READER_VALID(rwlock, i)) {
+         if (!sr_conn_is_alive(rwlock->readers[i])) {
+             /* remove the dead reader */
+             cid = rwlock->readers[i];
+@@ -2498,6 +2587,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+         ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
+     }
+ 
++    SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locking");
+     if (ret == EOWNERDEAD) {
+         /* make it consistent */
+         ret = pthread_mutex_consistent(&rwlock->mutex);
+@@ -2615,12 +2705,12 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+         rwlock->upgr = cid;
+ 
+         /* add a reader */
+-        err_info = sr_rwlock_reader_add(rwlock, cid);
++        err_info = sr_rwlock_reader_add(rwlock, cid, func);
+ 
+         /* MUTEX UNLOCK */
+         r = pthread_mutex_unlock(&rwlock->mutex);
+         if (r) {
+-            sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unlocking a mutex in %s() failed (%s).", __func__, strerror(r));
++            sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unlocking a mutex in %s() failed (%s).", func, strerror(r));
+         }
+ 
+     } else {
+@@ -2649,7 +2739,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+         }
+ 
+         /* add a reader */
+-        err_info = sr_rwlock_reader_add(rwlock, cid);
++        err_info = sr_rwlock_reader_add(rwlock, cid, func);
+ 
+         /* MUTEX UNLOCK */
+         r = pthread_mutex_unlock(&rwlock->mutex);
+@@ -2657,7 +2747,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+             sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unlocking a mutex in %s() failed (%s).", __func__, strerror(r));
+         }
+     }
+-
++    if (err_info) {
++        sr_log_rwlock_details(rwlock, mode, cid, func, "Failed");
++    } else {
++        SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locked");
++    }
+     return err_info;
+ 
+ error_cond_unlock:
+@@ -2727,7 +2821,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+ 
+     assert(mode && cid);
+     assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
+-
++    SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocking");
+     if (mode == SR_LOCK_WRITE) {
+         /*
+          * upgrade from upgradeable read-lock to write-lock
+@@ -2774,6 +2868,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+         }
+         rwlock->upgr = 0;
+         rwlock->writer = cid;
++        SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
+ 
+         /* simply keep the lock */
+         return NULL;
+@@ -2847,6 +2942,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+             rwlock->writer = cid;
+         }
+ 
++        SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
+         /* simply keep the lock */
+         return NULL;
+     }
+@@ -2877,7 +2973,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+     assert(!rwlock->readers[0] && !rwlock->upgr && (rwlock->writer == cid));
+ 
+     /* add a reader */
+-    if ((err_info = sr_rwlock_reader_add(rwlock, cid))) {
++    if ((err_info = sr_rwlock_reader_add(rwlock, cid, func))) {
+         /* keep the WRITE lock on error */
+         return err_info;
+     }
+@@ -2892,7 +2988,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+ 
+     /* redundant to broadcast on condition because we were holding write-lock, so something can only be
+      * waiting on the mutex, never the condition */
+-
++    SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocked");
+ cleanup_unlock:
+     /* MUTEX UNLOCK */
+     pthread_mutex_unlock(&rwlock->mutex);
+@@ -2961,6 +3057,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+         sr_cond_broadcast(&rwlock->cond);
+     }
+ 
++    SR_LOG_RWLOCK(rwlock, mode, cid, func, "UnLocked");
+     /* MUTEX UNLOCK */
+     ret = pthread_mutex_unlock(&rwlock->mutex);
+     if (ret) {
+@@ -3063,6 +3160,9 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
+     void *mem;
+     struct sr_oper_poll_cache_s *cache;
+ 
++    int rc;
++    char *lock_descr = NULL;
++
+     /* CONN OPER CACHE WRITE LOCK */
+     if ((err_info = sr_rwlock(&conn->oper_cache_lock, SR_CONN_OPER_CACHE_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
+             __func__, NULL, NULL))) {
+@@ -3091,10 +3191,14 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
+     SR_CHECK_MEM_GOTO(!cache->module_name, err_info, cleanup);
+     cache->path = strdup(path);
+     SR_CHECK_MEM_GOTO(!cache->path, err_info, cleanup);
+-    if ((err_info = sr_rwlock_init(&cache->data_lock, 0))) {
++    rc = asprintf(&lock_descr, "oper_poll_cache %s", path);
++    if (rc) {
++        lock_descr = NULL;
++    }
++    if ((err_info = sr_rwlock_init(&cache->data_lock, 0, SR_RWLOCK_NEW_ID(conn), lock_descr))) {
+         goto cleanup;
+     }
+-
++    free(lock_descr);
+     ++conn->oper_cache_count;
+ 
+ cleanup:
+@@ -5709,3 +5813,15 @@ sr_is_priviliged(void)
+     }
+     return is_priviliged;
+ }
++
++void
++sr_rwlock_debug_set(sr_rwlock_t *rwlock, int enable)
++{
++    if (enable) {
++        /* Set the MSB to enable debug logs */
++        rwlock->id |= (1u << 31);
++    } else {
++        /* Clear the MSB to disable debug logs */
++        rwlock->id &= ~(1u << 31);
++    }
++}
+diff --git a/src/common.h b/src/common.h
+index b2320d6..5b33dac 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -60,6 +60,15 @@ struct srplg_ntf_s;
+ /* macro for getting ext SHM from a connection */
+ #define SR_CONN_EXT_SHM(conn) ((sr_ext_shm_t *)(conn)->ext_shm.addr)
+ 
++/* macro for getting next ID for rwlock from a connection using main_shm */
++#define SR_RWLOCK_NEW_ID(conn) ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_rwlock_id)
++
++/* macro for checking whether a reader is valid */
++#define SR_IS_READER_VALID(rwlock, i) ((i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i])
++
++/* reserved lock ids to be used before main_shm is opened/created for process local locks */
++#define SR_RWLOCK_RESERVED_ID_MAX 100
++
+ /** all ext SHM item sizes will be aligned to this number; also represents the allocation unit (B) */
+ #define SR_SHM_MEM_ALIGN 8
+ 
+@@ -780,7 +789,7 @@ void sr_munlock(pthread_mutex_t *lock);
+  * @param[in] shared Whether the RW lock will be shared between processes or not.
+  * @return err_info, NULL on success.
+  */
+-sr_error_info_t *sr_rwlock_init(sr_rwlock_t *rwlock, int shared);
++sr_error_info_t *sr_rwlock_init(sr_rwlock_t *rwlock, int shared, uint32_t id, const char *desc);
+ 
+ /**
+  * @brief Destroy a sysrepo RW lock.
+diff --git a/src/common_types.h b/src/common_types.h
+index 4753c63..b444405 100644
+--- a/src/common_types.h
++++ b/src/common_types.h
+@@ -63,6 +63,7 @@ typedef struct {
+     sr_cid_t upgr;                  /**< CID of the READ-UPGR lock owner if locked, 0 otherwise. */
+     sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
+                                          is being waited on, 0 otherwise. */
++    uint32_t id;                    /**< system-wide unique ID of the lock */
+ } sr_rwlock_t;
+ 
+ /**
+diff --git a/src/shm_ext.c b/src/shm_ext.c
+index 74aae23..c650ca6 100644
+--- a/src/shm_ext.c
++++ b/src/shm_ext.c
+@@ -41,6 +41,19 @@
+ #include "shm_sub.h"
+ #include "subscr.h"
+ 
++static int
++sr_shmext_log_enabled(void)
++{
++    static int sr_shm_ext_logging = -1;
++    if (sr_shm_ext_logging >= 0) {
++        return sr_shm_ext_logging;
++    }
++    /* First time, initialize and return */
++    return (sr_shm_ext_logging = (getenv("SR_SHM_EXT_DBG_ENABLED") != NULL));
++}
++
++#define SR_LOG_SHM_DBG(...) sr_shmext_log_enabled() ? SR_LOG_DBG(__VA_ARGS__) : (void)0
++
+ sr_error_info_t *
+ sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock, const char *func)
+ {
+@@ -458,7 +471,7 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
+     }
+ 
+     /* print all the information about SHM */
+-    SR_LOG_DBG("#SHM:\n%s", msg);
++    SR_LOG_SHM_DBG("#SHM:\n%s", msg);
+     free(msg);
+ 
+     /* fail on an assert if something is wrong */
+@@ -534,7 +547,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+         }
+     }
+ 
+-    SR_LOG_DBG("#SHM before (adding change sub)");
++    SR_LOG_SHM_DBG("#SHM before (adding change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* allocate new subscription and its xpath, if any */
+@@ -557,12 +570,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+     ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
+     shm_sub->cid = conn->cid;
+ 
+-    SR_LOG_DBG("#SHM after (adding change sub)");
++    SR_LOG_SHM_DBG("#SHM after (adding change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (shm_mod->change_sub[ds].sub_count == 1) {
+         /* create the sub SHM while still holding the locks */
+-        if ((err_info = sr_shmsub_create(conn->mod_shm.addr + shm_mod->name, sr_ds2str(ds), -1,
++        if ((err_info = sr_shmsub_create(conn, conn->mod_shm.addr + shm_mod->name, sr_ds2str(ds), -1,
+                 sizeof(sr_multi_sub_shm_t)))) {
+             goto cleanup_unlock;
+         }
+@@ -612,7 +625,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+     }
+     SR_CHECK_INT_GOTO(i == shm_mod->change_sub[ds].sub_count, err_info, cleanup_changesub_ext_unlock);
+ 
+-    SR_LOG_DBG("#SHM before (modifying change sub)");
++    SR_LOG_SHM_DBG("#SHM before (modifying change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* allocate memory for the new xpath, if any */
+@@ -629,7 +642,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+         shm_sub[i].xpath = 0;
+     }
+ 
+-    SR_LOG_DBG("#SHM after (modifying change sub)");
++    SR_LOG_SHM_DBG("#SHM after (modifying change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* success */
+@@ -662,14 +675,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+ 
+     shm_sub = &((sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs))[del_idx];
+ 
+-    SR_LOG_DBG("#SHM before (removing change sub)");
++    SR_LOG_SHM_DBG("#SHM before (removing change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* free the subscription and its xpath, if any */
+     sr_shmrealloc_del(&conn->ext_shm, &shm_mod->change_sub[ds].subs, &shm_mod->change_sub[ds].sub_count, sizeof *shm_sub,
+             del_idx, shm_sub->xpath ? sr_strshmlen(conn->ext_shm.addr + shm_sub->xpath) : 0, shm_sub->xpath);
+ 
+-    SR_LOG_DBG("#SHM after (removing change sub)");
++    SR_LOG_SHM_DBG("#SHM after (removing change sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (!shm_mod->change_sub[ds].sub_count) {
+@@ -876,7 +889,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+         /* use starting priority 1 */
+         *prio = 1;
+ 
+-        SR_LOG_DBG("#SHM before (adding oper get sub)");
++        SR_LOG_SHM_DBG("#SHM before (adding oper get sub)");
+         sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+         /* allocate new subscription and its xpath */
+@@ -892,11 +905,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+         shm_sub->xpath_subs = 0;
+         shm_sub->xpath_sub_count = 0;
+ 
+-        SR_LOG_DBG("#SHM after (adding oper get sub)");
++        SR_LOG_SHM_DBG("#SHM after (adding oper get sub)");
+         sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+     }
+ 
+-    SR_LOG_DBG("#SHM before (adding oper get xpath sub)");
++    SR_LOG_SHM_DBG("#SHM before (adding oper get xpath sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* allocate new XPath subscription */
+@@ -913,11 +926,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+     ATOMIC_STORE_RELAXED(xpath_sub->suspended, 0);
+     xpath_sub->cid = conn->cid;
+ 
+-    SR_LOG_DBG("#SHM after (adding oper get xpath sub)");
++    SR_LOG_SHM_DBG("#SHM after (adding oper get xpath sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* create the sub SHM while still holding the locks */
+-    if ((err_info = sr_shmsub_create(conn->mod_shm.addr + shm_mod->name, "oper", sr_str_hash(path, *prio),
++    if ((err_info = sr_shmsub_create(conn, conn->mod_shm.addr + shm_mod->name, "oper", sr_str_hash(path, *prio),
+             sizeof(sr_sub_shm_t)))) {
+         goto cleanup_unlock;
+     }
+@@ -967,25 +980,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
+         goto cleanup;
+     }
+ 
+-    SR_LOG_DBG("#SHM before (removing xpath oper get sub)");
++    SR_LOG_SHM_DBG("#SHM before (removing xpath oper get sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* free the XPath subscription */
+     sr_shmrealloc_del(&conn->ext_shm, &shm_sub->xpath_subs, &shm_sub->xpath_sub_count, sizeof *xpath_sub, del_idx2,
+             0, 0);
+ 
+-    SR_LOG_DBG("#SHM after (removing xpath oper get sub)");
++    SR_LOG_SHM_DBG("#SHM after (removing xpath oper get sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (!shm_sub->xpath_sub_count) {
+-        SR_LOG_DBG("#SHM before (removing oper get sub)");
++        SR_LOG_SHM_DBG("#SHM before (removing oper get sub)");
+         sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+         /* last XPath subscription deleted, free the oper subscription */
+         sr_shmrealloc_del(&conn->ext_shm, &shm_mod->oper_get_subs, &shm_mod->oper_get_sub_count, sizeof *shm_sub,
+                 del_idx1, sr_strshmlen(conn->ext_shm.addr + shm_sub->xpath), shm_sub->xpath);
+ 
+-        SR_LOG_DBG("#SHM after (removing oper get sub)");
++        SR_LOG_SHM_DBG("#SHM after (removing oper get sub)");
+         sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+     }
+ 
+@@ -1168,7 +1181,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+         }
+     }
+ 
+-    SR_LOG_DBG("#SHM before (adding oper poll sub)");
++    SR_LOG_SHM_DBG("#SHM before (adding oper poll sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* allocate new subscription and its path */
+@@ -1186,7 +1199,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+     ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
+     shm_sub->cid = conn->cid;
+ 
+-    SR_LOG_DBG("#SHM after (adding oper poll sub)");
++    SR_LOG_SHM_DBG("#SHM after (adding oper poll sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+ cleanup_unlock:
+@@ -1211,14 +1224,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
+ 
+     shm_sub = &((sr_mod_oper_poll_sub_t *)(conn->ext_shm.addr + shm_mod->oper_poll_subs))[del_idx];
+ 
+-    SR_LOG_DBG("#SHM before (removing oper poll sub)");
++    SR_LOG_SHM_DBG("#SHM before (removing oper poll sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* free the subscription */
+     sr_shmrealloc_del(&conn->ext_shm, &shm_mod->oper_poll_subs, &shm_mod->oper_poll_sub_count, sizeof *shm_sub,
+             del_idx, sr_strshmlen(conn->ext_shm.addr + shm_sub->xpath), shm_sub->xpath);
+ 
+-    SR_LOG_DBG("#SHM after (removing oper poll sub)");
++    SR_LOG_SHM_DBG("#SHM after (removing oper poll sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     return NULL;
+@@ -1308,7 +1321,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+         return err_info;
+     }
+ 
+-    SR_LOG_DBG("#SHM before (adding notif sub)");
++    SR_LOG_SHM_DBG("#SHM before (adding notif sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* allocate new subscription and its xpath, if any */
+@@ -1329,12 +1342,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+     ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
+     shm_sub->cid = conn->cid;
+ 
+-    SR_LOG_DBG("#SHM after (adding notif sub)");
++    SR_LOG_SHM_DBG("#SHM after (adding notif sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (shm_mod->notif_sub_count == 1) {
+         /* create the sub SHM while still holding the locks */
+-        if ((err_info = sr_shmsub_create(conn->mod_shm.addr + shm_mod->name, "notif", -1, sizeof(sr_sub_shm_t)))) {
++        if ((err_info = sr_shmsub_create(conn, conn->mod_shm.addr + shm_mod->name, "notif", -1, sizeof(sr_sub_shm_t)))) {
+             goto cleanup_unlock;
+         }
+ 
+@@ -1370,14 +1383,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
+ 
+     shm_sub = &((sr_mod_notif_sub_t *)(conn->ext_shm.addr + shm_mod->notif_subs))[del_idx];
+ 
+-    SR_LOG_DBG("#SHM before (removing notif sub)");
++    SR_LOG_SHM_DBG("#SHM before (removing notif sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* free the subscription */
+     sr_shmrealloc_del(&conn->ext_shm, &shm_mod->notif_subs, &shm_mod->notif_sub_count, sizeof *shm_sub,
+             del_idx, shm_sub->xpath ? sr_strshmlen(conn->ext_shm.addr + shm_sub->xpath) : 0, shm_sub->xpath);
+ 
+-    SR_LOG_DBG("#SHM after (removing notif sub)");
++    SR_LOG_SHM_DBG("#SHM after (removing notif sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (!shm_mod->notif_sub_count) {
+@@ -1571,7 +1584,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+         goto cleanup_unlock;
+     }
+ 
+-    SR_LOG_DBG("#SHM before (adding rpc sub)");
++    SR_LOG_SHM_DBG("#SHM before (adding rpc sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* add new subscription with its xpath */
+@@ -1590,13 +1603,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+     ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
+     shm_sub->cid = sub_cid;
+ 
+-    SR_LOG_DBG("#SHM after (adding rpc sub)");
++    SR_LOG_SHM_DBG("#SHM after (adding rpc sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     if (!path_found && sub_cid) {
+         /* create the sub SHM while still holding the locks */
+         mod_name = sr_get_first_ns(path);
+-        if ((err_info = sr_shmsub_create(mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_multi_sub_shm_t)))) {
++        if ((err_info = sr_shmsub_create(conn, mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_multi_sub_shm_t)))) {
+             goto cleanup_unlock;
+         }
+ 
+@@ -1638,14 +1651,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
+ 
+     shm_subs = (sr_mod_rpc_sub_t *)(conn->ext_shm.addr + *subs);
+ 
+-    SR_LOG_DBG("#SHM before (removing rpc sub)");
++    SR_LOG_SHM_DBG("#SHM before (removing rpc sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     /* free the subscription */
+     sr_shmrealloc_del(&conn->ext_shm, subs, sub_count, sizeof *shm_subs, del_idx,
+             sr_strshmlen(conn->ext_shm.addr + shm_subs[del_idx].xpath), shm_subs[del_idx].xpath);
+ 
+-    SR_LOG_DBG("#SHM after (removing rpc sub)");
++    SR_LOG_SHM_DBG("#SHM after (removing rpc sub)");
+     sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+ 
+     for (i = 0; i < *sub_count; ++i) {
+diff --git a/src/shm_main.c b/src/shm_main.c
+index eac63fd..22e3283 100644
+--- a/src/shm_main.c
++++ b/src/shm_main.c
+@@ -496,10 +496,11 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+     if (creat) {
+         /* init the memory */
+         main_shm->shm_ver = SR_SHM_VER;
++
+         if ((err_info = sr_mutex_init(&main_shm->ext_lock, 1))) {
+             goto cleanup;
+         }
+-        if ((err_info = sr_rwlock_init(&main_shm->context_lock, 1))) {
++        if ((err_info = sr_rwlock_init(&main_shm->context_lock, 1, SR_RWLOCK_RESERVED_ID_MAX - 1, "context"))) {
+             goto cleanup;
+         }
+         if ((err_info = sr_mutex_init(&main_shm->lydmods_lock, 1))) {
+@@ -509,7 +510,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+         ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
+         ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
+         ATOMIC_STORE_RELAXED(main_shm->new_evpipe_num, 1);
+-
++        ATOMIC_STORE_RELAXED(main_shm->new_rwlock_id, SR_RWLOCK_RESERVED_ID_MAX);
+         /* remove leftover event pipes */
+         sr_remove_evpipes();
+     } else {
+diff --git a/src/shm_mod.c b/src/shm_mod.c
+index c9ffbf3..65e4001 100644
+--- a/src/shm_mod.c
++++ b/src/shm_mod.c
+@@ -144,8 +144,9 @@ sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path)
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, const sr_mod_t *old_smod)
++sr_shmmod_fill(sr_conn_ctx_t *conn, size_t shm_mod_idx, const struct lyd_node *sr_mod, const sr_mod_t *old_smod)
+ {
++    sr_shm_t *shm_mod = &conn->mod_shm;
+     sr_error_info_t *err_info = NULL;
+     sr_mod_t *smod;
+     struct lyd_node *sr_child;
+@@ -154,36 +155,11 @@ sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_
+     char *shm_end;
+     size_t feat_i, feat_names_len, ds_plugin_names_len, old_shm_size;
+     sr_datastore_t ds;
+-
++    char buf[256];
+     smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
+ 
+     /* init SHM module structure */
+     memset(smod, 0, sizeof *smod);
+-    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+-        if ((err_info = sr_rwlock_init(&smod->data_lock_info[ds].data_lock, 1))) {
+-            return err_info;
+-        }
+-        if ((err_info = sr_mutex_init(&smod->data_lock_info[ds].ds_lock, 1))) {
+-            return err_info;
+-        }
+-    }
+-    if ((err_info = sr_rwlock_init(&smod->replay_lock, 1))) {
+-        return err_info;
+-    }
+-    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+-        if ((err_info = sr_rwlock_init(&smod->change_sub[ds].lock, 1))) {
+-            return err_info;
+-        }
+-    }
+-    if ((err_info = sr_rwlock_init(&smod->oper_get_lock, 1))) {
+-        return err_info;
+-    }
+-    if ((err_info = sr_rwlock_init(&smod->oper_poll_lock, 1))) {
+-        return err_info;
+-    }
+-    if ((err_info = sr_rwlock_init(&smod->notif_lock, 1))) {
+-        return err_info;
+-    }
+ 
+     /* remember name, set fields from sr_mod, and count enabled features */
+     name = NULL;
+@@ -208,8 +184,40 @@ sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_
+             ds_plugin_names_len += sr_strshmlen(lyd_get_value(lyd_child(sr_child)->next));
+         }
+     }
++
+     assert(name);
+ 
++    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
++        snprintf(buf, sizeof(buf), "mod data[ds=%u] %s", ds, name);
++        if ((err_info = sr_rwlock_init(&smod->data_lock_info[ds].data_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++            return err_info;
++        }
++        if ((err_info = sr_mutex_init(&smod->data_lock_info[ds].ds_lock, 1))) {
++            return err_info;
++        }
++    }
++    snprintf(buf, sizeof(buf), "mod replay %s", name);
++    if ((err_info = sr_rwlock_init(&smod->replay_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
++        snprintf(buf, sizeof(buf), "mod change_sub[ds=%u] %s", ds, name);
++        if ((err_info = sr_rwlock_init(&smod->change_sub[ds].lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++            return err_info;
++        }
++    }
++    snprintf(buf, sizeof(buf), "mod oper %s", name);
++    if ((err_info = sr_rwlock_init(&smod->oper_get_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    snprintf(buf, sizeof(buf), "mod oper_poll %s", name);
++    if ((err_info = sr_rwlock_init(&smod->oper_poll_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    snprintf(buf, sizeof(buf), "mod notif %s", name);
++    if ((err_info = sr_rwlock_init(&smod->notif_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
+     /* remember mod SHM size */
+     old_shm_size = shm_mod->size;
+ 
+@@ -509,8 +517,9 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
++sr_shmmod_add_rpcs(sr_conn_ctx_t *conn, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
+ {
++    sr_shm_t *shm_mod = &conn->mod_shm;
+     sr_error_info_t *err_info = NULL;
+     struct lyd_node *sr_child, *sr_dep, *sr_op, *sr_op_dep;
+     sr_mod_t *smod;
+@@ -519,6 +528,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+     sr_mod_shm_t *mod_shm;
+     char *shm_end;
+     size_t paths_len, in_out_deps_len, dep_i, rpc_i, old_shm_size;
++    const char *path_name = NULL;
+ 
+     smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
+ 
+@@ -535,7 +545,8 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+             LY_LIST_FOR(lyd_child(sr_child), sr_op_dep) {
+                 if (!strcmp(sr_op_dep->schema->name, "path")) {
+                     /* operation path (a string) */
+-                    paths_len += sr_strshmlen(lyd_get_value(sr_op_dep));
++                    path_name = lyd_get_value(sr_op_dep);
++                    paths_len += sr_strshmlen(path_name);
+                 } else if (!strcmp(sr_op_dep->schema->name, "in") || !strcmp(sr_op_dep->schema->name, "out")) {
+                     dep_i = 0;
+                     LY_LIST_FOR(lyd_child(sr_op_dep), sr_dep) {
+@@ -573,7 +584,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+     LY_LIST_FOR(lyd_child(sr_mod), sr_child) {
+         if (!strcmp(sr_child->schema->name, "rpc")) {
+             /* init lock */
+-            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1))) {
++            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1, SR_RWLOCK_NEW_ID(conn), path_name))) {
+                 return err_info;
+             }
+ 
+@@ -747,13 +758,14 @@ sr_shmmod_add_notifs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_nod
+ }
+ 
+ sr_error_info_t *
+-sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
++sr_shmmod_store_modules(sr_conn_ctx_t *conn, const struct lyd_node *sr_mods)
+ {
+     sr_error_info_t *err_info = NULL;
+     const struct lyd_node *sr_mod;
+     sr_mod_t *smod;
+     char *shm_mod_old = NULL;
+     uint32_t i, mod_count;
++    sr_shm_t *shm_mod = &conn->mod_shm;
+ 
+     /* backup current SHM mod */
+     shm_mod_old = malloc(shm_mod->size);
+@@ -785,7 +797,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+             smod = sr_shmmod_find_module((sr_mod_shm_t *)shm_mod_old, lyd_get_value(lyd_child(sr_mod)));
+ 
+             /* fill the new module */
+-            if ((err_info = sr_shmmod_fill(shm_mod, i, sr_mod, smod))) {
++            if ((err_info = sr_shmmod_fill(conn, i, sr_mod, smod))) {
+                 goto cleanup;
+             }
+ 
+@@ -811,7 +823,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+             if ((err_info = sr_shmmod_add_deps(shm_mod, i, sr_mod))) {
+                 goto cleanup;
+             }
+-            if ((err_info = sr_shmmod_add_rpcs(shm_mod, i, sr_mod, shm_mod_old))) {
++            if ((err_info = sr_shmmod_add_rpcs(conn, i, sr_mod, shm_mod_old))) {
+                 goto cleanup;
+             }
+             if ((err_info = sr_shmmod_add_notifs(shm_mod, i, sr_mod))) {
+diff --git a/src/shm_mod.h b/src/shm_mod.h
+index da9e7df..7906276 100644
+--- a/src/shm_mod.h
++++ b/src/shm_mod.h
+@@ -62,11 +62,11 @@ sr_rpc_t *sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path);
+  * @brief Remap mod SHM and store modules and all their static information (name, deps, ...) in it
+  * overwriting any previous modules.
+  *
+- * @param[in] shm_mod Mod SHM structure.
++ * @param[in] conn Connection to use for shm_mod 
+  * @param[in] sr_mods SR internal module data to read from.
+  * @return err_info, NULL on success.
+  */
+-sr_error_info_t *sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods);
++sr_error_info_t *sr_shmmod_store_modules(sr_conn_ctx_t *conn, const struct lyd_node *sr_mods);
+ 
+ /**
+  * @brief Load modules stored in mod SHM into a context.
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index c57c7b7..e35f464 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -97,7 +97,7 @@ struct sr_shmsub_many_info_oper_get_s {
+ };
+ 
+ sr_error_info_t *
+-sr_shmsub_create(const char *name, const char *suffix1, int64_t suffix2, size_t shm_struct_size)
++sr_shmsub_create(sr_conn_ctx_t *conn, const char *name, const char *suffix1, int64_t suffix2, size_t shm_struct_size)
+ {
+     sr_error_info_t *err_info = NULL;
+     char *path = NULL;
+@@ -125,7 +125,7 @@ sr_shmsub_create(const char *name, const char *suffix1, int64_t suffix2, size_t
+ 
+     /* initialize */
+     sub_shm = (sr_sub_shm_t *)shm.addr;
+-    if ((err_info = sr_rwlock_init(&sub_shm->lock, 1))) {
++    if ((err_info = sr_rwlock_init(&sub_shm->lock, 1, SR_RWLOCK_NEW_ID(conn), path))) {
+         goto cleanup;
+     }
+ 
+diff --git a/src/shm_sub.h b/src/shm_sub.h
+index 3056e4c..76cbb11 100644
+--- a/src/shm_sub.h
++++ b/src/shm_sub.h
+@@ -47,7 +47,7 @@ struct sr_mod_info_s;
+  * @param[in] shm_struct_size Size of the used subscription SHM structure.
+  * @return err_info, NULL on success.
+  */
+-sr_error_info_t *sr_shmsub_create(const char *name, const char *suffix1, int64_t suffix2, size_t shm_struct_size);
++sr_error_info_t *sr_shmsub_create(sr_conn_ctx_t *conn, const char *name, const char *suffix1, int64_t suffix2, size_t shm_struct_size);
+ 
+ /**
+  * @brief Open and map an existing subscription SHM.
+diff --git a/src/shm_types.h b/src/shm_types.h
+index 6ea990d..3cc0faf 100644
+--- a/src/shm_types.h
++++ b/src/shm_types.h
+@@ -187,6 +187,7 @@ typedef struct {
+     ATOMIC_T new_sr_sid;        /**< SID for a new session. */
+     ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
+     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
++    ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
+ } sr_main_shm_t;
+ 
+ /**
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 9e7a91c..1698ac8 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -68,6 +68,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
+ static sr_error_info_t *
+ sr_conn_new(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+ {
++    uint32_t lock_id = 0;
+     sr_conn_ctx_t *conn;
+     sr_error_info_t *err_info = NULL;
+ 
+@@ -83,7 +84,7 @@ sr_conn_new(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+         goto error2;
+     }
+ 
+-    if ((err_info = sr_rwlock_init(&conn->ly_ext_data_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&conn->ly_ext_data_lock, 0, ++lock_id, "ly_ext_data"))) {
+         goto error3;
+     }
+ 
+@@ -92,12 +93,12 @@ sr_conn_new(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+     }
+     conn->main_shm.fd = -1;
+ 
+-    if ((err_info = sr_rwlock_init(&conn->mod_remap_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&conn->mod_remap_lock, 0, ++lock_id, "mod_remap"))) {
+         goto error5;
+     }
+     conn->mod_shm.fd = -1;
+ 
+-    if ((err_info = sr_rwlock_init(&conn->ext_remap_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&conn->ext_remap_lock, 0, ++lock_id, "ext_remap"))) {
+         goto error6;
+     }
+     conn->ext_shm.fd = -1;
+@@ -105,13 +106,13 @@ sr_conn_new(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+     if ((err_info = sr_ds_handle_init(&conn->ds_handles, &conn->ds_handle_count))) {
+         goto error7;
+     }
+-    if ((err_info = sr_rwlock_init(&conn->run_cache_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&conn->run_cache_lock, 0, ++lock_id, "run_cache"))) {
+         goto error8;
+     }
+     if ((err_info = sr_ntf_handle_init(&conn->ntf_handles, &conn->ntf_handle_count))) {
+         goto error9;
+     }
+-    if ((err_info = sr_rwlock_init(&conn->oper_cache_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&conn->oper_cache_lock, 0, ++lock_id, "oper_cache"))) {
+         goto error10;
+     }
+ 
+@@ -267,7 +268,7 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+         sr_shmext_recover_sub_all(conn);
+ 
+         /* add all the modules in lydmods data into mod SHM */
+-        if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
++        if ((err_info = sr_shmmod_store_modules(conn, sr_mods))) {
+             goto cleanup_unlock;
+         }
+ 
+@@ -714,7 +715,7 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
+     if ((err_info = sr_mutex_init(&(*session)->ptr_lock, 0))) {
+         goto error;
+     }
+-    if ((err_info = sr_rwlock_init(&(*session)->notif_buf.lock, 0))) {
++    if ((err_info = sr_rwlock_init(&(*session)->notif_buf.lock, 0, SR_RWLOCK_NEW_ID(conn), NULL))) {
+         goto error;
+     }
+ 
+@@ -1511,7 +1512,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
+     }
+ 
+     /* update SHM modules */
+-    if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
++    if ((err_info = sr_shmmod_store_modules(conn, sr_mods))) {
+         goto cleanup;
+     }
+ 
+@@ -1755,7 +1756,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
+     }
+ 
+     /* update SHM modules */
+-    if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
++    if ((err_info = sr_shmmod_store_modules(conn, sr_mods))) {
+         goto cleanup;
+     }
+ 
+@@ -2008,7 +2009,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
+     }
+ 
+     /* update SHM modules */
+-    if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
++    if ((err_info = sr_shmmod_store_modules(conn, sr_mods))) {
+         goto cleanup;
+     }
+ 
+@@ -2519,7 +2520,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
+     }
+ 
+     /* update SHM modules */
+-    if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
++    if ((err_info = sr_shmmod_store_modules(conn, sr_mods))) {
+         goto cleanup;
+     }
+ 
+@@ -5113,7 +5114,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+     /* allocate new subscription */
+     *subs_p = calloc(1, sizeof **subs_p);
+     SR_CHECK_MEM_RET(!*subs_p, err_info);
+-    if ((err_info = sr_rwlock_init(&(*subs_p)->subs_lock, 0))) {
++    if ((err_info = sr_rwlock_init(&(*subs_p)->subs_lock, 0, SR_RWLOCK_NEW_ID(conn), "subscr"))) {
+         goto error;
+     }
+     (*subs_p)->conn = conn;

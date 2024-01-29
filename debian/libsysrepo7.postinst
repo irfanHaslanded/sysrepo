@@ -1,0 +1,24 @@
+#!/bin/sh -e
+
+SYSREPO_UID=62410
+
+case "$1" in
+    configure)
+        # Add sysrepo user and group if not already present
+        if ! getent passwd sysrepo >/dev/null; then
+            adduser \
+                --system \
+                --group \
+                --no-create-home \
+                --home /nonexistent \
+                --gecos "sysrepo system user" \
+                --shell /bin/false \
+                --uid "$SYSREPO_UID" \
+                sysrepo  >/dev/null
+        fi
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

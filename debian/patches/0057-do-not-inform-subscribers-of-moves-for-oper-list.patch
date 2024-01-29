@@ -1,0 +1,32 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Tue, 14 Nov 2023 08:47:20 +0000
+Subject: do not inform subscribers of moves for oper list
+
+Currently libyang does not support system ordering for lists in
+operational datastore. It does insertion ordering, which is similar to
+user ordering.
+
+according to the rfc, user ordering is not applicable for operational
+datastore.
+
+So, ignoring any moves until libyang implements "system" ordering.
+---
+ src/edit_diff.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/edit_diff.c b/src/edit_diff.c
+index 8fdcd19..004e70a 100644
+--- a/src/edit_diff.c
++++ b/src/edit_diff.c
+@@ -3812,6 +3812,11 @@ sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, s
+             if ((*node)->schema->nodetype & (LYS_LEAF | LYS_ANYDATA)) {
+                 *op = SR_OP_MODIFIED;
+             } else if ((*node)->schema->nodetype & (LYS_LIST | LYS_LEAFLIST)) {
++                if ((*node)->schema->flags & LYS_CONFIG_R) {
++                    /* move for read only state data does not make sense */
++                    ++(*idx);
++                    continue;
++                }
+                 *op = SR_OP_MOVED;
+             } else {
+                 SR_ERRINFO_INT(&err_info);

@@ -1,0 +1,3 @@
+# It's not intended to be run by users
+sysrepo-plugind: binary-without-manpage usr/bin/sysrepo-plugind
+sysrepo-plugind: systemd-service-file-refers-to-unusual-wantedby-target lib/systemd/system/sysrepo-plugind.service graphnos-mgmt.target

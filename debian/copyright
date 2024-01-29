@@ -1,0 +1,17 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+
+Files: *
+Copyright:
+ 2018 Deutsche Telekom AG.
+ 2018 - 2019 CESNET, z.s.p.o.
+License: Apache-2.0
+
+Files: debian/*
+Copyright: 2021 Graphiant, Inc.
+License: Proprietary
+
+License: Apache-2.0
+ Please refer to /usr/share/common-licenses/Apache-2.0 on Debian systems.
+
+License: Proprietary
+ Proprietary and confidential

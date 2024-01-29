@@ -1,0 +1,210 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 26 Jul 2023 11:52:58 +0000
+Subject: Add type check of format str for printf like fns
+
+ Using printf like functions without additional attribute
+ __attribute__ ((format (printf, 2, 3)))`
+ can lead to dangerous situations where bad code can creep in.
+
+ Adding this will make the compiler warn the developer when the
+ format string does not match the args
+
+ Add a test for format string vulnerability check
+
+ Use -Werror to treat warnings as errors
+
+Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
+---
+ CMakeLists.txt                        |  2 +-
+ src/executables/srpd_oper_poll_diff.c |  3 +--
+ src/modinfo.c                         | 20 ++++++++++----------
+ src/plugins/common_json.c             |  2 +-
+ src/shm_sub.c                         | 16 ++++++++--------
+ tests/test_massive_scale.c            | 15 ---------------
+ 6 files changed, 21 insertions(+), 37 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 748961a..1c80f88 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -88,7 +88,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 2)
+ # generate only version header, it is needed for docs
+ configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
+ 
+-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
++set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -Wformat=2 -Werror -std=c11 -Wno-overlength-strings")
+ 
+ #
+ # options
+diff --git a/src/executables/srpd_oper_poll_diff.c b/src/executables/srpd_oper_poll_diff.c
+index 58714d2..eba5ead 100644
+--- a/src/executables/srpd_oper_poll_diff.c
++++ b/src/executables/srpd_oper_poll_diff.c
+@@ -67,7 +67,7 @@ srpd_opd_add(srpd_oper_poll_diff_data_t *data, const char *module_name, const ch
+     int rc = SR_ERR_OK;
+     void *mem = NULL;
+     const sr_error_info_t *err_info;
+-    const char *format;
++    const char format[] = "Failed oper poll subscribe to module \"%s\" path \"%s\" (%s).";
+ 
+     /* alloc new subscription */
+     mem = realloc(data->subs, (data->sub_count + 1) * sizeof *data->subs);
+@@ -90,7 +90,6 @@ srpd_opd_add(srpd_oper_poll_diff_data_t *data, const char *module_name, const ch
+     if ((rc = sr_oper_poll_subscribe(data->sess, module_name, path, valid_ms, SR_SUBSCR_OPER_POLL_DIFF,
+             &data->subs[data->sub_count].subscr))) {
+         sr_session_get_error(data->sess, &err_info);
+-        format = "Failed oper poll subscribe to module \"%s\" path \"%s\" (%s).";
+ 
+         SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
+         sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
+diff --git a/src/modinfo.c b/src/modinfo.c
+index a04d52c..226edb8 100644
+--- a/src/modinfo.c
++++ b/src/modinfo.c
+@@ -1537,13 +1537,12 @@ cleanup:
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, const char *path_format,
+-        struct lyd_node *ctx_node)
++sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
++        struct lyd_node *ctx_node, const char *lock_name, sr_datastore_t ds)
+ {
+     sr_error_info_t *err_info = NULL;
+     sr_cid_t cid, skip_read_upgr_cid = 0;
+     uint32_t i;
+-
+ #define PATH_LEN 128
+     char path[PATH_LEN];
+     struct ly_ctx *ly_ctx;
+@@ -1553,7 +1552,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+     /* unlocked access to the lock, possible wrong/stale values should not matter */
+ 
+     if ((cid = rwlock->upgr)) {
+-        snprintf(path, PATH_LEN, path_format, cid, "read-upgr");
++        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='read-upgr']",
++                lock_name, cid, sr_ds2ident(ds));
+         SR_CHECK_LY_GOTO(lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL), ly_ctx, err_info, cleanup);
+ 
+         /* read-upgr lock also holds a read lock, we need to skip it */
+@@ -1570,7 +1570,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+             continue;
+         }
+ 
+-        snprintf(path, PATH_LEN, path_format, cid, "read");
++        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='read']",
++                lock_name, cid, sr_ds2ident(ds));
+         if (lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL)) {
+             sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+             goto cleanup;
+@@ -1579,7 +1580,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+ 
+     /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
+     if (!i && (cid = rwlock->writer)) {
+-        snprintf(path, PATH_LEN, path_format, cid, "write");
++        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='write']",
++                lock_name, cid, sr_ds2ident(ds));
+         SR_CHECK_LY_GOTO(lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL), ly_ctx, err_info, cleanup);
+     }
+ 
+@@ -1915,8 +1917,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+         shm_lock = &shm_mod->data_lock_info[ds];
+ 
+         /* data-lock */
+-        snprintf(buf, BUF_LEN, "data-lock[cid='%%" PRIu32 "'][datastore='%s'][mode='%%s']", sr_ds2ident(ds));
+-        err_info = sr_modinfo_module_srmon_locks_ds(&shm_lock->data_lock, conn->cid, buf, sr_mod);
++        err_info = sr_modinfo_module_srmon_locks_ds(&shm_lock->data_lock, conn->cid, sr_mod, "data-lock", ds);
+ 
+         if (err_info) {
+             return err_info;
+@@ -1957,8 +1958,7 @@ ds_unlock:
+ 
+     /* change-sub-lock */
+     for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+-        snprintf(buf, BUF_LEN, "change-sub-lock[cid='%%" PRIu32 "'][datastore='%s'][mode='%%s']", sr_ds2ident(ds));
+-        if ((err_info = sr_modinfo_module_srmon_locks_ds(&shm_mod->change_sub[ds].lock, 0, buf, sr_mod))) {
++        if ((err_info = sr_modinfo_module_srmon_locks_ds(&shm_mod->change_sub[ds].lock, 0, sr_mod, "change-sub-lock", ds))) {
+             return err_info;
+         }
+     }
+diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
+index 71fb66e..fb86812 100644
+--- a/src/plugins/common_json.c
++++ b/src/plugins/common_json.c
+@@ -129,7 +129,7 @@ sr_error_info_t *
+ srpjson_shm_prefix(const char *plg_name, const char **prefix)
+ {
+     sr_error_info_t *err_info = NULL;
+-    static char * srlyb_shm_prefix_cached = NULL;
++    static const char * srlyb_shm_prefix_cached = NULL;
+ 
+     if (srlyb_shm_prefix_cached) {
+         *prefix = srlyb_shm_prefix_cached;
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index e35f464..7f2c348 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -3073,9 +3073,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+         memcpy(shm_data_sub->addr, data, data_len);
+     }
+ 
+-    SR_LOG_INF("EV LISTEN: \"%s\" \"%s\" ID %" PRIu32 " priority %" PRIu32 " %s (remaining %" PRIu32 " subscribers).",
+-            event_desc, sr_ev2str(event), (uint32_t)ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id),
+-            (uint32_t)ATOMIC_LOAD_RELAXED(multi_sub_shm->priority), result_str, multi_sub_shm->subscriber_count);
++    SR_LOG_INF("EV LISTEN: \"%s\" \"%s\" ID %" PRIuFAST32 " priority %" PRIuFAST32 " %s (remaining %" PRIu32 " subscribers).",
++            event_desc, sr_ev2str(event), ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id),
++            ATOMIC_LOAD_RELAXED(multi_sub_shm->priority), result_str, multi_sub_shm->subscriber_count);
+     return NULL;
+ }
+ 
+@@ -3523,8 +3523,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
+         memcpy(shm_data_sub->addr, data, data_len);
+     }
+ 
+-    SR_LOG_INF("EV LISTEN: \"%s\" \"%s\" ID %" PRIu32 " processing %s.", event_desc, sr_ev2str(event),
+-            (uint32_t)ATOMIC_LOAD_RELAXED(sub_shm->request_id), result_str);
++    SR_LOG_INF("EV LISTEN: \"%s\" \"%s\" ID %" PRIuFAST32 " processing %s.", event_desc, sr_ev2str(event),
++            ATOMIC_LOAD_RELAXED(sub_shm->request_id), result_str);
+     return NULL;
+ }
+ 
+@@ -4420,10 +4420,10 @@ process_event:
+         if (sub_info.event == SR_SUB_EV_RPC) {
+             if (ret == SR_ERR_CALLBACK_SHELVE) {
+                 /* processing was shelved, so interupt the whole RPC processing in order to get correct final output */
+-                SR_LOG_INF("EV LISTEN: \"%s\" ID %" PRIu32 " priority %" PRIu32 " processing shelved.",
++                SR_LOG_INF("EV LISTEN: \"%s\" ID %" PRIuFAST32 " priority %" PRIuFAST32 " processing shelved.",
+                         sr_ev2str(ATOMIC_LOAD_RELAXED(multi_sub_shm->event)),
+-                        (uint32_t)ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id),
+-                        (uint32_t)ATOMIC_LOAD_RELAXED(multi_sub_shm->priority));
++                        ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id),
++                        ATOMIC_LOAD_RELAXED(multi_sub_shm->priority));
+                 goto cleanup;
+             } else if (ret != SR_ERR_OK) {
+                 /* whole event failed */
+diff --git a/tests/test_massive_scale.c b/tests/test_massive_scale.c
+index 891de7a..c131448 100644
+--- a/tests/test_massive_scale.c
++++ b/tests/test_massive_scale.c
+@@ -134,21 +134,6 @@ module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_
+     return 0;
+ }
+ 
+-static int
+-dummy_oper_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+-        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
+-{
+-    (void)session;
+-    (void)sub_id;
+-    (void)module_name;
+-    (void)xpath;
+-    (void)request_xpath;
+-    (void)request_id;
+-    (void)parent;
+-    (void)private_data;
+-    return 0;
+-}
+-
+ static int
+ recursive_oper_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+         const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)

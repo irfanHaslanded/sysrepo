@@ -1,0 +1,77 @@
+Source: sysrepo
+Section: libs
+Priority: optional
+Maintainer: Irfan Mohammad <irfan@graphiant.com>
+Build-Depends: debhelper (>= 11),
+               cmake,
+               dh-graphnos-yang,
+               libcmocka-dev,
+               libyang2-dev (>= 2.1.6),
+               libsystemd-dev,
+               pkg-config,
+               valgrind
+Standards-Version: 4.3.0
+
+Package: libsysrepo7
+Depends: libyang2, adduser, ${misc:Depends}, ${shlibs:Depends}
+Architecture: any
+Provides:
+ ${graphnos-yang:Provides}
+Conflicts: ${graphnos-yang:Conflicts}
+Description: YANG-based configuration and operational data store - runtime
+ Applications can use sysrepo to store their configuration modeled by provided
+ YANG model instead of using e.g. flat configuration files. Sysrepo will ensure
+ data consistency of the data stored in the datastore and enforce data
+ constraints defined by YANG model.
+ .
+ The library is implemented in C and provides an API for other software
+ to use for accessing sysrepo datastore.
+
+Package: libsysrepo7-ietf-netconf-yang
+Architecture: all
+Provides: ${graphnos-yang:Provides}
+Conflicts: ${graphnos-yang:Conflicts}
+Depends: ${graphnos-yang:Depends}, ${misc:Depends}
+Replaces: libsysrepo5-ietf-netconf-yang
+Description: Yang that defines Netconf as used by libsysrepo
+ Yang defintions for Netconf as used by libsysrepo, separate into its
+ own package so that it can if other packages also provide the ietf-netconf
+ yang module a single one can be selected for install.
+
+Package: libsysrepo7-dev
+Depends: libyang2-dev,
+         libsysrepo7 (= ${binary:Version}),
+         ${misc:Depends}
+Section: libdevel
+Architecture: any
+Description: YANG-based configuration and operational data store - development files
+ Applications can use sysrepo to store their configuration modeled by provided
+ YANG model instead of using e.g. flat configuration files. Sysrepo will ensure
+ data consistency of the data stored in the datastore and enforce data
+ constraints defined by YANG model.
+ .
+ This package contains the C headers, a pkgconfig file, and .so entry point
+ for sysrepo.
+
+Package: sysrepo-tools
+Depends: libsysrepo7 (= ${binary:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
+Provides: sysrepo, sysrepo7-tools
+Conflicts: sysrepo
+Replaces: sysrepo
+Section: devel
+Architecture: any
+Description: YANG-based configuration and operational data store - executable tools
+ This package provides the "sysrepoctl" and "sysrepocfg" tools which can be used
+ for manipulation of installed YANG modules and their YANG data, respectively.
+ There is also "sysrepo-plugind" that is a simple daemon grouping all installed
+ sysrepo plugins in a single process.
+
+Package: sysrepo-config
+Architecture: all
+Breaks: sysrepo-init
+Replaces: sysrepo-init
+Depends: ${misc:Depends}
+Description: YANG-based configuration and operational state data store - configuration
+ This package provides additional runtime configuration for sysrepo.

@@ -1,0 +1,48 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 26 Jul 2023 17:42:49 +0000
+Subject: allow disabling connection liveliness check
+
+If SYSREPO_DISABLE_CONN_LIVELINESS_CHECK is present in the environment,
+assume that all sysrepo connections are alive without actually checking
+them.
+
+This allows collecting sysrepo SHM/state from one environment (eg. which
+may be in a failed state), and inspecting it in a different environment.
+Otherwise when we try to inspect the state in that other environment,
+sysrepo will think connections are dead, and will clean up the state we
+are trying to inspect.
+
+cherry-picked from 0038-common-allow-disabling-connection-liveliness-check.patch
+---
+ src/common.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/common.c b/src/common.c
+index b0d4fa9..96b7891 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -3075,11 +3075,24 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+     }
+ }
+ 
++static inline int
++sr_conn_liveliness_check_disabled() {
++    static int disabled = -1;
++    if (disabled < 0) {
++        disabled = getenv("SYSREPO_DISABLE_CONN_LIVELINESS_CHECK") ? 1 : 0;
++    }
++    return disabled;
++}
++
+ int
+ sr_conn_is_alive(sr_cid_t cid)
+ {
+     int alive = 0;
+     sr_error_info_t *err_info;
++    if (sr_conn_liveliness_check_disabled()) {
++        SR_LOG_WRN("Not checking connection %"PRIu32" liveliness (check disabled)", cid);
++        return 1;
++    }
+ 
+     if ((err_info = sr_shmmain_conn_check(cid, &alive, NULL))) {
+         SR_LOG_WRN("Failed to check connection %" PRIu32 " aliveness.", cid);

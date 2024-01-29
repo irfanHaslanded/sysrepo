@@ -1,0 +1,6 @@
+usr/share/libyang/yang/ietf-datastores@2018-02-14.yang usr/share/sysrepo/yang/ietf-datastores@2018-02-14.yang
+usr/share/libyang/yang/ietf-inet-types@2022-11-07.yang usr/share/sysrepo/yang/ietf-inet-types@2022-11-07.yang
+usr/share/libyang/yang/ietf-yang-library@2019-01-04.yang usr/share/sysrepo/yang/ietf-yang-library@2019-01-04.yang
+usr/share/libyang/yang/ietf-yang-metadata@2016-08-05.yang usr/share/sysrepo/yang/ietf-yang-metadata@2016-08-05.yang
+usr/share/libyang/yang/ietf-yang-types@2013-07-15.yang usr/share/sysrepo/yang/ietf-yang-types@2013-07-15.yang
+usr/share/libyang/yang/yang@2022-06-16.yang usr/share/sysrepo/yang/yang@2022-06-16.yang

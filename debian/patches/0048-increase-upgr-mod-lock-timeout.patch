@@ -1,0 +1,46 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Sun, 27 Aug 2023 03:42:04 +0000
+Subject: increase timeout for cb and upgr mod locks
+
+Upgrade lock is held for longer as callbacks need to finish processing
+before we can downgrade to a read lock.
+---
+ src/common.h  | 4 ++--
+ src/shm_mod.c | 7 ++++++-
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/common.h b/src/common.h
+index f4d671e..cf0f2f5 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -120,10 +120,10 @@ struct srplg_ntf_s;
+ #define SR_SHMEXT_SUB_LOCK_TIMEOUT 15000
+ 
+ /** default timeout for change subscription callback (ms) */
+-#define SR_CHANGE_CB_TIMEOUT 5000
++#define SR_CHANGE_CB_TIMEOUT 15000
+ 
+ /** default timeout for operational subscription callback (ms) */
+-#define SR_OPER_CB_TIMEOUT 5000
++#define SR_OPER_CB_TIMEOUT 10000
+ 
+ /** default timeout for RPC/action subscription callback (ms) */
+ #define SR_RPC_CB_TIMEOUT 2000
+diff --git a/src/shm_mod.c b/src/shm_mod.c
+index 65e4001..15ab071 100644
+--- a/src/shm_mod.c
++++ b/src/shm_mod.c
+@@ -1176,7 +1176,12 @@ sr_shmmod_lock(const struct lys_module *ly_mod, sr_datastore_t ds, struct sr_mod
+ 
+     if (!timeout_ms) {
+         /* default timeout */
+-        timeout_ms = SR_MOD_LOCK_TIMEOUT;
++        if (SR_LOCK_READ_UPGR == mode) {
++            /* upgr needs to wait longer than it takes for an apply_changes to complete */
++            timeout_ms = 3 * SR_MOD_LOCK_TIMEOUT;
++        } else {
++            timeout_ms = SR_MOD_LOCK_TIMEOUT;
++        }
+     }
+ 
+     /* fill recovery callback information, context cannot be changed */

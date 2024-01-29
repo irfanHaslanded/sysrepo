@@ -1,0 +1,16 @@
+/.debhelper/
+/debhelper-build-stamp
+/files
+/*.debhelper.log
+/*.substvars
+/*.debhelper
+/libsysrepo-cpp-dev/
+/libsysrepo-cpp5/
+/libsysrepo-dev/
+/libsysrepo5/
+/libsysrepo5-ietf-netconf-yang/
+/sysrepo/
+/sysrepo-config/
+/sysrepo-plugind/
+/sysrepo/
+/tmp/

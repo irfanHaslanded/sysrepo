@@ -1,0 +1,21 @@
+---
+include:
+  - project: 'graphiant/graphnos/pipeline-ci'
+    file: '/recipes/graphnos.yml'
+
+variables:
+  GRAPH_CI_RELEASE: 'main'
+  # Work around blhc not being able to autodetect architecture of build
+  GRAPH_CI_BLHC_ARGS: '--arch amd64'
+  # Work around blhc non-verbose build false positive
+  GRAPH_CI_DPKG_BUILDPACKAGE_ARGS: '-j1'
+
+reprotest:
+  extends: .test-reprotest
+  variables:
+    # disable tests, because faketime support is incomplete and causes
+    # the tests to see spurious timeouts. Due to this bug:
+    # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=930592
+    # faketime is used even in the control run, so turning off time
+    # variations isn't sufficient.
+    DEB_BUILD_OPTIONS: "nocheck"

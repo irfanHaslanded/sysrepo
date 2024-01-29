@@ -1,0 +1,179 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Mon, 31 Jul 2023 15:46:49 +0000
+Subject: Allow runtime configurable shm dir
+
+ using `SYSREPO_SHM_DIR` env variable, it is now possible to relocate
+ where sysrepo stores its shared memory data.
+
+ This will allow parallel test runs, and debugging different versions
+ concurrently.
+---
+ src/common.c              | 28 +++++++++++++++++++++-------
+ src/common.h              |  2 ++
+ src/plugins/common_json.c |  4 ++--
+ src/shm_main.c            |  2 +-
+ tests/CMakeLists.txt      |  7 +++++--
+ 5 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index 51f56f7..630c74b 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -1148,6 +1148,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
+     return err_info;
+ }
+ 
++const char *
++sr_shm_dir_get(void)
++{
++    static const char *sr_shm_dir_str;
++    if (sr_shm_dir_str) {
++        return sr_shm_dir_str;
++    }
++
++    if (!(sr_shm_dir_str = getenv("SYSREPO_SHM_DIR"))) {
++        sr_shm_dir_str = SR_SHM_DIR;
++    }
++    return sr_shm_dir_str;
++}
++
+ /**
+  * @brief Get global SHM prefix prepended to all SHM files.
+  *
+@@ -1181,7 +1195,7 @@ sr_path_main_shm(char **path)
+         return err_info;
+     }
+ 
+-    if (asprintf(path, "%s/%s_main", SR_SHM_DIR, prefix) == -1) {
++    if (asprintf(path, "%s/%s_main", sr_shm_dir_get(), prefix) == -1) {
+         SR_ERRINFO_MEM(&err_info);
+         *path = NULL;
+     }
+@@ -1200,7 +1214,7 @@ sr_path_mod_shm(char **path)
+         return err_info;
+     }
+ 
+-    if (asprintf(path, "%s/%s_mod", SR_SHM_DIR, prefix) == -1) {
++    if (asprintf(path, "%s/%s_mod", sr_shm_dir_get(), prefix) == -1) {
+         SR_ERRINFO_MEM(&err_info);
+         *path = NULL;
+     }
+@@ -1219,7 +1233,7 @@ sr_path_ext_shm(char **path)
+         return err_info;
+     }
+ 
+-    if (asprintf(path, "%s/%s_ext", SR_SHM_DIR, prefix) == -1) {
++    if (asprintf(path, "%s/%s_ext", sr_shm_dir_get(), prefix) == -1) {
+         SR_ERRINFO_MEM(&err_info);
+         *path = NULL;
+     }
+@@ -1240,9 +1254,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
+     }
+ 
+     if (suffix2 > -1) {
+-        ret = asprintf(path, "%s/%ssub_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
++        ret = asprintf(path, "%s/%ssub_%s.%s.%08x", sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+     } else {
+-        ret = asprintf(path, "%s/%ssub_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
++        ret = asprintf(path, "%s/%ssub_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
+     }
+ 
+     if (ret == -1) {
+@@ -1264,9 +1278,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
+     }
+ 
+     if (suffix2 > -1) {
+-        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
++        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08x", sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+     } else {
+-        ret = asprintf(path, "%s/%ssub_data_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
++        ret = asprintf(path, "%s/%ssub_data_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
+     }
+ 
+     if (ret == -1) {
+diff --git a/src/common.h b/src/common.h
+index 6b4413e..f4d671e 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -1418,4 +1418,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
+  * */
+ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
+ 
++const char * sr_shm_dir_get(void);
++
+ #endif /* _COMMON_H */
+diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
+index fb86812..81df377 100644
+--- a/src/plugins/common_json.c
++++ b/src/plugins/common_json.c
+@@ -34,7 +34,7 @@
+ #include <unistd.h>
+ 
+ #include <libyang/libyang.h>
+-
++#include "common.h"
+ #include "config.h"
+ #include "sysrepo.h"
+ 
+@@ -679,7 +679,7 @@ srpjson_get_path(const char *plg_name, const char *mod_name, sr_datastore_t ds,
+             return err_info;
+         }
+ 
+-        r = asprintf(path, "%s/%s_%s.%s", SR_SHM_DIR, prefix, mod_name, srpjson_ds2str(ds));
++        r = asprintf(path, "%s/%s_%s.%s", sr_shm_dir_get(), prefix, mod_name, srpjson_ds2str(ds));
+         break;
+     }
+ 
+diff --git a/src/shm_main.c b/src/shm_main.c
+index 9c896f2..02274ec 100644
+--- a/src/shm_main.c
++++ b/src/shm_main.c
+@@ -469,7 +469,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+         }
+ 
+         /* make sure the directory exists */
+-        strcpy(buf, SR_SHM_DIR);
++        strcpy(buf, sr_shm_dir_get());
+         if ((err_info = sr_mkpath(buf, SR_DIR_PERM))) {
+             goto cleanup;
+         }
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 7ba18b6..43abde0 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -31,7 +31,7 @@ endif()
+ configure_file("${PROJECT_SOURCE_DIR}/tests/tcommon.h.in" "${PROJECT_BINARY_DIR}/tests/tcommon.h" ESCAPE_QUOTES @ONLY)
+ 
+ set(TEST_CLEAR_REPOS_CMD rm -rf ${PROJECT_BINARY_DIR}/test_repositories)
+-set(TEST_CLEAR_SHM_CMD find /dev/shm/ -maxdepth 1 -readable -name _tests_sr_* -delete)
++set(TEST_CLEAR_SHM_CMD rm -rf /dev/shm/_tests_sr_dir_test_*)
+ if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+     # tests cleanup fixtures
+     add_test(NAME tests_clear_repos
+@@ -71,6 +71,7 @@ if(ENABLE_TESTS)
+             "CMOCKA_TEST_ABORT=1"
+             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
+             "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
++            "SYSREPO_SHM_DIR=/dev/shm/_tests_sr_dir_${test_name}"
+             "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
+         )
+ 
+@@ -88,8 +89,9 @@ if(ENABLE_TESTS)
+     endforeach()
+     add_test(NAME test_sysrepocfg_oper_import COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+     set_property(TEST test_sysrepocfg_oper_import APPEND PROPERTY ENVIRONMENT
+-        "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
++        "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/test_sysrepocfg_oper_import"
+         "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
++        "SYSREPO_SHM_DIR=/dev/shm/_tests_sr_dir_test_sysrepocfg_oper_import"
+         "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
+     )
+ 
+@@ -112,6 +114,7 @@ if(ENABLE_VALGRIND_TESTS)
+         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
+             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
+             "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
++            "SYSREPO_SHM_DIR=/dev/shm/_tests_sr_dir_${test_name}"
+             "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
+         )
+ 

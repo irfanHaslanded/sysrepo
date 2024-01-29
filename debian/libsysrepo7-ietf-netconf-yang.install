@@ -1,0 +1,2 @@
+modules/ietf-netconf@*.yang usr/share/sysrepo/yang
+modules/ietf-netconf-acm@*.yang usr/share/sysrepo/yang

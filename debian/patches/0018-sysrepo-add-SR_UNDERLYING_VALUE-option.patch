@@ -1,0 +1,200 @@
+From: Duncan Eastoe <duncan@graphiant.com>
+Date: Tue, 2 Aug 2022 14:10:13 +0100
+Subject: sysrepo: add SR_UNDERLYING_VALUE option
+
+This option is provided for use with sr_get_items() to allow easy
+retrieval of the underlying integer value of enums, rather than the
+typical string representation.
+
+An application could achieve this with a combination sr_get_data() and
+then looking up the schema. However the intention of this option is to
+provide a more convenient alternative, particularly in Rust applications
+(where this would currently require unsafe code).
+---
+ src/common.c                 |  2 +-
+ src/sysrepo.c                |  6 +++--
+ src/sysrepo_types.h          | 10 +++++--
+ tests/files/test-module.yang |  4 +--
+ tests/test_get.c             | 62 +++++++++++++++++++++++++++++++++++++++++++-
+ 5 files changed, 75 insertions(+), 9 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index 9d14878..617a4f6 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -4015,7 +4015,7 @@ store_value:
+             break;
+         case LY_TYPE_ENUM:
+             if (opts & SR_VAL_LY2SR_UNDERLYING_VALUE) {
+-                sr_val->data.int32_val = val->int32;
++                sr_val->data.int32_val = leaf->value.enum_item->value;
+                 sr_val->type = SR_INT32_T;
+             } else {
+                 sr_val->type = SR_ENUM_T;
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index e7107a2..0bd4fca 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -2776,7 +2776,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+     uint32_t i;
+ 
+     SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
+-            ((session->ds != SR_DS_OPERATIONAL) && (opts & SR_OPER_MASK)), session, err_info);
++            ((session->ds != SR_DS_OPERATIONAL) && ((opts & ~SR_UNDERLYING_VALUE) & SR_OPER_MASK)), session, err_info);
+ 
+     if (!timeout_ms) {
+         timeout_ms = SR_OPER_CB_TIMEOUT;
+@@ -2818,7 +2818,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+     }
+ 
+     for (i = 0; i < set->count; ++i) {
+-        if ((err_info = sr_val_ly2sr(set->dnodes[i], (*values) + i))) {
++        if ((err_info = sr_val_ly2sr_with_opts(set->dnodes[i],
++                (opts & SR_UNDERLYING_VALUE) ? SR_VAL_LY2SR_UNDERLYING_VALUE : SR_VAL_LY2SR_DEFAULT,
++                (*values) + i))) {
+             goto cleanup;
+         }
+         ++(*value_cnt);
+diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
+index 0618669..6fdd1a7 100644
+--- a/src/sysrepo_types.h
++++ b/src/sysrepo_types.h
+@@ -304,8 +304,13 @@ typedef enum sr_get_oper_flag_e {
+                                           one inherit the origin from parents. */
+     SR_OPER_NO_POLL_CACHED = 0x20,   /**< Do not use cached oper data from operational poll subscriptions even if
+                                           available. */
+-    SR_OPER_NO_RUN_CACHED = 0x40     /**< Do not use connection running datastore cache data even if the connection
++    SR_OPER_NO_RUN_CACHED = 0x40,    /**< Do not use connection running datastore cache data even if the connection
+                                           supports it, may prevent some dead locks. */
++    SR_UNDERLYING_VALUE = 0x20000,   /**< Returns the underlying value for nodes with an appropriate type.
++                                          This causes nodes of type SR_ENUM_T to instead be returned as SR_INT32_T,
++                                          with the underlying numeric representation of the enum value.
++                                          There is currently no effect on any other node type.
++                                          This option works on data in any datastore. */
+ } sr_get_oper_flag_t;
+ 
+ #define SR_OPER_MASK 0xFFFF          /**< Mask for all get oper data flags. */
+@@ -314,9 +319,10 @@ typedef enum sr_get_oper_flag_e {
+  * @brief Flags used to override default data get behavior.
+  */
+ typedef enum {
+-    SR_GET_NO_FILTER = 0x010000      /**< Do not apply the filter and return the whole "base" data which the filter
++    SR_GET_NO_FILTER = 0x010000,      /**< Do not apply the filter and return the whole "base" data which the filter
+                                           would normally be applied on. The filter is used only when deciding what data
+                                           to retrieve from subscribers and similar optimization cases. */
++
+ } sr_get_flag_t;
+ 
+ /**
+diff --git a/tests/files/test-module.yang b/tests/files/test-module.yang
+index 55f5d1e..64442c8 100644
+--- a/tests/files/test-module.yang
++++ b/tests/files/test-module.yang
+@@ -40,9 +40,7 @@ module test-module {
+         enum "no" {
+           value 2;
+         }
+-        enum "maybe" {
+-          value 3;
+-        }
++        enum "maybe";
+       }
+     }
+     leaf options {
+diff --git a/tests/test_get.c b/tests/test_get.c
+index c3b6838..bd54d77 100644
+--- a/tests/test_get.c
++++ b/tests/test_get.c
+@@ -47,6 +47,8 @@ setup(void **state)
+         TESTS_SRC_DIR "/files/simple.yang",
+         TESTS_SRC_DIR "/files/simple-aug.yang",
+         TESTS_SRC_DIR "/files/defaults.yang",
++        TESTS_SRC_DIR "/files/referenced-data.yang",
++        TESTS_SRC_DIR "/files/test-module.yang",
+         NULL
+     };
+ 
+@@ -82,17 +84,74 @@ teardown(void **state)
+         "simple-aug",
+         "simple",
+         "defaults",
++        "test-module",
++        "referenced-data",
+         NULL
+     };
+ 
+     sr_remove_modules(st->conn, module_names, 0);
+-
+     sr_disconnect(st->conn);
+     sr_disconnect(st->cconn);
+     free(st);
+     return 0;
+ }
+ 
++/* TEST */
++static void
++test_get_enum(void **state)
++{
++    struct state *st = (struct state *)*state;
++    sr_val_t *vals = NULL;
++    size_t vals_cnt = 0;
++    int ret;
++
++    /* set enum which has an explicit value */
++    ret = sr_set_item_str(st->sess, "/test-module:main/enum", "yes", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    /* read it back as an enum (string) */
++    ret = sr_get_items(st->sess, "/test-module:main/enum", 0, SR_OPER_DEFAULT, &vals, &vals_cnt);
++    assert_int_equal(ret, SR_ERR_OK);
++    assert_int_equal(vals[0].type, SR_ENUM_T);
++    assert_string_equal(vals[0].data.enum_val, "yes");
++    sr_free_values(vals, vals_cnt);
++
++    /* read it back as the underlying value (int) */
++    vals = NULL;
++    vals_cnt = 0;
++    ret = sr_get_items(st->sess, "/test-module:main/enum", 0, SR_UNDERLYING_VALUE, &vals, &vals_cnt);
++    assert_int_equal(ret, SR_ERR_OK);
++    assert_int_equal(vals[0].type, SR_INT32_T);
++    assert_int_equal(vals[0].data.int32_val, 1);
++    sr_free_values(vals, vals_cnt);
++
++    /* set enum which does not have an explicit value */
++    ret = sr_set_item_str(st->sess, "/test-module:main/enum", "maybe", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    /* read it back as an enum (string) */
++    vals = NULL;
++    vals_cnt = 0;
++    ret = sr_get_items(st->sess, "/test-module:main/enum", 0, SR_OPER_DEFAULT, &vals, &vals_cnt);
++    assert_int_equal(ret, SR_ERR_OK);
++    assert_int_equal(vals[0].type, SR_ENUM_T);
++    assert_string_equal(vals[0].data.enum_val, "maybe");
++    sr_free_values(vals, vals_cnt);
++
++    /* read it back as the underlying value (int) */
++    vals = NULL;
++    vals_cnt = 0;
++    ret = sr_get_items(st->sess, "/test-module:main/enum", 0, SR_UNDERLYING_VALUE, &vals, &vals_cnt);
++    assert_int_equal(ret, SR_ERR_OK);
++    assert_int_equal(vals[0].type, SR_INT32_T);
++    assert_int_equal(vals[0].data.int32_val, 3);
++    sr_free_values(vals, vals_cnt);
++}
++
+ /* TEST */
+ static void
+ test_invalid(void **state)
+@@ -641,6 +700,7 @@ main(void)
+         cmocka_unit_test(test_union),
+         cmocka_unit_test(test_key),
+         cmocka_unit_test(test_factory_default),
++        cmocka_unit_test(test_get_enum),
+     };
+ 
+     setenv("CMOCKA_TEST_ABORT", "1", 1);

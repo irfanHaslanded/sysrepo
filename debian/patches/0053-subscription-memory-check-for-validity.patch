@@ -1,0 +1,167 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Mon, 16 Oct 2023 11:02:55 +0000
+Subject: subscription memory check for validity
+
+in libyang1, unless a reuse flag was passed, we always created a new
+subscription. However in v2.x, the memory in the subscription context is
+expected to be NULL first time.
+
+If application passes an uninitialized pointer, and it is not zeroed,
+then we can have undefined behavior.
+
+To prevent this, a magic will be stored in the properly initialized
+subscription context, and we will check for it when reusing an existing
+context to add more subscriptions to it.
+---
+ src/common_types.h |  5 +++++
+ src/sysrepo.c      | 41 +++++++++++++++++++++++++++++++++--------
+ src/sysrepo.h      |  5 +++++
+ 3 files changed, 43 insertions(+), 8 deletions(-)
+
+diff --git a/src/common_types.h b/src/common_types.h
+index e556fef..92718ce 100644
+--- a/src/common_types.h
++++ b/src/common_types.h
+@@ -66,6 +66,10 @@ typedef enum {
+ #define SR_RWLOCK_RD_STORE(rwlock_p, i, cid) ATOMIC_STORE_RELAXED((rwlock_p)->readers[i], ((uint64_t)cid << 32) + 1)
+ #define SR_RWLOCK_RD_CLEAR(rwlock_p, i) ATOMIC_STORE_RELAXED((rwlock_p)->readers[i], 0)
+ 
++#define SR_SUBSCR_CHECK(subs_pp) (!(subs_pp) || ((*subs_pp) && 0xCAFEB0BA != (*subs_pp)->magic))
++#define SR_SUBSCR_MAGIC_SET(subs_p) ((subs_p)->magic = 0xCAFEB0BA)
++#define SR_SUBSCR_MAGIC_INVALIDATE(subs_p) ATOMIC_STORE_RELAXED((subs_p)->magic, 0xCAFEB0BA)
++
+ /**
+  * @brief Sysrepo read-write lock.
+  */
+@@ -334,6 +338,7 @@ struct sr_subscription_ctx_s {
+         sr_shm_t sub_shm;           /**< Subscription SHM. */
+     } *rpc_subs;                    /**< RPC/action subscriptions for each operation. */
+     uint32_t rpc_sub_count;         /**< RPC/action operation subscription count. */
++    uint32_t magic;                 /**< 0xCAFEB0BA when initialized and valid, any other value is invalid. */
+ };
+ 
+ /**
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index ace9db8..5e9939e 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -4946,6 +4946,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
+ 
+     assert(subscription);
+ 
++    /* invalidate the subscription to prevent reuse */
++    SR_SUBSCR_MAGIC_INVALIDATE(subscription);
++
+     /* CONTEXT LOCK */
+     if ((err_info = sr_lycc_lock(subscription->conn, SR_LOCK_READ, 0, __func__))) {
+         return err_info;
+@@ -5011,6 +5014,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
+     return sr_api_ret(NULL, err_info);
+ }
+ 
++API void
++sr_unsubscribe_no_fail(sr_subscription_ctx_t *subscr)
++{
++    int i;
++    /* try to unsubscribe 10 times, and if we fail */
++    for (i = 0; i < 10; i++) {
++        if (!sr_unsubscribe(subscr)) {
++            return;
++        }
++        sleep(1);
++    }
++
++    /* could not unsubscribe after many attempts, we are locked up or too busy? cannot continue */
++    abort();
++}
++
+ API int
+ sr_module_change_set_order(sr_conn_ctx_t *conn, const char *module_name, sr_datastore_t ds, uint32_t priority)
+ {
+@@ -5230,7 +5249,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+             goto error;
+         }
+     }
+-
++    /* store a magic number so we know our struct is initialized by sysrepo */
++    SR_SUBSCR_MAGIC_SET(*subs_p);
+     free(path);
+     return NULL;
+ 
+@@ -5262,7 +5282,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+     uint32_t xpath_id = 0;
+ 
+     SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
+-            !callback || !subscription, session, err_info);
++            !callback || SR_SUBSCR_CHECK(subscription) , session, err_info);
+ 
+     /* xpath = "" is invalid, implicitly convert it to NULL to avoid errors */
+     if (xpath && !xpath[0]) {
+@@ -5305,6 +5325,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+     shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), module_name);
+     SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+ 
++    if (*subscription) {
++        /* sanity check */
++
++    }
+     if (!*subscription) {
+         /* create a new subscription */
+         if ((err_info = sr_subscr_new(conn, opts, subscription))) {
+@@ -5895,8 +5919,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
+     sr_mod_t *shm_mod = NULL;
+     int is_ext;
+ 
+-    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !xpath || (!callback && !tree_callback) || !subscription,
+-            session, err_info);
++    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !xpath || (!callback && !tree_callback) ||
++            SR_SUBSCR_CHECK(subscription), session, err_info);
+ 
+     conn = session->conn;
+ 
+@@ -6569,7 +6593,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+             (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
+             (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
+             (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
+-            (!callback && !tree_callback) || !subscription, session, err_info);
++            (!callback && !tree_callback) || SR_SUBSCR_CHECK(subscription), session, err_info);
+     conn = session->conn;
+ 
+     /* CONTEXT LOCK */
+@@ -7067,8 +7091,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+     uint32_t prio;
+     uint32_t xpath_id = 0;
+ 
+-    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !module_name || !path || !callback || !subscription,
+-            session, err_info);
++    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !module_name || !path || !callback ||
++            SR_SUBSCR_CHECK(subscription), session, err_info);
+ 
+     conn = session->conn;
+     /* only these options are relevant outside this function and will be stored */
+@@ -7189,7 +7213,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+     sr_mod_t *shm_mod;
+     struct modsub_operpoll_s *oper_poll_subs;
+ 
+-    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !path || !valid_ms || !subscription, session, err_info);
++    SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !path || !valid_ms ||
++            SR_SUBSCR_CHECK(subscription), session, err_info);
+ 
+     conn = session->conn;
+     /* only these options are relevant outside this function and will be stored */
+diff --git a/src/sysrepo.h b/src/sysrepo.h
+index 09f68e3..0d9bb62 100644
+--- a/src/sysrepo.h
++++ b/src/sysrepo.h
+@@ -1294,6 +1294,11 @@ int sr_subscription_thread_resume(sr_subscription_ctx_t *subscription);
+  */
+ int sr_unsubscribe(sr_subscription_ctx_t *subscription);
+ 
++/**
++ * @brief tries sr_unsubscribe until success or aborts. For use with cpp bindings destructors.
++ */
++void sr_unsubscribe_no_fail(sr_subscription_ctx_t *subscription);
++
+ /** @} subs */
+ 
+ ////////////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,47 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Thu, 7 Dec 2023 12:37:57 +0000
+Subject: relax datastore specification for sysrepocfg
+
+There is not much to be gained by doing a strict arg check for datastore
+specified to sysrepocfg.
+
+To support `-d op`, `-d oper`, `-d run` etc. for user convenience, only
+the first letter will be checked for a match
+---
+ src/executables/sysrepocfg.c | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
+index 04e1812..75db2e4 100644
+--- a/src/executables/sysrepocfg.c
++++ b/src/executables/sysrepocfg.c
+@@ -730,17 +730,23 @@ arg_is_file(const char *optarg)
+ static int
+ arg_get_ds(const char *optarg, sr_datastore_t *ds)
+ {
+-    if (!strcmp(optarg, "r") || !strcmp(optarg, "running")) {
++    switch (optarg[0]) {
++    case 'r':
+         *ds = SR_DS_RUNNING;
+-    } else if (!strcmp(optarg, "s") || !strcmp(optarg, "startup")) {
++        break;
++    case 's':
+         *ds = SR_DS_STARTUP;
+-    } else if (!strcmp(optarg, "c") || !strcmp(optarg, "candidate")) {
++        break;
++    case 'c':
+         *ds = SR_DS_CANDIDATE;
+-    } else if (!strcmp(optarg, "o") || !strcmp(optarg, "operational")) {
++        break;
++    case 'o':
+         *ds = SR_DS_OPERATIONAL;
+-    } else if (!strcmp(optarg, "f") || !strcmp(optarg, "factory-default")) {
++        break;
++    case 'f':
+         *ds = SR_DS_FACTORY_DEFAULT;
+-    } else {
++        break;
++    default:
+         error_print(0, "Unknown datastore \"%s\"", optarg);
+         return -1;
+     }

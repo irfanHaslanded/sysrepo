@@ -1,0 +1,288 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Sun, 30 Jul 2023 19:42:14 +0000
+Subject: fix skip predicate
+
+predicate skip is poorly written. It does not account for predicates
+containing quotes. for example [name="O'Brien"] or [secret ='n53l"LF8D']
+
+Also add tests for it.
+Add gnmi test yang modules to sysrepo for simpler debugging in future.
+---
+ src/common.c                           |   2 +-
+ tests/files/gnmi-server-test-wine.yang |  38 +++++++++++
+ tests/files/gnmi-server-test.yang      | 119 +++++++++++++++++++++++++++++++++
+ tests/test_oper_edit.c                 |  56 ++++++++++++++++
+ 4 files changed, 214 insertions(+), 1 deletion(-)
+ create mode 100644 tests/files/gnmi-server-test-wine.yang
+ create mode 100644 tests/files/gnmi-server-test.yang
+
+diff --git a/src/common.c b/src/common.c
+index e6bf263..51f56f7 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -5081,7 +5081,7 @@ sr_xpath_skip_predicate(const char *xpath)
+         } else if (!quot && ((xpath[0] == '\'') || (xpath[0] == '\"'))) {
+             quot = xpath[0];
+         }
+-    } while (quot || (xpath[0] != ']'));
++    } while (xpath[0] && ( quot || (xpath[0] != ']')));
+ 
+     return xpath + 1;
+ }
+diff --git a/tests/files/gnmi-server-test-wine.yang b/tests/files/gnmi-server-test-wine.yang
+new file mode 100644
+index 0000000..c565876
+--- /dev/null
++++ b/tests/files/gnmi-server-test-wine.yang
+@@ -0,0 +1,38 @@
++module gnmi-server-test-wine {
++  yang-version 1.1;
++  namespace "https://graphiant.com/gnmi-server-test-wine";
++  prefix test;
++
++  description
++    "gNMI Server Test module
++
++     Copyright (c) 2022 Graphiant, Inc.
++     All rights reserved.";
++
++  revision 2022-04-27 {
++    description
++      "Initial revision";
++  }
++
++  container wines {
++    list wine {
++      key "name vintage";
++
++      leaf name {
++        type string;
++      }
++
++      leaf vintage {
++        type uint32 {
++	  range "1900..2100";
++	}
++      }
++
++      leaf score {
++        type uint32 {
++	  range "0..100";
++	}
++      }
++    }
++  }
++}
+diff --git a/tests/files/gnmi-server-test.yang b/tests/files/gnmi-server-test.yang
+new file mode 100644
+index 0000000..613042b
+--- /dev/null
++++ b/tests/files/gnmi-server-test.yang
+@@ -0,0 +1,119 @@
++module gnmi-server-test {
++  yang-version 1.1;
++  namespace "https://graphiant.com/yang";
++  prefix test;
++
++  description
++    "gNMI Server Test module
++
++     Copyright (c) 2021 Graphiant, Inc.
++     All rights reserved.";
++
++  revision 2021-02-10 {
++    description
++      "Initial revision";
++  }
++
++  container test {
++    list things {
++      key "name";
++
++      leaf name {
++        type string;
++      }
++
++      leaf description {
++        type string;
++      }
++
++      leaf enabled {
++        type boolean;
++      }
++
++      leaf amount {
++        type uint32;
++      }
++
++      leaf signed-amount {
++        type int32;
++      }
++
++      leaf decimal-amount {
++        type decimal64 {
++          fraction-digits 2;
++        }
++      }
++    }
++  }
++
++  container test2 {
++    leaf enabled {
++      type boolean;
++    }
++
++    leaf enabled2 {
++      type boolean;
++    }
++
++    leaf custom-error {
++      type uint8;
++    }
++
++    leaf must-error {
++      must "current() > 42";
++      type uint8;
++    }
++  }
++
++  container test-state {
++    config false;
++    list things {
++      key "name";
++
++      leaf name {
++        type string;
++      }
++
++      leaf counter {
++        type uint64;
++      }
++    }
++
++    container cargo {
++      presence "some deep meaning";
++    }
++  }
++
++  container test3 {
++    list complex-list {
++      key "type name";
++
++      leaf type {
++        type string;
++      }
++
++      leaf name {
++        type string;
++      }
++
++      leaf data {
++        type string;
++      }
++    }
++  }
++
++  rpc clear-stats {
++    description
++      "An RPC with inputs and outputs.";
++    input {
++      leaf interface {
++        type string;
++      }
++    }
++    output {
++      leaf old-stats {
++        type uint64;
++      }
++    }
++  }
++}
+diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
+index 7523160..e570b5b 100644
+--- a/tests/test_oper_edit.c
++++ b/tests/test_oper_edit.c
+@@ -48,6 +48,8 @@ setup_f(void **state)
+     struct state *st;
+     const char *schema_paths[] = {
+         TESTS_SRC_DIR "/files/test-leafref.yang",
++        TESTS_SRC_DIR "/files/gnmi-server-test.yang",
++        TESTS_SRC_DIR "/files/gnmi-server-test-wine.yang",
+         NULL
+     };
+ 
+@@ -71,6 +73,8 @@ teardown_f(void **state)
+     struct state *st = (struct state *)*state;
+     const char *module_names[] = {
+         "test-leafref",
++        "gnmi-server-test",
++        "gnmi-server-test-wine",
+         NULL
+     };
+ 
+@@ -81,6 +85,57 @@ teardown_f(void **state)
+     return 0;
+ }
+ 
++static void
++test_oper_gnmi_set(void **arg)
++{
++    sr_conn_ctx_t *conn = NULL;
++    sr_session_ctx_t *oper_sess = NULL;
++    struct state *st = (struct state *)*arg;
++    int ret;
++    sr_data_t *data = NULL;
++
++    const char *xpath =  "/gnmi-server-test:test-state/things[name=\"to-cpe2'\"]";
++    const char *xpath_next = "/gnmi-server-test:test-state/things[name=\"to-cpe2'\"]/counter";
++
++    const char *xpath2 =  "/gnmi-server-test:test-state/things[name='to-cpe1\"']";
++    const char *xpath2_next = "/gnmi-server-test:test-state/things[name='to-cpe2\"']/counter";
++
++    const char *val = "8";
++
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath, "", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath_next, val, NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath2, "", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath2_next, val, NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(oper_sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    TLOG_INF("Added oper data");
++
++    ret = sr_get_data(oper_sess, "/gnmi-server-test:*", 0, 0, 0, &data);
++    assert_int_equal(ret, SR_ERR_OK);
++    sr_release_data(data);
++    data = NULL;
++
++    ret = sr_session_stop(oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    sr_disconnect(conn);
++}
++
++
+ static void
+ test_leafref_oper_data(void **arg)
+ {
+@@ -272,6 +327,7 @@ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
++        cmocka_unit_test(test_oper_gnmi_set),
+         cmocka_unit_test(test_leafref_oper_data),
+         cmocka_unit_test(test_oper_sr_mon),
+     };

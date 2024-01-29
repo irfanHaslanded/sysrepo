@@ -1,0 +1,54 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Sat, 10 Dec 2022 16:54:37 +0000
+Subject: Improve test log debugs and readability
+
+ It is helpful to be able to see debug level logs in tests while
+ debugging, without having to recompile. Enabling it via environ var.
+
+ Also, log thread_id from gettid() instead of pthread_self() in
+ UnitTest logs which is more readable.
+---
+ tests/tcommon.c | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/tests/tcommon.c b/tests/tcommon.c
+index 0dcdd0b..3ed76a7 100644
+--- a/tests/tcommon.c
++++ b/tests/tcommon.c
+@@ -27,6 +27,10 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+ {
+     const char *severity = NULL;
+     struct timespec ts;
++    static int disable_debug = -1;
++    if (disable_debug < 0) {
++        disable_debug = getenv("SR_TEST_LOG_DEBUG") == NULL;
++    }
+ 
+     switch (level) {
+     case SR_LL_ERR:
+@@ -39,9 +43,11 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+         severity = "INF";
+         break;
+     case SR_LL_DBG:
+-        /*severity = "DBG";
+-        break;*/
+-        return;
++        if (disable_debug) {
++            return;
++        }
++        severity = "DBG";
++        break;
+     case SR_LL_NONE:
+         assert(0);
+         return;
+@@ -50,8 +56,8 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+     clock_gettime(CLOCK_REALTIME, &ts);
+     ts.tv_sec %= 1000;
+     ts.tv_nsec /= 1000;
+-    fprintf(stderr, "%03ld.%06ld [%ld][%lu][%s]%s: %s\n", ts.tv_sec, ts.tv_nsec,
+-            (long)getpid(), (unsigned long)pthread_self(), severity,
++    fprintf(stderr, "%03ld.%06ld [%ld][%ld][%s]%s: %s\n", ts.tv_sec, ts.tv_nsec,
++            (long)getpid(), (long)gettid(), severity,
+             prefix, message);
+ }
+ 

@@ -1,0 +1,4516 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Sat, 18 Mar 2023 19:45:34 +0000
+Subject: Enable asserts and improve tests
+
+Add systemdb tests for set and delete
+
+Add the yang modules in systemdb unit-tests to allow for faster
+debugging of any issues.
+---
+ CMakeLists.txt                                 |   7 +-
+ src/common.c                                   |   5 +-
+ src/sysrepo.c                                  |   6 +-
+ tests/CMakeLists.txt                           |  13 +-
+ tests/files/ex-interfaces.yang                 | 642 +++++++++++++++++
+ tests/files/ex-protocols.yang                  |  62 ++
+ tests/files/ex-yanggen-augments.yang           |  88 +++
+ tests/files/ex-yanggen.yang                    | 917 +++++++++++++++++++++++++
+ tests/files/graphnos-base-types.yang           |  83 +++
+ tests/files/graphnos-extensions.yang           |  44 ++
+ tests/files/graphnos-interfaces.yang           | 254 +++++++
+ tests/files/graphnos-network-instance.yang     | 107 +++
+ tests/files/graphnos-policy-packet-fields.yang | 307 +++++++++
+ tests/files/graphnos-policy-types.yang         | 175 +++++
+ tests/files/graphnos-policy.yang               |  99 +++
+ tests/files/graphnos-routing-types.yang        | 413 +++++++++++
+ tests/files/graphnos-yang-revisions.yang       | 128 ++++
+ tests/files/less-noddy.yang                    |   8 +
+ tests/files/noddy.yang                         |   5 +
+ tests/files/test-leafref.yang                  |  45 ++
+ tests/tcommon.c                                |   8 +-
+ tests/test_edit.c                              | 169 +++++
+ tests/test_massive_scale.c                     | 417 +++++++++++
+ tests/test_oper_edit.c                         | 233 +++++++
+ 24 files changed, 4222 insertions(+), 13 deletions(-)
+ create mode 100644 tests/files/ex-interfaces.yang
+ create mode 100644 tests/files/ex-protocols.yang
+ create mode 100644 tests/files/ex-yanggen-augments.yang
+ create mode 100644 tests/files/ex-yanggen.yang
+ create mode 100644 tests/files/graphnos-base-types.yang
+ create mode 100644 tests/files/graphnos-extensions.yang
+ create mode 100644 tests/files/graphnos-interfaces.yang
+ create mode 100644 tests/files/graphnos-network-instance.yang
+ create mode 100644 tests/files/graphnos-policy-packet-fields.yang
+ create mode 100644 tests/files/graphnos-policy-types.yang
+ create mode 100644 tests/files/graphnos-policy.yang
+ create mode 100644 tests/files/graphnos-routing-types.yang
+ create mode 100644 tests/files/graphnos-yang-revisions.yang
+ create mode 100644 tests/files/less-noddy.yang
+ create mode 100644 tests/files/noddy.yang
+ create mode 100644 tests/files/test-leafref.yang
+ create mode 100644 tests/test_massive_scale.c
+ create mode 100644 tests/test_oper_edit.c
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a39cdb5..748961a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
+ # see https://github.com/CESNET/libyang/pull/1692 for why CMAKE_C_FLAGS_<type> are not used directly
+ if("${BUILD_TYPE_UPPER}" STREQUAL "RELEASE")
+     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build Type" FORCE)
+-    set(CMAKE_C_FLAGS "-DNDEBUG -O2 ${CMAKE_C_FLAGS}")
++    set(CMAKE_C_FLAGS "-O2 ${CMAKE_C_FLAGS}")
++elseif("${BUILD_TYPE_UPPER}" STREQUAL "PACKAGE")
++    set(CMAKE_BUILD_TYPE "Package" CACHE STRING "Build Type" FORCE)
++    set(CMAKE_C_FLAGS "-g3 -O2 ${CMAKE_C_FLAGS}")
+ elseif("${BUILD_TYPE_UPPER}" STREQUAL "DEBUG")
+     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build Type" FORCE)
+-    set(CMAKE_C_FLAGS "-g -O0 ${CMAKE_C_FLAGS}")
++    set(CMAKE_C_FLAGS "-g3 -O0 ${CMAKE_C_FLAGS}")
+ elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBINFO")
+     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
+ elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
+diff --git a/src/common.c b/src/common.c
+index 617a4f6..c0ddb08 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -5699,9 +5699,10 @@ cleanup:
+  * This function caches the result of the environment variable check to improve performance.
+  * @return 1 if the process has privileged access to default shared memory, 0 otherwise.
+  * */
+-static int sr_is_priviliged(void)
++static int
++sr_is_priviliged(void)
+ {
+-    static int is_priviliged  = -1;
++    static int is_priviliged = -1;
+ 
+     if (is_priviliged < 0) {
+         is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index be221c8..9e7a91c 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -7226,7 +7226,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+     }
+     if (!session->orig_name) {
+         /* TODO FIXME ENG-4345 */
+-       sr_session_set_orig_name(session, __progname);
++        sr_session_set_orig_name(session, __progname);
+     }
+     /* Need to remove all previous data */
+     sr_session_del_orig_data(session);
+@@ -7236,8 +7236,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+ API uint64_t
+ sr_session_get_event_nc_id(sr_session_ctx_t *session)
+ {
+-    uint64_t * nc_id = NULL;
++    uint64_t *nc_id = NULL;
+     uint32_t size = 0;
++
+     if (!session || !session->ev) {
+         return 0;
+     }
+@@ -7251,6 +7252,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+         mode_t perm)
+ {
+     int i, ret;
++
+     for (i = 0; i < SR_MOD_DS_PLUGIN_COUNT; ++i) {
+         if ((ret = sr_set_module_ds_access(conn, module_name, i, owner, group, perm))) {
+             return ret;
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 2840f7c..7ba18b6 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -50,10 +50,13 @@ if(ENABLE_TESTS)
+         add_test(NAME format WORKING_DIRECTORY ${CMAKE_BINARY_DIR} COMMAND cmake --build ${CMAKE_BINARY_DIR} --target format-check)
+     endif()
+ 
+-    # lists of all the tests
+-    set(tests test_modules test_context_change test_validation test_edit test_candidate test_oper_pull test_oper_push
+-        test_lock test_apply_changes test_copy_config test_rpc_action test_notif test_get test_process
+-        test_multi_connection test_nacm test_rotation test_sub_notif)
++    file(GLOB test_files "test_*.c")
++
++    foreach(test_file IN LISTS test_files)
++        get_filename_component(test_name ${test_file} NAME_WE)
++        # lists of all the tests
++        list(APPEND tests ${test_name})
++    endforeach(test_file)
+ 
+     foreach(test_name IN LISTS tests)
+         add_executable(${test_name} ${test_sources} ${test_name}.c)
+@@ -104,7 +107,7 @@ endif()
+ # valgrind tests
+ if(ENABLE_VALGRIND_TESTS)
+     foreach(test_name IN LISTS tests)
+-        add_test(NAME ${test_name}_valgrind COMMAND valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
++        add_test(NAME ${test_name}_valgrind COMMAND valgrind --malloc-fill=0xED --free-fill=0xBF --leak-check=full --show-leak-kinds=all --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
+         set(test_name "${test_name}_valgrind")
+         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
+             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
+diff --git a/tests/files/ex-interfaces.yang b/tests/files/ex-interfaces.yang
+new file mode 100644
+index 0000000..9ac0646
+--- /dev/null
++++ b/tests/files/ex-interfaces.yang
+@@ -0,0 +1,642 @@
++// Copyright (C) 2021 Graphiant, Inc.
++// All rights reserved
++module ex-interfaces {
++    yang-version 1.1;
++    namespace "https://graphiant.com/yang";
++    prefix if;
++
++    import ietf-yang-types {
++        prefix yang;
++    }
++    import ietf-inet-types {
++        prefix inet;
++    }
++    import graphnos-routing-types {
++        prefix rt;
++    }
++    organization
++      "Graphiant Inc";
++
++    contact
++      "https://graphiant.com";
++
++    description
++      "This module contains a collection of YANG definitions for
++       managing network interfaces.
++       
++       Taken from RFC8343";
++
++    revision 2021-03-04 {
++        description
++          "Graphnos. Trimmed it down, added iftype, added notification.";
++    }
++
++    /*
++     * Typedefs
++     */
++    typedef interface-ref {
++        type leafref {
++            path "/if:interfaces/if:interface/if:name";
++        }
++        description
++          "This type is used by data models that need to reference
++           interfaces.";
++    }
++
++    /*
++     * Identities
++     */
++    identity interface-type {
++        description
++          "Base identity from which specific interface types are
++           derived.";
++    }
++
++    identity iana-interface-type {
++        base interface-type;
++        description
++          "This identity is used as a base for all interface types
++           defined in the 'ifType definitions' registry.";
++    }
++    identity ethernetCsmacd {
++        base iana-interface-type;
++        description
++          "For all Ethernet-like interfaces, regardless of speed,
++           as per RFC 3635. Definition copied from RFC7224";
++        reference
++          "RFC 3635 - Definitions of Managed Objects for the
++                      Ethernet-like Interface Types";
++    }
++
++    /*
++     * Data nodes
++     */
++    container interfaces {
++        description
++          "Interface parameters.";
++
++        list interface {
++            key "name";
++
++            description
++              "The list of interfaces on the device.
++               
++               The status of an interface is available in this list in the
++               operational state.  If the configuration of a
++               system-controlled interface cannot be used by the system
++               (e.g., the interface hardware present does not match the
++               interface type), then the configuration is not applied to
++               the system-controlled interface shown in the operational
++               state.  If the configuration of a user-controlled interface
++               cannot be used by the system, the configured interface is
++               not instantiated in the operational state.
++               
++               System-controlled interfaces created by the system are
++               always present in this list in the operational state,
++               whether or not they are configured.";
++
++            leaf name {
++                type string;
++                description
++                  "The name of the interface.
++                   
++                   A device MAY restrict the allowed values for this leaf,
++                   possibly depending on the type of the interface.
++                   For system-controlled interfaces, this leaf is the
++                   device-specific name of the interface.
++                   
++                   If a client tries to create configuration for a
++                   system-controlled interface that is not present in the
++                   operational state, the server MAY reject the request if
++                   the implementation does not support pre-provisioning of
++                   interfaces or if the name refers to an interface that can
++                   never exist in the system.  A Network Configuration
++                   Protocol (NETCONF) server MUST reply with an rpc-error
++                   with the error-tag 'invalid-value' in this case.
++                   
++                   If the device supports pre-provisioning of interface
++                   configuration, the 'pre-provisioning' feature is
++                   advertised.
++                   
++                   If the device allows arbitrarily named user-controlled
++                   interfaces, the 'arbitrary-names' feature is advertised.
++                   
++                   When a configured user-controlled interface is created by
++                   the system, it is instantiated with the same name in the
++                   operational state.
++                   
++                   A server implementation MAY map this leaf to the ifName
++                   MIB object.  Such an implementation needs to use some
++                   mechanism to handle the differences in size and characters
++                   allowed between this leaf and ifName.  The definition of
++                   such a mechanism is outside the scope of this document.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifName";
++            }
++
++            leaf description {
++                type string;
++                description
++                  "A textual description of the interface.
++                   
++                   A server implementation MAY map this leaf to the ifAlias
++                   MIB object.  Such an implementation needs to use some
++                   mechanism to handle the differences in size and characters
++                   allowed between this leaf and ifAlias.  The definition of
++                   such a mechanism is outside the scope of this document.
++                   
++                   Since ifAlias is defined to be stored in non-volatile
++                   storage, the MIB implementation MUST map ifAlias to the
++                   value of 'description' in the persistently stored
++                   configuration.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifAlias";
++            }
++
++            leaf type {
++                type identityref {
++                    base interface-type;
++                }
++                mandatory true;
++                description
++                  "The type of the interface.
++                   
++                   When an interface entry is created, a server MAY
++                   initialize the type leaf with a valid value, e.g., if it
++                   is possible to derive the type from the name of the
++                   interface.
++                   
++                   If a client tries to set the type of an interface to a
++                   value that can never be used by the system, e.g., if the
++                   type is not supported or if the type does not match the
++                   
++                   name of the interface, the server MUST reject the request.
++                   A NETCONF server MUST reply with an rpc-error with the
++                   error-tag 'invalid-value' in this case.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifType";
++            }
++
++            leaf enabled {
++                type boolean;
++                default "true";
++                description
++                  "This leaf contains the configured, desired state of the
++                   interface.
++                   Changes in this leaf in the intended configuration are
++                   reflected in ifAdminStatus.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifAdminStatus";
++            }
++
++            leaf admin-status {
++                type enumeration {
++                    enum up {
++                        value 1;
++                        description
++                          "Ready to pass packets.";
++                    }
++                    enum down {
++                        value 2;
++                        description
++                          "Not ready to pass packets and not in some test mode.";
++                    }
++                    enum testing {
++                        value 3;
++                        description
++                          "In some test mode.";
++                    }
++                }
++                config false;
++                mandatory true;
++                description
++                  "The desired state of the interface.
++                   
++                   This leaf has the same read semantics as ifAdminStatus.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifAdminStatus";
++            }
++
++            leaf oper-status {
++                type enumeration {
++                    enum up {
++                        value 1;
++                        description
++                          "Ready to pass packets.";
++                    }
++                    enum down {
++                        value 2;
++                        description
++                          "The interface does not pass any packets.";
++                    }
++                    enum testing {
++                        value 3;
++                        description
++                          "In some test mode.  No operational packets can
++                           be passed.";
++                    }
++                    enum unknown {
++                        value 4;
++                        description
++                          "Status cannot be determined for some reason.";
++                    }
++                    enum dormant {
++                        value 5;
++                        description
++                          "Waiting for some external event.";
++                    }
++                    enum not-present {
++                        value 6;
++                        description
++                          "Some component (typically hardware) is missing.";
++                    }
++                    enum lower-layer-down {
++                        value 7;
++                        description
++                          "Down due to state of lower-layer interface(s).";
++                    }
++                }
++                config false;
++                mandatory true;
++                description
++                  "The current operational state of the interface.
++                   
++                   This leaf has the same semantics as ifOperStatus.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifOperStatus";
++            }
++
++            leaf last-change {
++                type yang:date-and-time;
++                config false;
++                description
++                  "The time the interface entered its current operational
++                   state.  If the current state was entered prior to the
++                   last re-initialization of the local network management
++                   subsystem, then this node is not present.";
++
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifLastChange";
++            }
++
++            leaf phys-address {
++                type yang:phys-address;
++                config false;
++                description
++                  "The interface's address at its protocol sub-layer.  For
++                   example, for an 802.x interface, this object normally
++                   contains a Media Access Control (MAC) address.  The
++                   interface's media-specific modules must define the bit
++                   and byte ordering and the format of the value of this
++                   object.  For interfaces that do not have such an address
++                   (e.g., a serial line), this node is not present.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifPhysAddress";
++            }
++
++            leaf-list higher-layer-if {
++                type interface-ref;
++                description
++                  "A list of references to interfaces layered on top of this
++                   interface.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifStackTable";
++            }
++
++            leaf-list lower-layer-if {
++                type interface-ref;
++                config false;
++                description
++                  "A list of references to interfaces layered underneath this
++                   interface.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB - ifStackTable";
++            }
++
++            leaf speed {
++                type yang:gauge64;
++                units "bits/second";
++                config false;
++                description
++                  "An estimate of the interface's current bandwidth in bits
++                   per second.  For interfaces that do not vary in
++                   bandwidth or for those where no accurate estimation can
++                   be made, this node should contain the nominal bandwidth.
++                   For interfaces that have no concept of bandwidth, this
++                   node is not present.";
++                reference
++                  "RFC 2863: The Interfaces Group MIB -
++                             ifSpeed, ifHighSpeed";
++            }
++
++            leaf local-label {
++                type rt:mpls-label;
++                description
++                  "For testing labels";
++            }
++            leaf address {
++                type inet:ip-address;
++                description
++                  "For testing IP addresses";
++            }
++            leaf prefix {
++                type inet:ip-prefix;
++                description
++                  "For testing IP prefixes";
++            }
++            leaf leaf-empty {
++                type empty;
++                description
++                  "For testing empty type";
++            }
++            container statistics {
++                config false;
++                description
++                  "A collection of interface-related statistics objects.";
++
++                leaf leaf-test-dec64 {
++                    type decimal64 {
++                        fraction-digits 2;
++                    }
++                }
++                leaf leaf-test-uint8 {
++                    type uint8;
++                }
++                leaf leaf-test-int8 {
++                    type int8;
++                }
++                leaf leaf-test-uint16 {
++                    type uint16;
++                }
++                leaf leaf-test-int16 {
++                    type int16;
++                }
++                leaf leaf-test-uint32 {
++                    type uint32;
++                }
++                leaf leaf-test-int32 {
++                    type int32;
++                }
++                leaf leaf-test-uint64 {
++                    type uint64;
++                }
++                leaf leaf-test-int64 {
++                    type int64;
++                }
++                leaf discontinuity-time {
++                    type yang:date-and-time;
++                    mandatory true;
++                    description
++                      "The time on the most recent occasion at which any one or
++                       more of this interface's counters suffered a
++                       discontinuity.  If no such discontinuities have occurred
++                       since the last re-initialization of the local management
++                       subsystem, then this node contains the time the local
++                       management subsystem re-initialized itself.";
++                }
++
++                leaf in-octets {
++                    type yang:counter64;
++                    description
++                      "The total number of octets received on the interface,
++                       including framing characters.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifHCInOctets";
++                }
++
++                leaf in-unicast-pkts {
++                    type yang:counter64;
++                    description
++                      "The number of packets, delivered by this sub-layer to a
++                       higher (sub-)layer, that were not addressed to a
++                       multicast or broadcast address at this sub-layer.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifHCInUcastPkts";
++                }
++
++                leaf in-broadcast-pkts {
++                    type yang:counter64;
++                    description
++                      "The number of packets, delivered by this sub-layer to a
++                       higher (sub-)layer, that were addressed to a broadcast
++                       address at this sub-layer.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB -
++                                 ifHCInBroadcastPkts";
++                }
++
++                leaf in-multicast-pkts {
++                    type yang:counter64;
++                    description
++                      "The number of packets, delivered by this sub-layer to a
++                       higher (sub-)layer, that were addressed to a multicast
++                       address at this sub-layer.  For a MAC-layer protocol,
++                       this includes both Group and Functional addresses.
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB -
++                                 ifHCInMulticastPkts";
++                }
++
++                leaf in-discards {
++                    type yang:counter32;
++                    description
++                      "The number of inbound packets that were chosen to be
++                       discarded even though no errors had been detected to
++                       prevent their being deliverable to a higher-layer
++                       protocol.  One possible reason for discarding such a
++                       packet could be to free up buffer space.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifInDiscards";
++                }
++
++                leaf in-errors {
++                    type yang:counter32;
++                    description
++                      "For packet-oriented interfaces, the number of inbound
++                       packets that contained errors preventing them from being
++                       deliverable to a higher-layer protocol.  For character-
++                       oriented or fixed-length interfaces, the number of
++                       inbound transmission units that contained errors
++                       preventing them from being deliverable to a higher-layer
++                       protocol.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifInErrors";
++                }
++
++                leaf in-unknown-protos {
++                    type yang:counter32;
++
++                    description
++                      "For packet-oriented interfaces, the number of packets
++                       received via the interface that were discarded because
++                       of an unknown or unsupported protocol.  For
++                       character-oriented or fixed-length interfaces that
++                       support protocol multiplexing, the number of
++                       transmission units received via the interface that were
++                       discarded because of an unknown or unsupported protocol.
++                       For any interface that does not support protocol
++                       multiplexing, this counter is not present.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifInUnknownProtos";
++                }
++
++                leaf out-octets {
++                    type yang:counter64;
++                    description
++                      "The total number of octets transmitted out of the
++                       interface, including framing characters.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifHCOutOctets";
++                }
++
++                leaf out-unicast-pkts {
++                    type yang:counter64;
++                    description
++                      "The total number of packets that higher-level protocols
++                       requested be transmitted and that were not addressed
++                       to a multicast or broadcast address at this sub-layer,
++                       including those that were discarded or not sent.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifHCOutUcastPkts";
++                }
++
++                leaf out-broadcast-pkts {
++                    type yang:counter64;
++                    description
++                      "The total number of packets that higher-level protocols
++                       requested be transmitted and that were addressed to a
++                       broadcast address at this sub-layer, including those
++                       that were discarded or not sent.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB -
++                                 ifHCOutBroadcastPkts";
++                }
++
++                leaf out-multicast-pkts {
++                    type yang:counter64;
++                    description
++                      "The total number of packets that higher-level protocols
++                       requested be transmitted and that were addressed to a
++                       multicast address at this sub-layer, including those
++                       that were discarded or not sent.  For a MAC-layer
++                       protocol, this includes both Group and Functional
++                       addresses.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB -
++                                 ifHCOutMulticastPkts";
++                }
++
++                leaf out-discards {
++                    type yang:counter32;
++                    description
++                      "The number of outbound packets that were chosen to be
++                       discarded even though no errors had been detected to
++                       prevent their being transmitted.  One possible reason
++                       for discarding such a packet could be to free up buffer
++                       space.
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifOutDiscards";
++                }
++
++                leaf out-errors {
++                    type yang:counter32;
++                    description
++                      "For packet-oriented interfaces, the number of outbound
++                       packets that could not be transmitted because of errors.
++                       For character-oriented or fixed-length interfaces, the
++                       number of outbound transmission units that could not be
++                       transmitted because of errors.
++                       
++                       Discontinuities in the value of this counter can occur
++                       at re-initialization of the management system and at
++                       other times as indicated by the value of
++                       'discontinuity-time'.";
++                    reference
++                      "RFC 2863: The Interfaces Group MIB - ifOutErrors";
++                }
++            }
++        }
++    }
++
++    notification link-state-change {
++        description
++          "A link state change has occured.";
++        leaf interface {
++            type interface-ref;
++        }
++        leaf up {
++            type boolean;
++        }
++    }
++
++    rpc clear-stats {
++        input {
++            leaf interface {
++                type string;
++            }
++        }
++        output {
++            leaf old-stats {
++                type uint64;
++            }
++        }
++    }
++}
+diff --git a/tests/files/ex-protocols.yang b/tests/files/ex-protocols.yang
+new file mode 100644
+index 0000000..ad021a3
+--- /dev/null
++++ b/tests/files/ex-protocols.yang
+@@ -0,0 +1,62 @@
++// Copyright (C) 2021 Graphiant, Inc.
++// All rights reserved
++module ex-protocols {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/ex-protocols";
++
++    prefix pr;
++
++    import ex-interfaces {
++        prefix if;
++    }
++
++    organization
++      "Graphiant Inc";
++
++    contact
++      "https://graphiant.com";
++
++    description
++      "Example yang for protocols. Used for testing only";
++
++    revision 2021-04-01 {
++        description
++          "Initial revision.";
++    }
++
++    /*
++     * Data nodes
++     */
++    container bogus {
++        leaf bogus2 {
++            type string;
++        }
++    }
++
++    container protocols {
++        description
++          "Protocol parameters.";
++
++        list protocol {
++            key "name";
++
++            description
++              "The list of protocols on the device.";
++
++            leaf name {
++                type string;
++                description
++                  "The name of the protocol.";
++            }
++
++            container interfaces {
++                list interface {
++                    key "name";
++                    leaf name {
++                        type if:interface-ref;
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/tests/files/ex-yanggen-augments.yang b/tests/files/ex-yanggen-augments.yang
+new file mode 100644
+index 0000000..b53216f
+--- /dev/null
++++ b/tests/files/ex-yanggen-augments.yang
+@@ -0,0 +1,88 @@
++// Copyright (C) 2021 Graphiant, Inc.
++// All rights reserved
++module ex-yanggen-augments {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/ex-yanggen-augments";
++    prefix yga;
++
++    import ex-yanggen {
++        prefix yg;
++    }
++    organization
++      "Graphiant Inc";
++
++    contact
++      "https://graphiant.com";
++
++    description
++      "This module contains a augments to ex-yanggen for
++       testing yang2rust.";
++
++    revision 2021-05-17 {
++        description
++          "Initial revision";
++    }
++
++    augment "/yg:container" {
++        leaf leaf-from-augments {
++            type string;
++            description
++              "Leaf originating from an augments statement.";
++        }
++
++        container additional-state {
++            leaf state-leaf {
++                type string;
++                description
++                  "Leaf for some state associated with augmented state.";
++            }
++
++            description
++              "Additional state container augmented onto another.";
++        }
++
++        leaf leaf-bool {
++            type boolean;
++            description
++              "Leaf with same name as leaf from another module.";
++        }
++    }
++
++    augment "/yg:container/yg:container" {
++      description
++        "An augment statement that also augments a node named
++         'container', although not the same node than the above
++         statement. The generated module should be suffixed with '_1'
++         to not clash with the module generated for the augment above.";
++      leaf leaf-from-augments {
++        type string;
++        description
++          "Leaf originating from an augments statement.";
++      }
++      container additional-state {
++        leaf state-leaf {
++          type string;
++          description
++            "Leaf for some state associated with augmented state.";
++        }
++
++        description
++          "Additional state container augmented onto another.";
++      }
++    }
++
++    augment "/yg:container/yg:list-entry" {
++        container additional-state {
++            leaf state-leaf {
++                type string;
++                description
++                  "Leaf for some state associated with augmented state.";
++            }
++
++            description
++              "Additional state container augmented onto another.";
++        }
++        description
++          "Another augments for a non-top-level node.";
++    }
++}
+diff --git a/tests/files/ex-yanggen.yang b/tests/files/ex-yanggen.yang
+new file mode 100644
+index 0000000..b9d1de9
+--- /dev/null
++++ b/tests/files/ex-yanggen.yang
+@@ -0,0 +1,917 @@
++// Copyright (C) 2021-2022 Graphiant, Inc.
++// All rights reserved
++module ex-yanggen {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/ex-yanggen";
++    prefix yg;
++
++    import graphnos-extensions {
++        prefix graphnos;
++    }
++    import ietf-inet-types {
++        prefix inet;
++    }
++    import ietf-yang-types {
++        prefix yang;
++    }
++    organization
++      "Graphiant Inc";
++
++    contact
++      "https://graphiant.com";
++
++    description
++      "This module contains a collection of YANG definitions for
++       testing yang2rust and associated infrastructure.";
++
++    revision 2022-08-16 {
++        description
++          "Add ordered-list-with-container-value node";
++    }
++    revision 2022-10-17 {
++        description
++          "Initial revision";
++    }
++
++    typedef enum-type {
++        type enumeration {
++            enum add {
++                description
++                  "Add.";
++            }
++            enum start {
++                description
++                  "Start.";
++            }
++        }
++        description
++          "Enumeration type with two values.";
++    }
++
++    typedef enum-with-reserved-keyword-variant {
++      type enumeration {
++        // Make sure yang2rust generates an enum with a `Self_`
++        // variant instead of `Self`, since `Self` is reserved.
++        enum self {
++          description
++          "an enum with a reserved keywork in Rust";
++        }
++      }
++    }
++
++    identity some-identity {
++    }
++
++    identity identity-based-on-some-identity {
++      base some-identity;
++    }
++
++    typedef some-identity-type {
++      type identityref {
++        base some-identity;
++      }
++    }
++
++    typedef union-with-multiple-variants-of-the-same-type {
++      type union {
++        type string {
++          pattern 'foo';
++        }
++        type string {
++          pattern 'bar';
++        }
++        type some-identity-type;
++      }
++      description "a union which has multiple variant of the String type";
++    }
++
++    typedef enum-type2 {
++        type enumeration {
++            enum add {
++                description
++                  "Add.";
++            }
++        }
++        description
++          "Enumeration type with two values.";
++    }
++
++    typedef severity {
++        type enumeration {
++            enum "error" {
++                description
++                  "A value that might clash with a Rust associated type
++                   name.";
++            }
++            enum "err" {
++                description
++                  "Another value that might clash with a Rust associated type
++                   name.";
++            }
++            enum "info" {
++                description
++                  "Another value";
++            }
++            enum "debug" {
++                description
++                  "Yet another value";
++            }
++        }
++        description
++          "Enumeration with some interesting values";
++    }
++
++    identity some-type {
++        description
++          "Some identity type.";
++    }
++    identity basic-type {
++        base some-type;
++        description
++          "Just a type value that is some identity type.";
++    }
++
++    typedef some-leafref {
++        type leafref {
++            path "/yg:container/list-entry/name";
++        }
++        description
++          "Leafref typedef.";
++    }
++
++    typedef mpls-label {
++        type uint32 {
++            graphnos:codegen-as-type "systemdb::types::MplsLabel";
++            range "0..1048575";
++        }
++    }
++
++    container container {
++        description
++          "A top-level non-presence container.";
++
++        list list-entry {
++            key "name";
++
++            description
++              "A list with one key.";
++
++            leaf name {
++                type string;
++                description
++                  "A name for the list entry.";
++            }
++
++            leaf leaf-bool {
++                type boolean;
++                description
++                  "Boolean leaf.";
++            }
++
++            leaf type {
++              type string;
++              description
++                "A leaf that has a name which is a reserved keyword in Rust";
++            }
++
++            list user-ordered-list-entry {
++                key "value";
++                ordered-by user;
++
++                description
++                  "A user-ordered list. Placed under another list to test
++                   auto-generated Parent trait implementation.";
++
++                leaf value {
++                    type uint32;
++                    description
++                      "Some value. Used as key. Tests
++                       non-string key.";
++                }
++            }
++
++            leaf-list leaf-list {
++                type string;
++                description
++                  "String system-ordered leaf-list.";
++            }
++
++            leaf-list uo-leaf-list {
++                type string;
++                ordered-by user;
++                description
++                  "String user-ordered leaf-list.";
++            }
++
++            leaf clash {
++                type enumeration {
++                    enum list-entry-value {
++                      description
++                        "A value specific the list-entry's clash enum";
++                    }
++                }
++                description
++                  "An enum leaf whose name clashes with that in that in the
++                   parent container";
++            }
++        }
++
++        container pres-cont {
++            presence
++              "Some deep meaning.";
++            description
++              "Container with presence.";
++
++            leaf mand {
++                type string;
++                mandatory true;
++                description
++                  "Mandatory string leaf for testing mandatory values.";
++            }
++        }
++
++        container pres-cont2 {
++            presence
++              "Some deep meaning.";
++            description
++              "Container with presence and with no child nodes.";
++        }
++
++        leaf type {
++            graphnos:codegen-node-name "typ";
++            type identityref {
++                base some-type;
++            }
++            description
++              "Some type with a name that clashes with a Rust keyword.";
++        }
++
++        leaf leaf-bool {
++            type boolean;
++            description
++              "Boolean leaf.";
++        }
++
++        leaf leaf-u8 {
++            type uint8;
++            description
++              "uint8 leaf.";
++        }
++        leaf leaf-u16 {
++            type uint16;
++            description
++              "uint16 leaf.";
++        }
++        leaf leaf-u32 {
++            type uint32;
++            description
++              "uint32 leaf.";
++        }
++        leaf leaf-u64 {
++            type uint64;
++            description
++              "uint64 leaf.";
++        }
++        leaf leaf-i8 {
++            type int8;
++            description
++              "int8 leaf.";
++        }
++        leaf leaf-i16 {
++            type int16;
++            description
++              "int16 leaf.";
++        }
++        leaf leaf-i32 {
++            type int32;
++            description
++              "int32 leaf.";
++        }
++        leaf leaf-i64 {
++            type int64;
++            description
++              "int64 leaf.";
++        }
++
++        leaf leaf-dec64 {
++            type decimal64 {
++                fraction-digits 2;
++            }
++            description
++              "decimal64 leaf.";
++        }
++
++        leaf leaf-default {
++            type string;
++            default "default";
++            description
++              "String leaf with default.";
++        }
++
++        leaf leaf-empty {
++            type empty;
++            description
++              "Empty leaf.";
++        }
++
++        leaf leaf-binary {
++            type binary;
++            description
++              "Binary leaf.";
++        }
++
++        choice choose-one {
++            description
++              "A choice type.";
++            case str {
++                description
++                  "A string case.";
++                leaf str {
++                    type string;
++                    description
++                      "A string type.";
++                }
++            }
++            case id-null {
++                description
++                  "An empty case.";
++                leaf null {
++                    type empty;
++                    description
++                      "An empty type." ;
++                }
++            }
++            case cont-case {
++                description
++                  "A container case.";
++                container cont-case {
++                    leaf field1 {
++                        type string;
++                        description
++                          "First field of container.";
++                    }
++                    leaf field2 {
++                        type string;
++                        description
++                          "Second field of container. Multiple fields are
++                           present to test the setting of these inside the
++                           choice union.";
++                    }
++                }
++            }
++            case type-case1 {
++                description
++                  "A case for a leaf containing an enum type.";
++                leaf type-case {
++                    type enum-type;
++                    description
++                      "Type case where the type is already used in the parent container.";
++                }
++            }
++            case type-case2 {
++                description
++                  "Another case for a leaf containing an enum type.";
++                leaf type-case2 {
++                    type enum-type2;
++                    description
++                      "Enum leaf 2.";
++                }
++            }
++        }
++
++        container choice-cont {
++            description
++              "A container for a choice statement";
++            choice choose-one {
++                description
++                  "A choice type embedded in a non-presence container
++                   (compile testing only).";
++                case str {
++                    description
++                      "A string case.";
++                    leaf str {
++                        type string;
++                        description
++                          "A string type.";
++                    }
++                }
++                case id-null {
++                    description
++                      "An empty case.";
++                    leaf null {
++                        type empty;
++                        description
++                          "An empty type." ;
++                    }
++                }
++                case cont {
++                    container cont {
++                        description
++                          "A string case.";
++                        leaf str {
++                            type string;
++                            description
++                              "A string type.";
++                        }
++                    }
++                }
++            }
++        }
++
++        choice choose-container {
++            description
++              "A choice type with a case using a container
++                (compile testing only).";
++            container choose-cont {
++                presence "Some meaning";
++                description
++                  "A string case.";
++                leaf str {
++                    type string;
++                    description
++                      "A string type.";
++                }
++            }
++        }
++
++        choice choose-nothing {
++            description
++              "A choice type with nothing to choose from.";
++        }
++
++        leaf enum-with-reserved-keyword-variant-leaf {
++            type enum-with-reserved-keyword-variant;
++            description
++              "Enum leaf.";
++        }
++
++        leaf  union-with-multiple-variants-of-the-same-type-leaf {
++          type  union-with-multiple-variants-of-the-same-type;
++        }
++
++        leaf leaf-enum {
++            type enum-type;
++            description
++              "Enum leaf.";
++        }
++        leaf leaf-enum2 {
++            type enumeration {
++                enum unknown {
++                    description
++                      "Unknown.";
++                }
++                enum add {
++                    description
++                      "Add.";
++                    value 2;
++                }
++                enum start {
++                    description
++                      "Start.";
++                    value 1;
++                }
++                enum running {
++                    description
++                      "Running.";
++                }
++                enum stop {
++                    description
++                      "Start.";
++                    value -100;
++                }
++                enum delete {
++                    description
++                      "Delete.";
++                }
++            }
++            description
++              "Enum leaf.";
++        }
++        leaf leaf-enum3 {
++            type enum-type;
++            default add;
++            description
++              "Yet another enum leaf, but with a default to test out
++               default values.";
++        }
++        leaf leaf-enum4 {
++            type enumeration {
++                enum min {
++                    description
++                      "Minimum value.";
++                    value -2147483648;
++                }
++                enum near-min {
++                    description
++                      "Near minimum value.";
++                }
++                enum add {
++                    description
++                      "Add.";
++                    value 10;
++                }
++                enum delete {
++                    description
++                      "Delete.";
++                }
++                enum near-max {
++                    description
++                      "Near maximum value.";
++                    value 2147483646;
++                }
++                enum max {
++                    description
++                      "Maximum value.";
++                }
++            }
++            description
++              "Yet another enum leaf to check an initial negative
++               value, and the maximum value.";
++        }
++
++        container cont1 {
++            description
++              "Container without presence.";
++
++            list addresses {
++                key "address";
++
++                description
++                  "A list of addresses.";
++
++                leaf address {
++                    type string;
++                    description
++                      "A name for the list entry.";
++                }
++            }
++
++            leaf leaf-enum {
++                type enum-type;
++                description
++                  "Enum leaf.";
++            }
++        }
++
++        container cont2 {
++            description
++              "Another container without presence, but containing a list name
++               that clashes with that in the previous container.";
++
++            list addresses {
++                key "address";
++
++                description
++                  "A list of addresses.";
++
++                leaf address {
++                    type string;
++                    description
++                      "A name for the list entry.";
++                }
++            }
++        }
++
++        leaf clash {
++            type enumeration {
++                enum cont-value {
++                  description
++                    "A value specific the container's clash enum";
++                }
++            }
++            description
++              "An enum leaf whose name clashes with that in that in the
++               child list-entry list";
++        }
++
++        leaf leaf-using-leafref {
++            type some-leafref;
++            description
++              "A leaf that makes use of a leafref to a string type.";
++        }
++
++        leaf leaf-ipaddress {
++            type inet:ip-address;
++            description
++              "A leaf using inet:ip-address.";
++        }
++
++        leaf leaf-ipv4address {
++            type inet:ipv4-address;
++            description
++              "A leaf using inet:ipv4-address.";
++        }
++
++        leaf leaf-ipv6address {
++            type inet:ipv6-address;
++            description
++              "A leaf using inet:ipv6-address.";
++        }
++
++        leaf leaf-ipaddress-no-zone {
++            type inet:ip-address-no-zone;
++            description
++              "A leaf using inet:ip-address-no-zone.";
++        }
++
++        leaf leaf-ipv4address-no-zone {
++            type inet:ipv4-address-no-zone;
++            description
++              "A leaf using inet:ipv4-address-no-zone.";
++        }
++
++        leaf leaf-ipv6address-no-zone {
++            type inet:ipv6-address-no-zone;
++            description
++              "A leaf using inet:ipv6-address-no-zone.";
++        }
++
++        leaf leaf-ipprefix {
++            type inet:ip-prefix;
++            description
++              "A leaf using inet:ip-prefix.";
++        }
++
++        leaf leaf-ipv4prefix {
++            type inet:ipv4-prefix;
++            description
++              "A leaf using inet:ipv4-prefix.";
++        }
++
++        leaf leaf-ipv6prefix {
++            type inet:ipv6-prefix;
++            description
++              "A leaf using inet:ipv6-prefix.";
++        }
++
++        leaf leaf-date-and-time {
++            type yang:date-and-time;
++            description
++              "A leaf using yang:date-and-time.";
++        }
++
++        list ordered-list-with-container-value {
++          key "name";
++          ordered-by user;
++          description
++            "Ordered list where the values are containers";
++          leaf name {
++            type string;
++            description
++              "a name.";
++          }
++          container the-value {
++            leaf the-field {
++              type string;
++              description
++                "a nested field";
++            }
++          }
++        }
++        list two-key-list {
++            key "facility severity";
++            ordered-by user;
++            description
++              "A list with two keys of differing types.";
++            leaf facility {
++                type string;
++                description
++                  "A string leaf.";
++            }
++            leaf severity {
++                type severity;
++
++                mandatory true;
++                description
++                  "An enum leaf.";
++            }
++        }
++
++        list two-key-list-not-user-ordered {
++            key "facility severity";
++            description
++              "A list with two keys of differing types.";
++            leaf facility {
++                type string;
++                description
++                  "A string leaf.";
++            }
++            leaf severity {
++                type severity;
++
++                mandatory true;
++                description
++                  "An enum leaf.";
++            }
++        }
++
++        list three-key-list {
++            key "name age address";
++            description
++              "A list with three keys.";
++            leaf name {
++                type string;
++                description
++                  "A string leaf.";
++            }
++            leaf age {
++                type uint8;
++                description
++                  "A uint8 leaf.";
++            }
++            leaf address {
++                type string;
++                description
++                  "A string leaf.";
++            }
++        }
++
++        leaf leaf-union {
++            description
++              "A leaf that is a union between an identityref, an enum and a binary.";
++            type union {
++                type identityref {
++                    base some-type;
++                }
++                type severity;
++                type binary;
++            }
++        }
++        leaf leaf-union-enh {
++            description
++              "A leaf using a typedef that is a union containing an enhanced type.";
++            type inet:host;
++        }
++
++        list name-and-value1 {
++            key "name";
++            leaf name {
++                type string;
++                description
++                    "Name of this list item.";
++            }
++            leaf value {
++                type int32;
++                description
++                    "Some value.";
++            }
++            description
++                "List used with name-and-value2.";
++        }
++        list name-and-value2 {
++            graphnos:codegen-as-type "crate::yanggen::exyanggen_container::nameandvalue1::NameAndValue1";
++            key "name";
++            leaf name {
++                type string;
++                description
++                    "Name of this list item.";
++            }
++            leaf value {
++                type int32;
++                description
++                    "Some value.";
++            }
++            description
++                "List that tests use of codegen-as-type extension.";
++        }
++
++        leaf leaf-severity {
++            type severity {
++                graphnos:codegen-as-type "crate::yanggen::exyanggen_container::twokeylist::Severity";
++            }
++            description
++                "Enum leaf forced to have same type as two-key-list's severity leaf.";
++        }
++        leaf leaf-mpls-label {
++            type mpls-label;
++            description
++                "Leaf using typedef with type forced to have a custom Rust type.";
++        }
++
++        list union-key-list {
++            key "union-key";
++            leaf union-key {
++                description
++                  "A leaf that is a union between an identityref and an enum.";
++                type union {
++                    type severity;
++                    type identityref {
++                        base some-type;
++                    }
++                }
++            }
++            description
++                "List that tests use of union type as key.";
++        }
++
++        leaf leaf-union-default1 {
++            description
++              "A leaf using a typedef that is a union containing an enhanced type with a default.";
++            type inet:host;
++            default "localhost";
++        }
++        leaf leaf-union-default2 {
++            description
++              "A leaf using a typedef that is a union containing an enhanced type with a default.";
++            type inet:host;
++            default "127.0.0.1";
++        }
++        leaf identityref-default {
++            description
++              "A leaf using an identityref with a default.";
++            type identityref {
++                base some-type;
++            }
++            default "basic-type";
++        }
++
++        container oper-container {
++            config false;
++            description
++              "A non-presence operational-only container.";
++
++            leaf leaf-bool {
++                type boolean;
++                description
++                  "Boolean leaf.";
++            }
++        }
++
++        list list-enh {
++            key "date-and-time label";
++            leaf date-and-time {
++                type yang:date-and-time;
++                description
++                  "A leaf using yang:date-and-time.";
++            }
++            leaf label {
++                type mpls-label;
++                description
++                    "Label.";
++            }
++            description
++                "List with enhanced values as keys.";
++        }
++
++        container container {
++          description
++            "A nested container that has the same name than the parent container.";
++        }
++    }
++
++    rpc clear-stats {
++        description
++          "An RPC with inputs and outputs.";
++        input {
++            leaf interface {
++                type string;
++            }
++        }
++        output {
++            leaf old-stats {
++                type uint64;
++            }
++        }
++    }
++
++    rpc empty {
++        description
++          "An RPC with no inputs or outputs.";
++    }
++
++    rpc rpc-with-containers {
++        input {
++            container presence {
++                presence "test";
++                description
++                    "A container with presence";
++            }
++        }
++        output {
++            container presence {
++                presence "test";
++                description
++                    "A container with presence";
++            }
++        }
++        description
++          "An RPC with presence containers as inputs and outputs.";
++    }
++
++    rpc rpc-with-non-presence-containers {
++        input {
++            container presence {
++                description
++                    "A container without presence";
++            }
++        }
++        output {
++            container presence {
++                description
++                    "A container without presence";
++            }
++        }
++        description
++          "An RPC with non-presence containers as inputs and outputs.";
++    }
++}
+diff --git a/tests/files/graphnos-base-types.yang b/tests/files/graphnos-base-types.yang
+new file mode 100644
+index 0000000..3e756b1
+--- /dev/null
++++ b/tests/files/graphnos-base-types.yang
+@@ -0,0 +1,83 @@
++module graphnos-base-types {
++    yang-version "1.1";
++    namespace "http://graphiant.com/ns/yang/graphnos-base-types";
++    prefix base-types;
++
++    import ietf-yang-types {
++        prefix yang;
++    }
++    import graphnos-yang-revisions {
++        prefix rev;
++    }
++    organization
++      "Graphiant";
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This YANG module contains basic types used in Graphnos.
++
++       Copyright (C) 2021-2022 Graphiant, Inc.
++       All rights reserved.";
++
++    revision 2022-07-21 {
++        description
++          "Initial revision";
++        rev:revision-label 0.1.1;
++    }
++
++    typedef gdi {
++        description
++          "Graphiant Device Identifier (GDI)";
++        type uint32;
++    }
++    typedef goss-id {
++        description
++          "Graphiant OSS Identifier";
++        type uint64;
++    }
++    typedef guuid {
++        description
++          "Graphiant UUID";
++        type yang:uuid;
++    }
++    typedef gslice {
++        description
++          "Graphiant slice.";
++        type uint32;
++    }
++
++    typedef device-role {
++        type enumeration {
++            enum cpe {
++                description
++                  "Customer premises equipment (CPE). Also known as
++                  Edge. A device that customers will connect their
++                  networks to.";
++            }
++            enum core {
++                description
++                  "Graphiant core router. A device that routes packets,
++                  including those carrying customer data to another CPE,
++                  in the Graphiant core network.";
++            }
++            enum tunnel-terminator {
++                description
++                  "Tunnel terminator. A device that resides on the edge
++                  of the GCS/OSS network and terminates the IPsec
++                  tunnels used to carry GCS/OSS management traffic over
++                  the Internet to/from other (non-tunnel-terminator)
++                  GraphNOS nodes. Routes packets into and out of those
++                  IPsec tunnels as required.";
++            }
++            enum odp-server {
++                description
++                  "Object Distribution Protocol server. A device that
++                  acts as a reflector for customer routing and other
++                  forwarding and dynamic policy information.";
++            }
++        }
++        description
++          "Role that a device is operating in.";
++    }
++}
+diff --git a/tests/files/graphnos-extensions.yang b/tests/files/graphnos-extensions.yang
+new file mode 100644
+index 0000000..75d2068
+--- /dev/null
++++ b/tests/files/graphnos-extensions.yang
+@@ -0,0 +1,44 @@
++module graphnos-extensions {
++    yang-version "1.1";
++    namespace "http://graphiant.com/ns/yang/graphnos-extensions";
++    prefix extensions;
++
++    import graphnos-yang-revisions {
++        prefix rev;
++    }
++
++    organization
++      "Graphiant";
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This YANG module contains extensions used in Graphnos.
++
++       Copyright (C) 2021 Graphiant, Inc.
++       All rights reserved.";
++
++    revision 2021-10-28 {
++        description
++          "Initial revision";
++        rev:revision-label 0.0.1;
++    }
++
++    extension codegen-node-name {
++        description
++          "Takes an argument as a name string.
++           Makes the code generator use the given name for the node.";
++        argument "name";
++    }
++
++    extension codegen-as-type {
++        description
++          "Takes an argument as a type string.
++           Makes the code generator use the given type for the node. The user
++           must ensure that the type is valid and has the correct Rust module
++           path according to its use. Valid on statements that create
++           generated types, such as type, list, container and choice
++           statements";
++        argument "type";
++    }
++}
+diff --git a/tests/files/graphnos-interfaces.yang b/tests/files/graphnos-interfaces.yang
+new file mode 100644
+index 0000000..b161497
+--- /dev/null
++++ b/tests/files/graphnos-interfaces.yang
+@@ -0,0 +1,254 @@
++module graphnos-interfaces {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/graphnos-interfaces";
++    prefix if;
++
++    import ietf-yang-types {
++        prefix yang;
++    }
++    import graphnos-extensions {
++        prefix extensions;
++    }
++
++    organization
++      "Graphiant";
++
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This module is only for testing.";
++
++    revision 2021-05-26 {
++        description
++          "interface-if-index needed for FRIB.";
++    }
++
++    /*
++     * Typedefs
++     */
++    typedef interface-ref {
++        type leafref {
++            path "/if:interfaces/if:interface/if:name";
++        }
++        description
++          "This type is used by data models that need to reference
++           interfaces.";
++    }
++
++    typedef interface-index {
++        type uint32 {
++            range 1..max;
++        }
++        description
++          "This type represents the conceptual interface index.";
++    }
++
++    typedef interface-index-ref {
++        type leafref {
++            path "/if:interfaces/if:interface-operational/if:state/if:index";
++        }
++        description
++          "This type is used by data models that need to reference
++           an operational interface's index.";
++    }
++
++    typedef interface-operational-ref {
++        type leafref {
++            path "/if:interfaces/if:interface-operational/if:name";
++        }
++        description
++          "This type is used by data models that need to reference
++           operational interfaces.";
++    }
++
++    /*
++     * Identities
++     */
++    identity interface-type {
++        description
++          "Base identity from which specific interface types are
++           derived.";
++    }
++
++    identity iana-interface-type {
++        base interface-type;
++        description
++          "This identity is used as a base for all interface types
++           defined in the 'ifType definitions' registry.";
++    }
++
++    identity ethernetCsmacd {
++        base iana-interface-type;
++        description
++          "For all Ethernet-like interfaces, regardless of speed,
++           as per RFC 3635. Definition copied from RFC7224";
++        reference
++          "RFC 3635 - Definitions of Managed Objects for the
++                      Ethernet-like Interface Types";
++    }
++
++    identity softwareLoopback {
++      base iana-interface-type;
++      description
++        "Software loopback interface. Definition copied from RFC7224.";
++    }
++
++    identity ipsecTunnel {
++        base interface-type;
++        description
++          "Base identity for IPsec tunnels.";
++    }
++
++    identity h2hTunnel {
++        base ipsecTunnel;
++        description
++          "Hop-by-hop tunnel, e.g. CPE to Core, Core to Core.";
++    }
++
++    identity e2eTunnel {
++        base ipsecTunnel;
++        description
++          "End-to-end tunnel, e.g. CPE to CPE.";
++    }
++
++    /*
++     * Groupings
++     */
++    // Intended only for internal graphnos-interfaces use
++    grouping interface-list-common-group {
++
++        leaf name {
++            type string;
++            description
++              "The name of the interface.
++               A device MAY restrict the allowed values for this leaf,
++               possibly depending on the type of the interface.
++               For system-controlled interfaces, this leaf is the
++               device-specific name of the interface.
++               If a client tries to create configuration for a
++               system-controlled interface that is not present in the
++               operational state, the server MAY reject the request if
++               the implementation does not support pre-provisioning of
++               interfaces or if the name refers to an interface that can
++               never exist in the system.  A Network Configuration
++               Protocol (NETCONF) server MUST reply with an rpc-error
++               with the error-tag 'invalid-value' in this case.
++               If the device supports pre-provisioning of interface
++               configuration, the 'pre-provisioning' feature is
++               advertised.
++               If the device allows arbitrarily named user-controlled
++               interfaces, the 'arbitrary-names' feature is advertised.
++               For physical interfaces, 'arbitrary-names' are supported on
++               virtual devices but not on physical devices where interfaces
++               are named according to the type and form-factor.
++               When a configured user-controlled interface is created by
++               the system, it is instantiated with the same name in the
++               operational state.
++               A server implementation MAY map this leaf to the ifName
++               MIB object.  Such an implementation needs to use some
++               mechanism to handle the differences in size and characters
++               allowed between this leaf and ifName.  The definition of
++               such a mechanism is outside the scope of this document.";
++            reference
++              "RFC 2863: The Interfaces Group MIB - ifName";
++        }
++        leaf description {
++            type string;
++            description
++              "A textual description of the interface.
++               A server implementation MAY map this leaf to the ifAlias
++               MIB object.  Such an implementation needs to use some
++               mechanism to handle the differences in size and characters
++               allowed between this leaf and ifAlias.  The definition of
++               such a mechanism is outside the scope of this document.
++               Since ifAlias is defined to be stored in non-volatile
++               storage, the MIB implementation MUST map ifAlias to the
++               value of 'description' in the persistently stored
++               configuration.";
++            reference
++              "RFC 2863: The Interfaces Group MIB - ifAlias";
++        }
++        leaf type {
++            extensions:codegen-node-name "iftype";
++            type identityref {
++                base interface-type;
++            }
++            mandatory true;
++            description
++              "The type of the interface.
++               When an interface entry is created, a server MAY
++               initialize the type leaf with a valid value, e.g., if it
++               is possible to derive the type from the name of the
++               interface.
++               If a client tries to set the type of an interface to a
++               value that can never be used by the system, e.g., if the
++               type is not supported or if the type does not match the
++               name of the interface, the server MUST reject the request.
++               A NETCONF server MUST reply with an rpc-error with the
++               error-tag 'invalid-value' in this case.";
++            reference
++              "RFC 2863: The Interfaces Group MIB - ifType";
++        }
++    }
++
++    /*
++     * Data nodes
++     */
++    container interfaces {
++        description
++          "Interface parameters.";
++
++        list interface {
++            key "name";
++
++            description
++              "The list of intended interface configuration on the device.
++
++               This list is not present in the operational store. Intended
++               configuration which is operationally active on the system
++               can be found under the 'interface' list (which can be found
++               below this node's parent).";
++
++            uses interface-list-common-group;
++        }
++
++        list interface-operational {
++            config false;
++            key "name";
++
++            description
++              "The list of operational interfaces on the device.
++
++               The status of an interface is available in this list in the
++               operational state.  If the configuration of a
++               system-controlled interface cannot be used by the system
++               (e.g., the interface hardware present does not match the
++               interface type), then the configuration is not applied to
++               the system-controlled interface shown in the operational
++               state.  If the configuration of a user-controlled interface
++               cannot be used by the system, the configured interface is
++               not instantiated in the operational state.
++
++               System-controlled interfaces created by the system are
++               always present in this list in the operational state,
++               whether or not they are configured.";
++
++            uses interface-list-common-group;
++
++            container state {
++                config false;
++                description
++                  "The arbitrated interface state representing what is currently
++                   active on the system.";
++
++                leaf index {
++                    type interface-index;
++                    description
++                      "The interface's global numeric index. This differs from
++                       both the dataplane and kernel indexes.";
++                }
++            }
++        }
++    }
++}
+diff --git a/tests/files/graphnos-network-instance.yang b/tests/files/graphnos-network-instance.yang
+new file mode 100644
+index 0000000..7dfe097
+--- /dev/null
++++ b/tests/files/graphnos-network-instance.yang
+@@ -0,0 +1,107 @@
++module graphnos-network-instance {
++  yang-version 1.1;
++  namespace "https://graphiant.com/ns/yang/graphnos-network-instance";
++  prefix ni;
++
++  import graphnos-interfaces {
++    prefix if;
++  }
++
++  organization
++    "Graphiant";
++
++  contact
++    "yang@graphiant.com";
++
++  description
++    "This module is for testing only and is derived from graphnos-network-instance.";
++
++  revision 2021-08-25 {
++    description "GraphNOS tweaks";
++  }
++
++  typedef instance-index-ref {
++    type leafref {
++      path "/ni:network-instances/ni:network-instance-operational/ni:state/ni:index";
++    }
++    description
++      "This type is used by data models that need to
++       reference an operational network instance's index.";
++  }
++
++  typedef instance-index {
++    type uint32 {
++      // 2^32-2 is the largest value supported by VPP
++      range min..4294967294;
++    }
++    description
++      "This type represents the conceptual network instance index.";
++  }
++
++  // Groupings
++
++  // Intended only for internal graphnos-network-instance use
++  grouping network-instance-list-common-group {
++    leaf name {
++        type string;
++        description
++          "device-scoped identifier for the network
++           instance.";
++      }
++  }
++
++  // top-level device definition statements
++
++  container network-instances {
++    description
++      "Network instances, each of which consists of a VRF";
++    reference
++      "RFC 8349: A YANG Data Model for Routing Management";
++    list network-instance {
++      key "name";
++      description
++        "List of configured network instances.";
++
++      uses network-instance-list-common-group;
++    }
++
++    list network-instance-operational {
++      key "name";
++      description
++        "List of operational network instances.";
++      config false;
++
++      uses network-instance-list-common-group;
++      container state {
++        description
++          "The active state of the network instance.";
++
++        leaf index {
++            type instance-index;
++            mandatory true;
++            description
++              "The network instance's global numeric index.
++               This differs from both the dataplane and kernel indexes.";
++        }
++        leaf status {
++          type enumeration {
++            enum not-ready {
++              description
++                "The network instance is not ready to be used.";
++            }
++            enum ready {
++              description
++                "The system has completed set up of the network instance.";
++            }
++            enum deleting {
++              description
++                "The network instance is pending deletion and should not be used.";
++            }
++          }
++          mandatory true;
++          description "System level state of the network instance.";
++        }
++      }
++    }
++  }
++}
+diff --git a/tests/files/graphnos-policy-packet-fields.yang b/tests/files/graphnos-policy-packet-fields.yang
+new file mode 100644
+index 0000000..194bb76
+--- /dev/null
++++ b/tests/files/graphnos-policy-packet-fields.yang
+@@ -0,0 +1,307 @@
++module graphnos-policy-packet-fields {
++  yang-version 1.1;
++  namespace "https://graphiant.com/ns/yang/graphnos-policy-packet-fields";
++  prefix packet-fields;
++
++  import ietf-inet-types {
++    prefix inet;
++    reference
++      "RFC 6991 - Common YANG Data Types.";
++  }
++  import graphnos-yang-revisions {
++      prefix rev;
++  }
++
++  organization
++      "Graphiant";
++
++  contact
++      "yang@graphiant.com";
++
++  description
++    "This YANG module defines groupings that are used by
++    graphiant policy YANG module.
++    It is a sub-set of groupings defined in the IETF packet-fields YANG";
++
++  revision 2021-11-24 {
++    description
++      "Initial version.";
++    rev:revision-label 0.0.1;
++  }
++
++  /*
++   * Groupings
++   */
++  grouping port-range-or-exact {
++    description
++      "Grouping for port definitions in the form of a
++       choice statement.";
++    choice port-range-or-exact {
++        description
++            "Choice of specifying a port range or a single port.";
++        container range {
++            leaf lower-port {
++                type inet:port-number;
++                must ". <= ../upper-port" {
++                    error-message
++                        "The lower-port must be less than or equal to
++                           upper-port.";
++                }
++                mandatory true;
++                description
++                    "Lower boundary for a port.";
++            }
++            leaf upper-port {
++                type inet:port-number;
++                mandatory true;
++                description
++                    "Upper boundary for port.";
++            }
++        }
++        container port {
++            leaf port {
++                type inet:port-number;
++                mandatory true;
++                description
++                    "Port number along with operator on which to
++                       match.";
++            }
++        }
++    }
++  }
++
++  grouping ip-header-fields {
++    description
++      "IP header fields common to ipv4 and ipv6";
++    reference
++      "RFC 791: Internet Protocol.";
++
++    leaf protocol {
++      type uint8;
++      description
++        "Internet Protocol number. Refers to the protocol of the
++         payload. In IPv6, this field is known as 'next-header',
++         and if extension headers are present, the protocol is
++         present in the 'upper-layer' header.";
++      reference
++        "RFC 791: Internet Protocol,
++         RFC 8200: Internet Protocol, Version 6 (IPv6) Specification.";
++    }
++    leaf dscp {
++        type inet:dscp;
++        description
++            "Differentiated Services Code Point.";
++        reference
++            "RFC 2474: Definition of the Differentiated Services
++                       Field (DS Field) in the IPv4 and IPv6
++                       Headers.";
++    }
++  }
++
++  grouping ipv4-header-fields {
++      description
++          "Fields in IPv4 header.";
++
++      leaf destination-ipv4-network {
++          description
++              "Destination IPv4 address prefix.";
++          type inet:ipv4-prefix;
++      }
++      leaf source-ipv4-network {
++          description
++              "Source IPv4 address prefix.";
++          type inet:ipv4-prefix;
++      }
++  }
++
++  grouping ipv6-header-fields {
++      description
++          "Fields in IPv6 header";
++
++      leaf destination-ipv6-network {
++          description
++              "Destination IPv6 address prefix.";
++          type inet:ipv6-prefix;
++      }
++      leaf source-ipv6-network {
++          description
++              "Source IPv6 address prefix.";
++          type inet:ipv6-prefix;
++      }
++  }
++
++  grouping tcp-header-fields {
++    description
++      "Collection of TCP header fields that can be used to
++       setup a match filter.";
++
++    leaf sequence-number {
++      description
++        "Sequence number that appears in the packet.";
++      type uint32;
++    }
++
++    leaf acknowledgement-number {
++      description
++        "The acknowledgement number that appears in the
++         packet.";
++      type uint32;
++    }
++
++    leaf data-offset {
++      description
++        "Specifies the size of the TCP header in 32-bit
++         words. The minimum size header is 5 words and
++         the maximum is 15 words thus giving the minimum
++         size of 20 bytes and maximum of 60 bytes,
++         allowing for up to 40 bytes of options in the
++         header.";
++      type uint8 {
++        range "5..15";
++      }
++    }
++
++    leaf reserved {
++      description
++        "Reserved for future use.";
++      type uint8;
++    }
++
++    leaf flags {
++      description
++        "Also known as Control Bits. Contains 9 1-bit flags.";
++      reference
++        "RFC 793: Transmission Control Protocol (TCP).";
++      type bits {
++        bit cwr {
++          position 1;
++          description
++            "Congestion Window Reduced (CWR) flag is set by
++             the sending host to indicate that it received
++             a TCP segment with the ECE flag set and had
++             responded in congestion control mechanism.";
++          reference
++            "RFC 3168: The Addition of Explicit Congestion
++                       Notification (ECN) to IP.";
++        }
++        bit ece {
++          position 2;
++          description
++            "ECN-Echo has a dual role, depending on the value
++             of the SYN flag. It indicates:
++             If the SYN flag is set (1), that the TCP peer is ECN
++             capable. If the SYN flag is clear (0), that a packet
++             with Congestion Experienced flag set (ECN=11) in IP
++             header was received during normal transmission
++             (added to header by RFC 3168). This serves as an
++             indication of network congestion (or impending
++             congestion) to the TCP sender.";
++          reference
++            "RFC 3168: The Addition of Explicit Congestion
++                       Notification (ECN) to IP.";
++        }
++        bit urg {
++          position 3;
++          description
++            "Indicates that the Urgent pointer field is significant.";
++        }
++        bit ack {
++          position 4;
++          description
++            "Indicates that the Acknowledgment field is significant.
++             All packets after the initial SYN packet sent by the
++             client should have this flag set.";
++        }
++        bit psh {
++          position 5;
++          description
++            "Push function. Asks to push the buffered data to the
++             receiving application.";
++        }
++        bit rst {
++          position 6;
++          description
++            "Reset the connection.";
++        }
++        bit syn {
++          position 7;
++          description
++            "Synchronize sequence numbers. Only the first packet
++             sent from each end should have this flag set. Some
++             other flags and fields change meaning based on this
++             flag, and some are only valid for when it is set,
++             and others when it is clear.";
++        }
++        bit fin {
++          position 8;
++          description
++            "Last package from sender.";
++        }
++      }
++    }
++
++    leaf window-size {
++      description
++        "The size of the receive window, which specifies
++         the number of window size units beyond the segment
++         identified by the sequence number in the acknowledgment
++         field that the sender of this segment is currently
++         willing to receive.";
++      type uint16;
++      units "bytes";
++    }
++
++    leaf urgent-pointer {
++      description
++        "This field is an offset from the sequence number
++         indicating the last urgent data byte.";
++      type uint16;
++    }
++
++    leaf options {
++      description
++        "The length of this field is determined by the
++         data offset field. Options have up to three
++         fields: Option-Kind (1 byte), Option-Length
++         (1 byte), Option-Data (variable). The Option-Kind
++         field indicates the type of option, and is the
++         only field that is not optional. Depending on
++         what kind of option we are dealing with,
++         the next two fields may be set: the Option-Length
++         field indicates the total length of the option,
++         and the Option-Data field contains the value of
++         the option, if applicable.";
++      type binary {
++        length "1..40";
++      }
++    }
++  }
++
++  grouping icmp-header-fields {
++    description
++      "Collection of ICMP header fields that can be
++       used to setup a match filter.";
++
++    leaf type {
++      description
++        "Also known as Control messages.";
++      reference
++        "RFC 792: Internet Control Message Protocol (ICMP),
++         RFC 4443: Internet Control Message Protocol (ICMPv6)
++                   for Internet Protocol Version 6 (IPv6)
++                   Specifciation.";
++      type uint8;
++    }
++
++    leaf code {
++      description
++        "ICMP subtype. Also known as Control messages.";
++      reference
++        "RFC 792: Internet Control Message Protocol (ICMP),
++         RFC 4443: Internet Control Message Protocol (ICMPv6)
++                   for Internet Protocol Version 6 (IPv6)
++                   Specifciation.";
++      type uint8;
++    }
++  }
++}
+diff --git a/tests/files/graphnos-policy-types.yang b/tests/files/graphnos-policy-types.yang
+new file mode 100644
+index 0000000..719cf43
+--- /dev/null
++++ b/tests/files/graphnos-policy-types.yang
+@@ -0,0 +1,175 @@
++module graphnos-policy-types {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/graphnos-policy-types";
++    prefix plt;
++
++    import graphnos-yang-revisions {
++        prefix rev;
++    }
++
++    import graphnos-policy-packet-fields {
++        prefix pf;
++    }
++
++    organization
++      "Graphiant";
++
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This module is used to describe Policy types that can be shared between
++       YANG models.";
++
++    revision 2023-01-05 {
++        description
++          "Initial revision.";
++        rev:revision-label 0.2.1;
++    }
++
++    typedef policy-index {
++        type uint32 {
++            range 1..max;
++        }
++        description
++          "This type represents the unique policy index.";
++    }
++
++    typedef policy-priority {
++        description
++          "Priority - lower value has higher priority.";
++        type uint32 {
++           range 1..max;
++        }
++    }
++
++    /* Domain related types. */
++    typedef dp-domain-id {
++        description
++          "A dataplane domain ID identifies a domain in the dataplane.
++           This comprised of a number of components. The lower 2 bits
++           encode the required local edge SLA, the next 2 bits encode
++           the required remote edge SLA, the next 2 bits encode the
++           required service SLA in the case of a service domain.
++           The next 2 bits are reserved for future use. The next 6
++           bits encode the nth combination of attributes and an
++           optional service ID. The remaining 2 bits are reserved for
++           future use.";
++        type uint16 {
++            /* 0x0 to 0x3f3f, i.e. top 2 bits in each byte are unusable
++               with the current encoding scheme. */
++            range 0..16191;
++        }
++    }
++    typedef domain-id {
++        description
++          "A configuration sourced domain identifier. This identifies the domain from the
++           OSS/customer point of view. The value 0 is reserved for the default
++           catch all domain.";
++        type uint32;
++    }
++
++    /* Remote attachment related types. */
++    typedef rat-identifier {
++        description "Identifier for a RAT (remote attachment).";
++        type uint32;
++    }
++
++    grouping application-id {
++        description "An Application ID, which is a 32bit value, split into two
++                     fields. The most significant 8 bits are the engine ID,
++                     the least significant 24 are the app ID.
++                     The same applications, i.e. youtube, may not have the
++                     app-ID across engines.";
++        leaf engine-id {
++            mandatory true;
++            type enumeration {
++                enum policy {
++                    value 6;
++                }
++                enum ipoque {
++                    value 24;
++                }
++            }
++        }
++        leaf app-id {
++            mandatory true;
++            type uint32 {
++                range 1..16777215;
++            }
++        }
++    }
++
++    grouping match-n-tuple-header-only {
++        description "Match on various fields in the packet header";
++        choice l3 {
++            description
++                "Choice of either IPv4 or IPv6 headers";
++            container ipv4 {
++                description
++                    "Rule set that matches IPv4 headers.";
++                uses pf:ip-header-fields;
++                uses pf:ipv4-header-fields;
++            }
++            container ipv6 {
++                description
++                    "Rule set that matches IPv6 headers.";
++                uses pf:ip-header-fields;
++                uses pf:ipv6-header-fields;
++            }
++        }
++        choice l4 {
++            description
++                "Choice of TCP, UDP, or ICMP headers.";
++            container tcp {
++                description
++                    "Rule set that matches TCP headers.";
++                container source-port {
++                    uses pf:port-range-or-exact;
++                    description
++                        "Source port definition from range or
++                                 operator.";
++                }
++                container destination-port {
++                    uses pf:port-range-or-exact;
++                    description
++                        "Destination port definition from range or
++                                 operator.";
++                }
++            }
++            container udp {
++                description
++                    "Rule set that matches UDP headers.";
++                container source-port {
++                    uses pf:port-range-or-exact;
++                    description
++                        "Source port definition from range or
++                                 operator.";
++                }
++                container destination-port {
++                    uses pf:port-range-or-exact;
++                    description
++                        "Destination port definition from range or
++                                 operator.";
++                }
++            }
++            container icmp {
++                uses pf:icmp-header-fields;
++                description
++                    "Rule set that matches ICMP headers.";
++            }
++        }
++    }
++
++    grouping match-n-tuple {
++        description
++          "Match on various fields in the packet header, or the identified Application ID.";
++        uses match-n-tuple-header-only;
++        container application-id {
++            description
++                "Optional Application ID to match against.";
++            presence "Application-ID Match included";
++            uses plt:application-id;
++        }
++    }
++}
+diff --git a/tests/files/graphnos-policy.yang b/tests/files/graphnos-policy.yang
+new file mode 100644
+index 0000000..6d342d3
+--- /dev/null
++++ b/tests/files/graphnos-policy.yang
+@@ -0,0 +1,99 @@
++
++module graphnos-policy {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/graphnos-policy";
++    prefix pl;
++
++    import ietf-inet-types {
++        prefix inet;
++        reference
++          "RFC 6991 - Common YANG Data Types.";
++    }
++    import graphnos-interfaces {
++        prefix if;
++    }
++    import graphnos-network-instance {
++        prefix ni;
++    }
++    import graphnos-routing-types {
++        prefix rt;
++    }
++    import graphnos-yang-revisions {
++        prefix rev;
++    }
++
++    organization
++      "Graphiant";
++
++    contact
++      "yang@graphiant.com";
++
++    description
++      "For testing only!";
++
++    revision 2022-05-30 {
++        description
++          "Initial revision.";
++        rev:revision-label 0.0.1;
++    }
++
++    typedef rat-identifier {
++        description "Identifier for a RAT (remote attachment).";
++        type uint32;
++    }
++    typedef rat-ref {
++        type leafref {
++            path "/pl:remote-attachments/pl:remote-attachment/pl:id";
++        }
++        description
++          "This type is used by data models that need to
++          reference a remote attachment (RAT).";
++    }
++
++    grouping remote-attachment {
++        description
++          "A remote attachment (RAT) encapsulates a remote link and
++           it's associated policy attributes.";
++
++        leaf id {
++            description
++              "A unique ID for this RAT, used to identify a RAT as a
++               path attribute in a FRIB entry.";
++            type rat-identifier;
++        }
++
++        leaf source-cpe-address {
++            description
++              "The ipv6 address of the CPE which originated this RAT.
++               Specified so that returning ICMP packets can be matched
++               to a RAT.";
++            type inet:ipv6-address;
++        }
++
++        leaf mtu {
++            description
++              "The MTU of the RAT link";
++            type uint16;
++        }
++
++        leaf connection-id {
++            description
++              "The connection id of the RAT is used to direct traffic
++               onto the remote link from the local node.";
++            type rt:connection-id;
++        }
++    }
++
++    container remote-attachments {
++        config false;
++        description
++            "A table of RATs.";
++        list remote-attachment {
++            unique "id";
++            key "source-cpe-address connection-id";
++
++            uses remote-attachment;
++        }
++    }
++
++}
+diff --git a/tests/files/graphnos-routing-types.yang b/tests/files/graphnos-routing-types.yang
+new file mode 100644
+index 0000000..4e8313f
+--- /dev/null
++++ b/tests/files/graphnos-routing-types.yang
+@@ -0,0 +1,413 @@
++module graphnos-routing-types {
++    yang-version "1.1";
++    namespace "http://graphiant.com/ns/yang/graphnos-routing-types";
++    prefix rt-types;
++
++    import graphnos-extensions {
++        prefix graphnos;
++    }
++    import graphnos-yang-revisions {
++        prefix rev;
++    }
++
++    organization
++      "Graphiant";
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This module contains a collection of YANG data types
++       considered generally useful for routing protocols.
++
++       Copyright (c) 2017 IETF Trust and the persons
++       identified as authors of the code.  All rights reserved.
++
++       Redistribution and use in source and binary forms, with or
++       without modification, is permitted pursuant to, and subject
++       to the license terms contained in, the Simplified BSD License
++       set forth in Section 4.c of the IETF Trust's Legal Provisions
++       Relating to IETF Documents
++       (https://trustee.ietf.org/license-info).
++
++       This version of this YANG module is part of RFC 8294; see
++       the RFC itself for full legal notices.";
++
++    revision 2022-07-27 {
++        description
++          "Graphnos.
++
++          Added definition of Route-Origin for L3VPN support.";
++
++        reference
++          "IETF Draft rev 5: Yang Data Model for BGP/MPLS L3 VPNs";
++        rev:revision-label 0.0.2;
++    }
++
++    revision 2022-04-28 {
++        description
++          "Graphnos.
++
++          Added definitions of Route-Target and Route-Distinguisher
++          for L3VPN support.
++
++          Added definition of a connection identifier for use with
++          circuit attribute based forwarding.";
++        reference
++          "IETF Draft rev 5: Yang Data Model for BGP/MPLS L3 VPNs";
++        rev:revision-label 0.0.1;
++    }
++
++    /*** Graphnos path attribute based remote path selection. ***/
++    typedef connection-id {
++        type uint8 {
++            /* A value of zero implies unused. */
++            range "0..15";
++        }
++        description
++          "A connection id used to direct traffic onto a RAT (remote
++           attachment).";
++        reference
++          "See graphnos-policy.yang for further details.";
++    }
++
++    /*** Graphnos versions of prefixes that allows host bits ***/
++    typedef ip-prefix {
++       type union {
++         type ipv4-prefix;
++         type ipv6-prefix;
++       }
++       description
++        "The ip-prefix type represents an IP prefix and is IP
++         version neutral.  The format of the textual representations
++         implies the IP version.";
++    }
++
++    typedef ipv4-prefix {
++       type string {
++         pattern
++            '(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}'
++          +  '([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])'
++          + '/(([0-9])|([1-2][0-9])|(3[0-2]))';
++       }
++       description
++        "The ipv4-prefix type represents an IPv4 address prefix.
++         The prefix length is given by the number following the
++         slash character and must be less than or equal to 32.
++
++         A prefix length value of n corresponds to an IP address
++         mask that has n contiguous 1-bits from the most
++         significant bit (MSB) and all other bits set to 0.
++
++	 Host bits of the address are allowed to be set.";
++    }
++
++    typedef ipv6-prefix {
++       type string {
++         pattern '((:|[0-9a-fA-F]{0,4}):)([0-9a-fA-F]{0,4}:){0,5}'
++               + '((([0-9a-fA-F]{0,4}:)?(:|[0-9a-fA-F]{0,4}))|'
++               + '(((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}'
++               + '(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])))'
++               + '(/(([0-9])|([0-9]{2})|(1[0-1][0-9])|(12[0-8])))';
++         pattern '(([^:]+:){6}(([^:]+:[^:]+)|(.*\..*)))|'
++               + '((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)'
++               + '(/.+)';
++       }
++       description
++        "The ipv6-prefix type represents an IPv6 address prefix.
++         The prefix length is given by the number following the
++         slash character and must be less than or equal to 128.
++
++         A prefix length value of n corresponds to an IP address
++         mask that has n contiguous 1-bits from the most
++         significant bit (MSB) and all other bits set to 0.
++
++	 Host bits of the address are allowed to be set.";
++     }
++
++    /*** Timer related definitions ***/
++    typedef timer-value-seconds16 {
++       type union {
++         type uint16 {
++           range "1..65535";
++         }
++         type enumeration {
++           enum infinity {
++             description
++               "The timer is set to infinity.";
++           }
++           enum not-set {
++             description
++               "The timer is not set.";
++           }
++         }
++       }
++       units "seconds";
++       description
++         "Timer value type, in seconds (16-bit range).";
++    }
++
++    typedef timer-value-seconds32 {
++       type union {
++         type uint32 {
++           range "1..4294967295";
++         }
++         type enumeration {
++           enum infinity {
++             description
++               "The timer is set to infinity.";
++           }
++           enum not-set {
++             description
++               "The timer is not set.";
++           }
++         }
++       }
++       units "seconds";
++       description
++         "Timer value type, in seconds (32-bit range).";
++    }
++
++    typedef route-distinguisher {
++      type string {
++        pattern
++          '(0:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++        +     '6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0):(429496729[0-5]|'
++        +     '42949672[0-8][0-9]|'
++        +     '4294967[01][0-9]{2}|429496[0-6][0-9]{3}|'
++        +     '42949[0-5][0-9]{4}|'
++        +     '4294[0-8][0-9]{5}|429[0-3][0-9]{6}|'
++        +     '42[0-8][0-9]{7}|4[01][0-9]{8}|'
++        +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0))|'
++        + '(1:((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|'
++        +     '25[0-5])\.){3}([0-9]|[1-9][0-9]|'
++        +     '1[0-9]{2}|2[0-4][0-9]|25[0-5])):(6553[0-5]|'
++        +     '655[0-2][0-9]|'
++        +     '65[0-4][0-9]{2}|6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|'
++        + '(2:(429496729[0-5]|42949672[0-8][0-9]|'
++        +     '4294967[01][0-9]{2}|'
++        +     '429496[0-6][0-9]{3}|42949[0-5][0-9]{4}|'
++        +     '4294[0-8][0-9]{5}|'
++        +     '429[0-3][0-9]{6}|42[0-8][0-9]{7}|4[01][0-9]{8}|'
++        +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0):'
++        +     '(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++        +     '6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|';
++      }
++
++      description
++        "A Route Distinguisher is an 8-octet value used to
++        distinguish routes from different BGP VPNs (RFC 4364).
++        A Route Distinguisher will have the same format as a
++        Route Target as per RFC 4360 and will consist of
++        two or three fields: a 2-octet Type field, an administrator
++        field, and, optionally, an assigned number field.
++
++        According to the data formats for types 0, 1, and 2 as
++        defined in RFC 4360, and RFC 5668, the encoding
++        pattern is defined as:
++
++        0:2-octet-asn:4-octet-number
++        1:4-octet-ipv4addr:2-octet-number
++        2:4-octet-asn:2-octet-number
++
++        Some valid examples are 0:100:100, 1:1.1.1.1:100,
++        and 2:1234567890:203";
++      reference
++        "RFC 4360: BGP Extended Communities Attribute.
++        RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs).
++        RFC 5668: 4-Octet AS Specific BGP Extended Community.";
++    }
++
++    typedef route-target-type {
++      type enumeration {
++        enum import {
++          value 0;
++          description
++            "The Route Target applies to route import.";
++        }
++        enum export {
++          value 1;
++          description
++            "The Route Target applies to route export.";
++        }
++
++        enum both {
++          value 2;
++          description
++            "The Route Target applies to both route import and
++            route export.";
++        }
++      }
++      description
++        "Indicates the role a Route Target takes in route filtering.";
++      reference
++        "RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs).";
++    }
++
++    /*** Collection of types related to VPNs ***/
++
++    typedef route-target {
++      type string {
++        pattern
++          '(0:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++        +     '6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0):(429496729[0-5]|'
++        +     '42949672[0-8][0-9]|'
++        +     '4294967[01][0-9]{2}|429496[0-6][0-9]{3}|'
++        +     '42949[0-5][0-9]{4}|'
++        +     '4294[0-8][0-9]{5}|429[0-3][0-9]{6}|'
++        +     '42[0-8][0-9]{7}|4[01][0-9]{8}|'
++        +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0))|'
++        + '(1:((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|'
++        +     '25[0-5])\.){3}([0-9]|[1-9][0-9]|'
++        +     '1[0-9]{2}|2[0-4][0-9]|25[0-5])):(6553[0-5]|'
++        +     '655[0-2][0-9]|'
++        +     '65[0-4][0-9]{2}|6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|'
++        + '(2:(429496729[0-5]|42949672[0-8][0-9]|'
++        +     '4294967[01][0-9]{2}|'
++        +     '429496[0-6][0-9]{3}|42949[0-5][0-9]{4}|'
++        +     '4294[0-8][0-9]{5}|'
++        +     '429[0-3][0-9]{6}|42[0-8][0-9]{7}|4[01][0-9]{8}|'
++        +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0):'
++        +     '(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++        +     '6[0-4][0-9]{3}|'
++        +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|';
++      }
++
++      description
++        "A Route Target is an 8-octet BGP extended community
++        initially identifying a set of sites in a BGP VPN
++        (RFC 4364).  However, it has since taken on a more general
++        role in BGP route filtering.  A Route Target consists of two
++        or three fields: a 2-octet Type field, an administrator
++        field, and, optionally, an assigned number field.
++
++        According to the data formats for types 0, 1, 2, and 6 as
++        defined in RFC 4360, and RFC 5668, the encoding
++        pattern is defined as:
++
++        0:2-octet-asn:4-octet-number
++        1:4-octet-ipv4addr:2-octet-number
++        2:4-octet-asn:2-octet-number
++
++        Some valid examples are 0:100:100, 1:1.1.1.1:100,
++        and 2:1234567890:203";
++      reference
++        "RFC 4360: BGP Extended Communities Attribute.
++        RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs).
++        RFC 5668: 4-Octet AS Specific BGP Extended Community.";
++    }
++
++    grouping vpn-route-targets {
++      description
++        "A grouping that specifies Route Target import-export rules
++        used in BGP-enabled VPNs.";
++      reference
++        "RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs).
++        RFC 4664: Framework for Layer 2 Virtual Private Networks
++        (L2VPNs).";
++      list vpn-target {
++        key "route-target";
++        description
++          "List of Route Targets.";
++        leaf route-target {
++          type rt-types:route-target;
++          description
++            "Route Target value.";
++        }
++        leaf route-target-type {
++          type rt-types:route-target-type;
++          mandatory true;
++          description
++            "Import/export type of the Route Target.";
++        }
++      }
++    }
++
++     typedef route-origin {
++       type string {
++         pattern
++           '(0:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++         +     '6[0-4][0-9]{3}|'
++         +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0):(429496729[0-5]|'
++         +     '42949672[0-8][0-9]|'
++         +     '4294967[01][0-9]{2}|429496[0-6][0-9]{3}|'
++         +     '42949[0-5][0-9]{4}|'
++         +     '4294[0-8][0-9]{5}|429[0-3][0-9]{6}|'
++         +     '42[0-8][0-9]{7}|4[01][0-9]{8}|'
++         +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0))|'
++         + '(1:((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|'
++         +     '25[0-5])\.){3}([0-9]|[1-9][0-9]|'
++         +     '1[0-9]{2}|2[0-4][0-9]|25[0-5])):(6553[0-5]|'
++         +     '655[0-2][0-9]|'
++         +     '65[0-4][0-9]{2}|6[0-4][0-9]{3}|'
++         +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|'
++         + '(2:(429496729[0-5]|42949672[0-8][0-9]|'
++         +     '4294967[01][0-9]{2}|'
++         +     '429496[0-6][0-9]{3}|42949[0-5][0-9]{4}|'
++         +     '4294[0-8][0-9]{5}|'
++         +     '429[0-3][0-9]{6}|42[0-8][0-9]{7}|4[01][0-9]{8}|'
++         +     '[1-3][0-9]{9}|[1-9][0-9]{0,8}|0):'
++         +     '(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|'
++         +     '6[0-4][0-9]{3}|'
++         +     '[1-5][0-9]{4}|[1-9][0-9]{0,3}|0))|';
++       }
++       description
++         "A Route Origin is an 8-octet BGP extended community
++          identifying the set of sites where the BGP route
++          originated (RFC 4364).  A Route Origin will have the same
++          format as a Route Target as per RFC 4360 and will consist
++          of two or three fields: a 2-octet Type field, an
++          administrator field, and, optionally, an assigned number
++          field.
++
++          According to the data formats for types 0, 1, 2, and 6 as
++          defined in RFC 4360, RFC 5668, and RFC 7432, the encoding
++          pattern is defined as:
++
++          0:2-octet-asn:4-octet-number
++          1:4-octet-ipv4addr:2-octet-number
++          2:4-octet-asn:2-octet-number
++
++          Some valid examples are 0:100:100, 1:1.1.1.1:100,
++          and 2:1234567890:203";
++       reference
++         "RFC 4360: BGP Extended Communities Attribute.
++          RFC 4364: BGP/MPLS IP Virtual Private Networks (VPNs).
++          RFC 5668: 4-Octet AS Specific BGP Extended Community.
++          RFC 7432: BGP MPLS-Based Ethernet VPN.";
++     }
++
++    /*** Collection of types related to MPLS ***/
++    typedef mpls-label {
++        type uint32 {
++            graphnos:codegen-as-type "MplsLabel";
++            range "0..1048575";
++        }
++        description
++          "The 20-bit label value in an MPLS label stack as specified
++           in RFC 3032.  This label value does not include the
++           encodings of Traffic Class and TTL.";
++        reference
++          "RFC 3032: MPLS Label Stack Encoding.";
++    }
++
++    /*** Groupings **/
++    grouping mpls-label-stack {
++        description
++          "This grouping specifies an MPLS label stack.  The label
++           stack is encoded as a leaf list of label stack entries";
++        container mpls-label-stack {
++            description
++              "Container for a list of MPLS label stack entries.";
++            leaf-list label {
++                type rt-types:mpls-label;
++                description
++                  "Label value.";
++            }
++        }
++    }
++}
+diff --git a/tests/files/graphnos-yang-revisions.yang b/tests/files/graphnos-yang-revisions.yang
+new file mode 100644
+index 0000000..a69a76c
+--- /dev/null
++++ b/tests/files/graphnos-yang-revisions.yang
+@@ -0,0 +1,128 @@
++module graphnos-yang-revisions {
++    yang-version "1.1";
++    namespace "http://graphiant.com/ns/yang/graphnos-yang-revisions";
++    prefix rev;
++
++    organization
++      "Graphiant";
++    contact
++      "yang@graphiant.com";
++
++    description
++      "This YANG 1.1 module contains definitions and extensions to support
++       updated YANG revision handling in Graphnos.
++       
++       Copyright (c) 2021 IETF Trust and the persons identified as
++       authors of the code.  All rights reserved.
++       
++       Redistribution and use in source and binary forms, with or
++       without modification, is permitted pursuant to, and subject
++       to the license terms contained in, the Simplified BSD License
++       set forth in Section 4.c of the IETF Trust's Legal Provisions
++       Relating to IETF Documents
++       (https://trustee.ietf.org/license-info).
++       
++       Copyright (C) 2021 Graphiant, Inc.
++       All rights reserved.";
++
++    revision 2021-11-02 {
++        description
++          "Initial revision";
++        reference
++          "draft-ietf-netmod-yang-module-versioning-04 and 
++           draft-ietf-netmod-yang-semver-04";
++        rev:revision-label 0.0.2;
++    }
++
++    typedef revision-label {
++        type string {
++            pattern '[0-9]+[.][0-9]+[.][0-9]+(_(non_)?compatible)?'
++            + '(-[A-Za-z0-9.-]+[.-][0-9]+)?([+][A-Za-z0-9.-]+)?';
++        }
++        description
++          "A label associated with a YANG revision.
++           Alphanumeric characters, comma, hyphen, underscore, period
++           and plus are the only accepted characters. MUST NOT match
++           revision-date.
++           
++           Represents a YANG semantic version number.
++           
++           This is a 'merge' of draft-ietf-netmod-yang-semver-04's revision-label
++           with draft-ietf-netmod-yang-semver-04's version. Because unlike what
++           is being defined at the IETF, we only need 1 'versioning scheme'.";
++        reference
++          "draft-ietf-netmod-yang-module-versioning-04: Updated YANG Module Revision Handling;
++           Section 3.4, Revision label.
++           draft-ietf-netmod-yang-semver-04: YANG Semver;
++           Section 3.2, Semantic Versioning for YANG Artifacts.
++          ";
++    }
++
++    extension non-backwards-compatible {
++        description
++          "This statement is used to indicate YANG module revisions that
++           contain non-backwards-compatible changes.
++           
++           The statement MUST only be a substatement of the 'revision'
++           statement.  Zero or one 'non-backwards-compatible' statements
++           per parent statement is allowed.  No substatements for this
++           extension have been standardized.
++           
++           If a revision of a YANG module contains changes, relative to
++           the preceding revision in the revision history, that do not
++           conform to the backwards compatible module update rules defined
++           in draft-ietf-netmod-yang-module-versioning-04, then the 
++           'non-backwards-compatible' statement MUST
++           be added as a substatement to the revision statement.
++           
++           Conversely, if a revision does not contain a
++           'non-backwards-compatible' statement then all changes,
++           relative to the preceding revision in the revision history,
++           MUST be backwards-compatible.
++           
++           A new module revision that only contains changes that are
++           backwards compatible SHOULD NOT include the
++           'non-backwards-compatible' statement.  An example of when
++           an author might add the 'non-backwards-compatible' statement
++           is if they believe a change could negatively impact clients
++           even though the backwards compatibility rules defined in
++           draft-ietf-netmod-yang-module-versioning-04 classify it as a 
++           backwards-compatible change.
++           
++           Adding, removing, or changing a 'non-backwards-compatible'
++           statement is a backwards-compatible version change.";
++
++        reference
++          "draft-ietf-netmod-yang-module-versioning-04: Updated YANG Module Revision Handling;
++           Section 3.2, non-backwards-compatible revision extension statement";
++    }
++
++    extension revision-label {
++        argument revision-label;
++        description
++          "The revision label can be used to provide an additional
++           versioning identifier associated with a module or submodule
++           revision. 
++           
++           The format of the revision-label argument MUST conform to the
++           pattern defined for the revision-label typedef in this module.
++           
++           The statement MUST only be a substatement of the revision
++           statement. Zero or one revision-label statements per parent
++           statement are allowed. No substatements for this extension
++           have been standardized.
++           
++           Revision labels MUST be unique amongst all revisions of a
++           module or submodule.
++           
++           Adding a revision label is a backwards-compatible version
++           change. Changing or removing an existing revision label in
++           the revision history is a non-backwards-compatible version
++           change, because it could impact any references to that
++           revision label.";
++
++        reference
++          "draft-ietf-netmod-yang-module-versioning-04: Updated YANG Module Revision Handling;
++           Section 3.4, Revision label";
++    }
++}
+diff --git a/tests/files/less-noddy.yang b/tests/files/less-noddy.yang
+new file mode 100644
+index 0000000..e5e1290
+--- /dev/null
++++ b/tests/files/less-noddy.yang
+@@ -0,0 +1,8 @@
++module less-noddy {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/less-noddy";
++    prefix less-noddy;
++
++    feature test-feature-one;
++    feature test-feature-two;
++}
+diff --git a/tests/files/noddy.yang b/tests/files/noddy.yang
+new file mode 100644
+index 0000000..981e36f
+--- /dev/null
++++ b/tests/files/noddy.yang
+@@ -0,0 +1,5 @@
++module noddy {
++    yang-version 1.1;
++    namespace "https://graphiant.com/ns/yang/noddy";
++    prefix noddy;
++}
+diff --git a/tests/files/test-leafref.yang b/tests/files/test-leafref.yang
+new file mode 100644
+index 0000000..f79db4a
+--- /dev/null
++++ b/tests/files/test-leafref.yang
+@@ -0,0 +1,45 @@
++module test-leafref {
++    yang-version 1.1;
++    namespace "https://example.com";
++    prefix "tlf";
++
++    container car {
++
++        list sensors {
++            key name;
++            leaf name {
++                type string;
++            }
++
++            list params {
++                key name;
++                leaf name {
++                    type leafref {
++                        path "/tlf:car/parameters/name";
++                    }
++                }
++            }
++
++            max-elements 2;
++        }
++
++        list parameters {
++            key name;
++            leaf name {
++                type string;
++            }
++        }
++    }
++
++    container car-state {
++        config false;
++        leaf a1 {
++            type string;
++        }
++        leaf-list enabled-params {
++            type leafref {
++                path "/tlf:car/parameters/name";
++            }
++        }
++    }
++}
+diff --git a/tests/tcommon.c b/tests/tcommon.c
+index 3ed76a7..b851388 100644
+--- a/tests/tcommon.c
++++ b/tests/tcommon.c
+@@ -26,8 +26,9 @@ static void
+ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+ {
+     const char *severity = NULL;
+-    struct timespec ts;
++    struct timespec ts = {0};
+     static int disable_debug = -1;
++    static int enable_ts = 1;
+     if (disable_debug < 0) {
+         disable_debug = getenv("SR_TEST_LOG_DEBUG") == NULL;
+     }
+@@ -53,7 +54,10 @@ _test_log_msg(sr_log_level_t level, const char *message, const char *prefix)
+         return;
+     }
+ 
+-    clock_gettime(CLOCK_REALTIME, &ts);
++    if (enable_ts) {
++        clock_gettime(CLOCK_REALTIME, &ts);
++    }
++
+     ts.tv_sec %= 1000;
+     ts.tv_nsec /= 1000;
+     fprintf(stderr, "%03ld.%06ld [%ld][%ld][%s]%s: %s\n", ts.tv_sec, ts.tv_nsec,
+diff --git a/tests/test_edit.c b/tests/test_edit.c
+index 95c2ba6..bb9067b 100644
+--- a/tests/test_edit.c
++++ b/tests/test_edit.c
+@@ -50,6 +50,8 @@ setup_f(void **state)
+         TESTS_SRC_DIR "/files/ops-ref.yang",
+         TESTS_SRC_DIR "/files/ops.yang",
+         TESTS_SRC_DIR "/files/mod.yang",
++        TESTS_SRC_DIR "/files/ex-yanggen.yang",
++        TESTS_SRC_DIR "/files/ex-yanggen-augments.yang",
+         NULL
+     };
+ 
+@@ -87,6 +89,8 @@ teardown_f(void **state)
+         "ietf-interfaces",
+         "test",
+         "mod",
++        "ex-yanggen",
++        "ex-yanggen-augments",
+         NULL
+     };
+ 
+@@ -1533,6 +1537,169 @@ test_unknown_ns(void **state)
+     sr_discard_changes(st->sess);
+ }
+ 
++static void
++test_edit_set_item_del_parent(void **state)
++{
++    struct state *st = (struct state *)*state;
++    int ret;
++
++    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
++            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    /* Cannot create after delete, needs isolate */
++    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
++            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT);
++    assert_int_equal(ret, SR_ERR_OPERATION_FAILED);
++
++    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces/interface", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
++            "iana-if-type:ethernetCsmacd", NULL, SR_EDIT_STRICT | SR_EDIT_ISOLATE);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++}
++
++static void
++test_edit_new(void **state)
++{
++    struct state *st = (struct state *)*state;
++    int ret;
++    int opts = 0;
++
++    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/list-entry", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/pres-cont", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/pres-cont2", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/type", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-bool", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-u8", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-u16", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-u32", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-u64", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-i8", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-i16", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-i32", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-i64", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-dec64", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/leaf-default", "default", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-empty", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-binary", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/enum-with-reserved-keyword-variant-leaf", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/union-with-multiple-variants-of-the-same-type-leaf", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-enum", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-enum2", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/leaf-enum3", "add", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-enum4", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/cont1/addresses", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/cont1/leaf-enum", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/cont2/addresses", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/clash", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-using-leafref", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipaddress", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv4address", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv6address", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipaddress-no-zone", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv4address-no-zone", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv6address-no-zone", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipprefix", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv4prefix", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-ipv6prefix", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-date-and-time", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/ordered-list-with-container-value", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/two-key-list", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/two-key-list-not-user-ordered", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/three-key-list", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-union", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-union-enh", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/name-and-value1", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/name-and-value2", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-severity", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/leaf-mpls-label", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/union-key-list", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/leaf-union-default1", "localhost", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/leaf-union-default2", "127.0.0.1", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/identityref-default", "basic-type", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_set_item_str(st->sess, "/ex-yanggen:container/oper-container/leaf-bool", "true", NULL, opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/list-enh", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/container/ex-yanggen-augments:leaf-from-augments", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/container/ex-yanggen-augments:additional-state/state-leaf", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/ex-yanggen-augments:leaf-from-augments", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/ex-yanggen-augments:additional-state/state-leaf", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_delete_item(st->sess, "/ex-yanggen:container/ex-yanggen-augments:leaf-bool", opts);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    TLOG_INF("Done here");
++}
++
+ int
+ main(void)
+ {
+@@ -1557,6 +1724,8 @@ main(void)
+         cmocka_unit_test(test_edit_forbid_node_types),
+         cmocka_unit_test(test_anyxml),
+         cmocka_unit_test(test_unknown_ns),
++        cmocka_unit_test(test_edit_set_item_del_parent),
++        cmocka_unit_test(test_edit_new),
+     };
+ 
+     setenv("CMOCKA_TEST_ABORT", "1", 1);
+diff --git a/tests/test_massive_scale.c b/tests/test_massive_scale.c
+new file mode 100644
+index 0000000..891de7a
+--- /dev/null
++++ b/tests/test_massive_scale.c
+@@ -0,0 +1,417 @@
++/**
++ * @file test_massive_scale.c
++ * @author Irfan <irfan@graphiant.com>
++ * @brief Test for scalability of sysrepo
++ * This will test a scenario with a number of processes, each with many threads.
++ * Multiple modules will be manipulated, and the processes can be restarted.
++ * Each process will have threads that do the following
++ * main()
++ *  1. sr_connect
++ *  2. create change subscriptions to running and oper store
++ *  3. create oper subscriptions (a.k.a pull or data-provider)
++ *  4. create rpc and notif subscriptions
++ *  5. push config and oper data
++ *  6. read data from multiple modules
++ *  7. fetch oper data both pushed and pull (data provider)
++ *  8. sr_disconnect
++ *
++ * The test will not abort on any single failure, but continue to run for a duration of time
++ *
++ * @copyright
++ * Copyright 2022 Graphiant
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#define _GNU_SOURCE
++
++#include <string.h>
++#include <unistd.h>
++#include <setjmp.h>
++#include <stdarg.h>
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/wait.h>
++
++#include <cmocka.h>
++#include <libyang/libyang.h>
++
++#include "sysrepo.h"
++#include "common.h"
++#include "tests/tcommon.h"
++
++static int test_full_scale = 0;
++static ATOMIC_T keep_running;
++
++struct timespec start_time;
++
++struct state
++{
++    sr_conn_ctx_t *conn;
++    sr_session_ctx_t *sess;
++    sr_session_ctx_t  *oper_sess;
++    sr_subscription_ctx_t *subscr[2];
++};
++
++static int
++setup_f(void **state)
++{
++    struct state *st;
++    const char *schema_paths[] = {
++        TESTS_SRC_DIR "/files/test.yang",
++        TESTS_SRC_DIR "/files/test-leafref.yang",
++        TESTS_SRC_DIR "/files/ietf-interfaces.yang",
++        TESTS_SRC_DIR "/files/test-module.yang",
++        TESTS_SRC_DIR "/files/iana-if-type.yang",
++        TESTS_SRC_DIR "/files/ietf-if-aug.yang",
++        NULL
++    };
++
++    st = calloc(1, sizeof *st);
++    *state = st;
++
++    if (sr_connect(0, &(st->conn)) != SR_ERR_OK) {
++        return 1;
++    }
++
++    if (sr_install_modules(st->conn, schema_paths, TESTS_SRC_DIR "/files", NULL) != SR_ERR_OK) {
++        return 1;
++    }
++
++    clock_gettime(CLOCK_MONOTONIC, &start_time);
++    return 0;
++}
++
++static int
++teardown_f(void **state)
++{
++    struct state *st = (struct state *)*state;
++    const char *module_names[] = {
++        "test-leafref",
++        "test-module",
++        "iana-if-type",
++        "ietf-interfaces",
++        "test",
++        NULL
++    };
++
++    sr_remove_modules(st->conn, module_names, 0);
++
++    sr_disconnect(st->conn);
++    free(st);
++    return 0;
++}
++
++typedef struct {
++    ATOMIC_T count;
++} cb_stats;
++
++static int
++module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
++        sr_event_t event, uint32_t request_id, void *private_data)
++{
++    (void)session;
++    (void)sub_id;
++    (void)module_name;
++    (void)xpath;
++    (void)event;
++    (void)request_id;
++    cb_stats *stats = (cb_stats *)private_data;
++    ATOMIC_INC_RELAXED(stats->count);
++    if (xpath && !strcmp("test-module", module_name) && !strcmp(xpath, "/test-module:main/string")) {
++        TLOG_INF("Stopping everything");
++        ATOMIC_STORE_RELAXED(keep_running, 0);
++    }
++    return 0;
++}
++
++static int
++dummy_oper_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
++        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
++{
++    (void)session;
++    (void)sub_id;
++    (void)module_name;
++    (void)xpath;
++    (void)request_xpath;
++    (void)request_id;
++    (void)parent;
++    (void)private_data;
++    return 0;
++}
++
++static int
++recursive_oper_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
++        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
++{
++    sr_data_t *tmp = NULL;
++    const char *get_xpath = "/test:*";
++    (void)session;
++    (void)sub_id;
++    (void)module_name;
++    (void)xpath;
++    (void)request_xpath;
++    (void)request_id;
++    (void)parent;
++    (void)private_data;
++    int ret;
++
++    if (!strcmp(module_name, "test")) {
++        get_xpath = "/test-leafref:*";
++    }
++    ret = sr_get_data(session, get_xpath, 0, 0, 0, &tmp);
++    assert_int_equal(ret, SR_ERR_OK);
++    sr_release_data(tmp);
++    return SR_ERR_OK;
++}
++
++static int
++module_change_recursive_get_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
++        sr_event_t event, uint32_t request_id, void *private_data)
++{
++    sr_data_t *tmp = NULL;
++    const char *get_xpath = "/test:*";
++    (void)session;
++    (void)sub_id;
++    (void)module_name;
++    (void)xpath;
++    (void)event;
++    (void)request_id;
++    int ret;
++
++    cb_stats *stats = (cb_stats *)private_data;
++    ATOMIC_INC_RELAXED(stats->count);
++    if (!strcmp(module_name, "test")) {
++        get_xpath = "/test-leafref:*";
++    }
++    ret = sr_get_data(session, get_xpath, 0, 0, 0, &tmp);
++    assert_int_equal(ret, SR_ERR_OK);
++    sr_release_data(tmp);
++
++    return 0;
++}
++
++static void *
++test_massive_scale_helper(void *arg)
++{
++    (void)arg;
++    const int TEST_RUN_SECONDS = test_full_scale ? 30 : 1;
++    sr_subscr_options_t opts = SR_SUBSCR_ENABLED;
++    int ret;
++    cb_stats stats = {0};
++    struct timespec now;
++    struct state st;
++    long id = gettid();
++    char xpath[128];
++    sr_data_t *tmp;
++    sr_conn_ctx_t *conn = NULL, *conn2 = NULL;
++    sr_session_ctx_t *sess = NULL;
++    sr_subscription_ctx_t *subscr = NULL;
++    int i = 0;
++
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_session_start(conn, SR_DS_RUNNING, &sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_module_change_subscribe(sess, "test-module", "/test-module:main/string", module_change_cb, &stats,
++            0, SR_SUBSCR_DONE_ONLY, &subscr);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    do {
++        memset(&st, 0, sizeof st);
++        tmp = NULL;
++        ret = sr_connect(0, &conn2);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_session_start(conn2, SR_DS_RUNNING, &st.sess);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_session_start(conn2, SR_DS_OPERATIONAL, &st.oper_sess);
++        assert_int_equal(ret, SR_ERR_OK);
++        /* Create running ds change subscriptions */
++        ret = sr_module_change_subscribe(st.sess, "ietf-interfaces", NULL, module_change_cb, &stats,
++                0, opts, &st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_module_change_subscribe(st.sess, "test", "/test:l1[k='interested_key']", module_change_cb, &stats,
++                0, opts, &st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_module_change_subscribe(st.sess, "test", "/test:l1[k='other_key']", module_change_cb, &stats,
++                0, opts, &st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_module_change_subscribe(st.sess, "test", NULL, module_change_recursive_get_cb, &stats,
++                0, opts, &st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Create operational ds change subscriptions */
++        ret = sr_module_change_subscribe(st.oper_sess, "ietf-interfaces", NULL, module_change_cb, &stats,
++                0, opts, &st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Create operational pull subscriptions */
++        snprintf(xpath, sizeof xpath, "/test-leafref:car-state/enabled-params[.='key%lu']", id);
++
++        ret = sr_oper_get_subscribe(st.oper_sess, "test-leafref", xpath, recursive_oper_cb, NULL, 0, &st.subscr[1]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Push some config into datastore */
++        snprintf(xpath, sizeof xpath, "/ietf-interfaces:interfaces/interface[name='eth%lu']/type", id);
++        ret = sr_set_item_str(st.sess, xpath, "iana-if-type:ethernetCsmacd", NULL, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++        ret = sr_apply_changes(st.sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Push operational data into datastore */
++        snprintf(xpath, sizeof xpath, "/ietf-interfaces:interfaces-state/interface[name='eth%lu']/type", id);
++
++        ret = sr_set_item_str(st.oper_sess, xpath,
++                "iana-if-type:ethernetCsmacd", NULL, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++        ret = sr_apply_changes(st.oper_sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Read all operational data */
++        ret = sr_get_data(st.oper_sess, "/*", 0, 0, 0, &tmp);
++        assert_int_equal(ret, SR_ERR_OK);
++        sr_release_data(tmp);
++
++        /* Read all configuration */
++
++        ret = sr_get_data(st.sess, "/*", 0, 0, 0, &tmp);
++        assert_int_equal(ret, SR_ERR_OK);
++        sr_release_data(tmp);
++
++        /* Delete config */
++        snprintf(xpath, sizeof xpath, "/ietf-interfaces:interfaces/interface[name='eth%lu']", id);
++        ret = sr_delete_item(st.sess, xpath, SR_EDIT_STRICT);
++        ret = sr_apply_changes(st.sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        if (++i%2) {
++            /* Delete operational data */
++            snprintf(xpath, sizeof xpath, "/ietf-interfaces:interfaces-state/interface[name='eth%lu']", id);
++            ret = sr_delete_item(st.oper_sess, xpath, SR_EDIT_STRICT);
++            ret = sr_apply_changes(st.oper_sess, 0);
++            assert_int_equal(ret, SR_ERR_OK);
++        }
++
++        /* Remove all subscriptions */
++        ret = sr_unsubscribe(st.subscr[0]);
++        assert_int_equal(ret, SR_ERR_OK);
++        ret = sr_unsubscribe(st.subscr[1]);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_session_stop(st.sess);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_session_stop(st.oper_sess);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        sr_disconnect(conn2);
++        conn2 = NULL;
++
++        clock_gettime(CLOCK_MONOTONIC, &now);
++        sched_yield();
++    } while(ATOMIC_LOAD_RELAXED(keep_running) && now.tv_sec < start_time.tv_sec + TEST_RUN_SECONDS);
++
++    if (!ATOMIC_LOAD_RELAXED(keep_running)) {
++        TLOG_WRN("Stopping early");
++    }
++    sr_unsubscribe(subscr);
++    sr_disconnect(conn);
++    return NULL;
++}
++
++static void
++test_multi_proc_scale(void **arg)
++{
++    (void)arg;
++    sr_conn_ctx_t *conn = NULL;
++    sr_session_ctx_t *sess = NULL;
++
++    const int NUM_PROCS = test_full_scale ? 8 : 1;
++    int i, rc, ret, result = 0;
++    pid_t pids[NUM_PROCS];
++    ATOMIC_STORE_RELAXED(keep_running, 1);
++
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_session_start(conn, SR_DS_RUNNING, &sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    for (i = 0; i < NUM_PROCS; i++) {
++        switch (pids[i] = fork()) {
++            case 0:
++                /* child process */
++                test_massive_scale_helper(NULL);
++                exit(0);
++                break;
++            default:
++                break;
++        }
++    }
++
++    for (i = 0; i < NUM_PROCS; i++) {
++        rc = 0;
++        wait(&rc);
++        TLOG_WRN("Returned rc %d", rc);
++        if (!result && rc) {
++            ret = sr_set_item_str(sess, "/test-module:main/string", "stop_all_tests", NULL, 0);
++            assert_int_equal(ret, SR_ERR_OK);
++            ret = sr_apply_changes(sess, 0);
++            assert_int_equal(ret, SR_ERR_OK);
++        }
++        result += rc;
++    }
++    sr_disconnect(conn);
++
++    assert_int_equal(result, 0);
++}
++
++static void
++test_multi_thread_scale(void **arg)
++{
++    const int NUM_THREADS = test_full_scale ? 8 : 1;
++    int i, ret;
++    pthread_t tids[NUM_THREADS];
++    (void)arg;
++
++    ATOMIC_STORE_RELAXED(keep_running, 1);
++
++    for (i = 0; i < NUM_THREADS; i++) {
++        ret = pthread_create(&tids[i], NULL, test_massive_scale_helper, NULL);
++        assert_int_equal(ret, 0);
++    }
++
++    for (i = 0; i < NUM_THREADS; i++) {
++        pthread_join(tids[i], NULL);
++    }
++
++}
++
++int
++main(void)
++{
++    const struct CMUnitTest tests[] = {
++        cmocka_unit_test(test_multi_proc_scale),
++        cmocka_unit_test(test_multi_thread_scale),
++    };
++    test_full_scale = getenv("TEST_FULL_SCALE") != NULL;
++    setenv("CMOCKA_TEST_ABORT", "1", 1);
++    test_log_init();
++    return cmocka_run_group_tests(tests, setup_f, teardown_f);
++}
+diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
+new file mode 100644
+index 0000000..53edfdd
+--- /dev/null
++++ b/tests/test_oper_edit.c
+@@ -0,0 +1,233 @@
++/**
++ * @author Irfan <irfan@graphiant.com>
++ *
++ * @copyright
++ * Copyright 2022 Graphiant
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#define _GNU_SOURCE
++
++#include <string.h>
++#include <unistd.h>
++#include <setjmp.h>
++#include <stdarg.h>
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/wait.h>
++
++#include <cmocka.h>
++#include <libyang/libyang.h>
++
++#include "sysrepo.h"
++#include "common.h"
++#include "tests/tcommon.h"
++
++
++struct state {
++    sr_conn_ctx_t *conn;
++    sr_session_ctx_t *sess;
++    pthread_barrier_t barrier;
++};
++
++static int test_full_scale;
++
++static int
++setup_f(void **state)
++{
++    struct state *st;
++    const char *schema_paths[] = {
++        TESTS_SRC_DIR "/files/test-leafref.yang",
++        NULL
++    };
++
++    st = calloc(1, sizeof *st);
++    *state = st;
++
++    if (sr_connect(0, &(st->conn)) != SR_ERR_OK) {
++        return 1;
++    }
++
++    if (sr_install_modules(st->conn, schema_paths, TESTS_SRC_DIR "/files", NULL) != SR_ERR_OK) {
++        return 1;
++    }
++
++    return 0;
++}
++
++static int
++teardown_f(void **state)
++{
++    struct state *st = (struct state *)*state;
++    const char *module_names[] = {
++        "test-leafref",
++        NULL
++    };
++
++    sr_remove_modules(st->conn, module_names, 0);
++
++    sr_disconnect(st->conn);
++    free(st);
++    return 0;
++}
++
++static void
++test_leafref_oper_data(void **arg)
++{
++    sr_conn_ctx_t *conn = NULL;
++    sr_session_ctx_t *oper_sess = NULL;
++    struct state *st = (struct state *)*arg;
++    int ret;
++    sr_data_t *data = NULL;
++
++    const char *a1 = "/test-leafref:car-state/a1";
++
++    const char *xpath =  "/test-leafref:car-state/enabled-params[.='pressure']";
++    const char *xpath_del = "/test-leafref:car-state/enabled-params[.='pressure']";
++
++    const char *val = "1 atm";
++
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, a1, "", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_delete_item(oper_sess, xpath_del, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath, val, NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_delete_item(oper_sess, xpath_del, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_set_item_str(oper_sess, xpath, val, NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(oper_sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    TLOG_INF("Added oper data");
++
++    ret = sr_delete_item(oper_sess, xpath_del, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(oper_sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    TLOG_INF("Removed oper data");
++
++    ret = sr_get_data(oper_sess, "/test-leafref:*", 0, 0, 0, &data);
++
++    /* Without a proper duplication check in edit_diff.c, this will fail */
++    assert_int_equal(ret, SR_ERR_OK);
++    sr_release_data(data);
++    data = NULL;
++
++    ret = sr_session_stop(oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    sr_disconnect(conn);
++}
++
++static int
++dummy_oper_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
++        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
++{
++    (void)session;
++    (void)sub_id;
++    (void)module_name;
++    (void)xpath;
++    (void)request_xpath;
++    (void)request_id;
++    (void)parent;
++    (void)private_data;
++    return SR_ERR_OK;
++}
++
++/*
++ * parallel reading of sysrepo-monitoring data, and oper subscr add/del tests conn ext remap lock.
++ * Fetching sysrepo-monitoring in parallel tests 'Node already exists. duplicate issue'
++ */
++static void*
++test_oper_srmon_helper(void *arg)
++{
++    struct state *st = (struct state *)arg;
++    sr_session_ctx_t *oper_sess = NULL;
++    int i, ret;
++    sr_data_t *data = NULL;
++
++    int NUM_ITERS = test_full_scale ? 1000 : 10;
++    sr_subscription_ctx_t *subscr = NULL;
++    char xpath[128];
++
++    static ATOMIC_T id;
++
++    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++    pthread_barrier_wait(&st->barrier);
++
++    snprintf(xpath, sizeof xpath, "/test-leafref:car-state/enabled-params[.='key%lu']", ATOMIC_INC_RELAXED(id));
++
++    for (i = 0; i < NUM_ITERS; i++) {
++        ret = sr_oper_get_subscribe(oper_sess, "test-leafref", xpath, dummy_oper_cb, NULL, 0, &subscr);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        /* Fetch entire operational datastore incl sysrepo-monitoring */
++        ret = sr_get_data(oper_sess, "//.", 0, 0, 0, &data);
++        assert_int_equal(ret, SR_ERR_OK);
++        sr_release_data(data);
++        data = NULL;
++        ret = sr_unsubscribe(subscr);
++        assert_int_equal(ret, SR_ERR_OK);
++        subscr = NULL;
++    }
++
++    ret = sr_session_stop(oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++    return NULL;
++}
++
++static void
++test_oper_sr_mon(void **arg)
++{
++    const int NUM_THREADS = test_full_scale ? 5 : 2;
++    struct state *st = (struct state *)*arg;
++    int i;
++    pthread_t tid[NUM_THREADS];
++    pthread_barrier_init(&st->barrier, NULL, NUM_THREADS);
++
++    for (i = 0; i < NUM_THREADS; i++) {
++        pthread_create(&tid[i], NULL, test_oper_srmon_helper, st);
++    }
++
++    for (i = 0; i < NUM_THREADS; i++) {
++        pthread_join(tid[i], NULL);
++    }
++}
++
++
++int
++main(void)
++{
++    const struct CMUnitTest tests[] = {
++        cmocka_unit_test(test_leafref_oper_data),
++        cmocka_unit_test(test_oper_sr_mon),
++    };
++    test_full_scale = getenv("TEST_FULL_SCALE") != NULL;
++    setenv("CMOCKA_TEST_ABORT", "1", 1);
++    test_log_init();
++    return cmocka_run_group_tests(tests, setup_f, teardown_f);
++}

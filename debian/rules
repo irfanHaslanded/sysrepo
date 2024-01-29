@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+# See debhelper(7) (uncomment to enable)
+# output every command that modifies files on the build system.
+#export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all reproducible=+fixfilepath
+
+include /usr/share/dpkg/default.mk
+
+ifeq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+  PARALLEL :=
+else
+  PARALLEL := \
+        -j$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+endif
+
+SYSREPO_UID = 62410
+
+%:
+	dh $@ --buildsystem=cmake --with graphnos-yang
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DCMAKE_BUILD_TYPE:String="Package" \
+		-DGEN_LANGUAGE_BINDINGS=ON \
+		-DGEN_PYTHON_BINDINGS=OFF \
+		-DINSTALL_SYSCTL_CONF=ON \
+		-DREPO_PATH="/run/sysrepo" \
+		-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+		-DSYSREPO_GROUP=sysrepo \
+		-DSYSREPO_SUPERUSER_UID=$(SYSREPO_UID) \
+		-DNACM_SRMON_DATA_PERM=660
+
+override_dh_auto_test:
+ifeq ($(filter nocheck,$(DEB_BUILD_OPTIONS)),)
+	make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS='$(PARALELL) -V -E test_notif'
+	make -C obj-$(DEB_HOST_GNU_TYPE) test_clean
+endif

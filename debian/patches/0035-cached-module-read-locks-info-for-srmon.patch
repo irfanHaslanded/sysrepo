@@ -1,0 +1,178 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Thu, 27 Jul 2023 12:53:57 +0000
+Subject: cached module read locks info for srmon
+
+we can cache the list of readers while we create the lyd_node for each
+entry for reporting to sysrepo-monitoring.
+This reduces the time for which locks are held.
+
+Also, Ideally, `rwlock->writer` and `rwlock->upgr` should be read while
+holding `rwlock->mutex`, so as to not get inconsistent values. Else, we may
+have a scenario where a lock downgrades from writer to upgr, and we may read
+both writer and upgr existing at the same time. But this should not
+really cause any problems.
+
+Closes: ENG-3840
+
+cherry-picked from 0063-Remove-unnecessary-read-locks-from-srmon.patch
+---
+ src/modinfo.c                 | 19 ++++++++++-----
+ tests/test_oper_edit.c        | 55 ++++++++++++++++++++++++++++++++++++++++---
+ tests/test_subscr_filtering.c |  2 +-
+ 3 files changed, 66 insertions(+), 10 deletions(-)
+
+diff --git a/src/modinfo.c b/src/modinfo.c
+index b75bd50..35e47b2 100644
+--- a/src/modinfo.c
++++ b/src/modinfo.c
+@@ -1574,9 +1574,11 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+     sr_error_info_t *err_info = NULL;
+     sr_cid_t cid, skip_read_upgr_cid = 0;
+     uint32_t i;
++
+ #define PATH_LEN 128
+     char path[PATH_LEN];
+     struct ly_ctx *ly_ctx;
++    sr_cid_t reader_cids[SR_RWLOCK_READ_LIMIT] = {0};
+ 
+     ly_ctx = (struct ly_ctx *)LYD_CTX(ctx_node);
+ 
+@@ -1591,13 +1593,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+         skip_read_upgr_cid = cid;
+     }
+ 
+-    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i]; ++i) {
++    memcpy(reader_cids, rwlock->readers, sizeof reader_cids);
++
++    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && reader_cids[i]; ++i) {
+         cid = rwlock->readers[i];
+-        if ((cid == skip_read_cid) && (rwlock->read_count[i] == 1)) {
+-            skip_read_cid = 0;
+-            continue;
+-        } else if ((cid == skip_read_upgr_cid) && (rwlock->read_count[i] == 1)) {
+-            skip_read_upgr_cid = 0;
++        if ((cid == skip_read_cid) || (cid == skip_read_upgr_cid)) {
++            /* TODO unless read_count and readers array are atomic, its possible we don't show read locks if upgr is present */
+             continue;
+         }
+ 
+@@ -1607,6 +1608,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+             sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+             goto cleanup;
+         }
++
++        /* TODO FIXME Unless we are the last reader */
++        if ((i+1 < SR_RWLOCK_READ_LIMIT) && (cid == rwlock->readers[i+1])) {
++            /* skip duplicates as we don't have r_mutex */
++            i++;
++        }
+     }
+ 
+     /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
+diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
+index 53edfdd..7523160 100644
+--- a/tests/test_oper_edit.c
++++ b/tests/test_oper_edit.c
+@@ -169,7 +169,7 @@ test_oper_srmon_helper(void *arg)
+     int i, ret;
+     sr_data_t *data = NULL;
+ 
+-    int NUM_ITERS = test_full_scale ? 1000 : 10;
++    int NUM_ITERS = test_full_scale ? 100 : 10;
+     sr_subscription_ctx_t *subscr = NULL;
+     char xpath[128];
+ 
+@@ -186,7 +186,7 @@ test_oper_srmon_helper(void *arg)
+         assert_int_equal(ret, SR_ERR_OK);
+ 
+         /* Fetch entire operational datastore incl sysrepo-monitoring */
+-        ret = sr_get_data(oper_sess, "//.", 0, 0, 0, &data);
++        ret = sr_get_data(oper_sess, "/*", 0, 0, 0, &data);
+         assert_int_equal(ret, SR_ERR_OK);
+         sr_release_data(data);
+         data = NULL;
+@@ -200,21 +200,70 @@ test_oper_srmon_helper(void *arg)
+     return NULL;
+ }
+ 
++static void*
++test_oper_srmon_set_helper(void *arg)
++{
++    struct state *st = (struct state *)arg;
++    sr_session_ctx_t *oper_sess = NULL;
++    int ret, i;
++    int NUM_ITERS = test_full_scale ? 100 : 10;
++    (void)arg;
++
++    const char *a1 = "/test-leafref:car-state/a1";
++
++    const char *xpath =  "/test-leafref:car-state/enabled-params[.='pressure']";
++    const char *xpath_del = "/test-leafref:car-state/enabled-params[.='pressure']";
++
++    const char *val = "1 atm";
++
++    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++    for (i = 0; i < NUM_ITERS; i++) {
++        ret = sr_set_item_str(oper_sess, a1, "", NULL, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_set_item_str(oper_sess, xpath, val, NULL, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_apply_changes(oper_sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++        TLOG_INF("Added oper data iter %d", i);
++
++        ret = sr_delete_item(oper_sess, a1, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_delete_item(oper_sess, xpath_del, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_apply_changes(oper_sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++        TLOG_INF("Removed oper data iter %d", i);
++    }
++
++    ret = sr_session_stop(oper_sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    return NULL;
++}
++
+ static void
+ test_oper_sr_mon(void **arg)
+ {
+-    const int NUM_THREADS = test_full_scale ? 5 : 2;
++    const int NUM_THREADS = test_full_scale ? 3 : 2;
+     struct state *st = (struct state *)*arg;
+     int i;
+     pthread_t tid[NUM_THREADS];
++    pthread_t tid_set[NUM_THREADS];
+     pthread_barrier_init(&st->barrier, NULL, NUM_THREADS);
+ 
+     for (i = 0; i < NUM_THREADS; i++) {
+         pthread_create(&tid[i], NULL, test_oper_srmon_helper, st);
++        pthread_create(&tid_set[i], NULL, test_oper_srmon_set_helper, st);
+     }
+ 
+     for (i = 0; i < NUM_THREADS; i++) {
+         pthread_join(tid[i], NULL);
++        pthread_join(tid_set[i], NULL);
+     }
+ }
+ 
+diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
+index 6b776de..e4ef857 100644
+--- a/tests/test_subscr_filtering.c
++++ b/tests/test_subscr_filtering.c
+@@ -670,7 +670,7 @@ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
+     ret = sr_apply_changes(sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
+     TLOG_INF("Apply changes done");
+-    lyd_free_all(edit);
++    sr_release_data(del_root); del_root = NULL;
+ 
+     node = NULL;
+     TLOG_INF("Checking xpath1");

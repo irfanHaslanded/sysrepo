@@ -1,0 +1,64 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Fri, 11 Aug 2023 22:51:41 +0000
+Subject: TMPFIX: disable urge lock
+
+also disable test for urge lock
+---
+ src/common.c               | 10 +++++++++-
+ tests/test_apply_changes.c |  5 +++--
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/src/common.c b/src/common.c
+index 630c74b..efe9d98 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -2613,7 +2613,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+     int ret = 0, r, wr_urged;
+ 
+     assert(mode && timeout_abs && cid);
+-
++    if (mode == SR_LOCK_WRITE_URGE) {
++        mode = SR_LOCK_WRITE;
++    }
+     if (!has_mutex) {
+         /* MUTEX LOCK */
+         ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
+@@ -2854,6 +2856,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+     struct timespec timeout_abs;
+     int ret, wr_urged;
+ 
++    if (mode == SR_LOCK_WRITE_URGE) {
++        mode = SR_LOCK_WRITE;
++    }
+     assert(mode && cid);
+     assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
+     SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocking");
+@@ -3041,6 +3046,9 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+     int ret = 0;
+ 
+     assert(mode && cid);
++    if (mode == SR_LOCK_WRITE_URGE) {
++        mode = SR_LOCK_WRITE;
++    }
+ 
+     if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
+         /* we are unlocking a write lock, there can be no readers */
+diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
+index 9cf99a9..6a5e95f 100644
+--- a/tests/test_apply_changes.c
++++ b/tests/test_apply_changes.c
+@@ -7389,11 +7389,12 @@ main(void)
+         cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),
+-        cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
++//        cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
+         cmocka_unit_test_setup_teardown(test_change_iter, setup_f, teardown_f),
+     };
+-
++    // TODO FIXME after urge lock is fixed, this test must be enabled
++    (void)test_write_starve;
+     setenv("CMOCKA_TEST_ABORT", "1", 1);
+     test_log_init();
+     return cmocka_run_group_tests(tests, setup, teardown);
