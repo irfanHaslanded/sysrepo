@@ -42,6 +42,8 @@ Package: libsysrepo7-dev
 Depends: libyang2-dev,
          libsysrepo7 (= ${binary:Version}),
          ${misc:Depends}
+Breaks: libsysrepo-dev
+Replaces: libsysrepo-dev
 Section: libdevel
 Architecture: any
 Description: YANG-based configuration and operational data store - development files
@@ -57,9 +59,9 @@ Package: sysrepo-tools
 Depends: libsysrepo7 (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
-Provides: sysrepo, sysrepo7-tools
-Conflicts: sysrepo
-Replaces: sysrepo
+Provides: sysrepo, sysrepo7-tools, sysrepo-plugind
+Conflicts: sysrepo, sysrepo-plugind
+Replaces: sysrepo, sysrepo-plugind
 Section: devel
 Architecture: any
 Description: YANG-based configuration and operational data store - executable tools
