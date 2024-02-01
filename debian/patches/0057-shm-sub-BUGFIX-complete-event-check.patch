@@ -1,0 +1,33 @@
+From: Michal Vasko <mvasko@cesnet.cz>
+Date: Thu, 1 Feb 2024 08:49:39 +0100
+Subject: shm sub BUGFIX complete event check
+
+(cherry picked from commit 94c630bf64b62e6730ae39e9dd39c72dc156e9d2)
+---
+ src/shm_sub.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index b7f02ac..ccd5352 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -3468,7 +3468,8 @@ sr_shmsub_change_listen_relock(sr_multi_sub_shm_t *multi_sub_shm, sr_lock_mode_t
+ 
+     /* check that SHM is still valid even after the lock was released and re-acquired */
+     if ((sub_info->event != ATOMIC_LOAD_RELAXED(multi_sub_shm->event)) ||
+-            (sub_info->request_id != ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id))) {
++            (sub_info->request_id != ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id)) ||
++            (sub_info->priority != ATOMIC_LOAD_RELAXED(multi_sub_shm->priority))) {
+         /* SUB READ/WRITE UNLOCK */
+         sr_rwunlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, mode, ev_sess->conn->cid, __func__);
+ 
+@@ -4583,7 +4584,8 @@ sr_shmsub_rpc_listen_relock(sr_multi_sub_shm_t *multi_sub_shm, sr_lock_mode_t mo
+ 
+     /* check that SHM is still valid even after the lock was released and re-acquired */
+     if ((sub_info->event != ATOMIC_LOAD_RELAXED(multi_sub_shm->event)) ||
+-            (sub_info->request_id != ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id))) {
++            (sub_info->request_id != ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id)) ||
++            (sub_info->priority != ATOMIC_LOAD_RELAXED(multi_sub_shm->priority))) {
+         /* SUB READ/WRITE UNLOCK */
+         sr_rwunlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, mode, ev_sess->conn->cid, __func__);
+ 
