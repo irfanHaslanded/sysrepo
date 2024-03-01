@@ -5,10 +5,13 @@ include:
 
 variables:
   GRAPH_CI_RELEASE: 'main'
-  # Work around blhc not being able to autodetect architecture of build
-  GRAPH_CI_BLHC_ARGS: '--arch amd64'
-  # Work around blhc non-verbose build false positive
-  GRAPH_CI_DPKG_BUILDPACKAGE_ARGS: '-j1'
+
+  # Disable build log hardening checks
+  # blhc checks don't seem to work properly with parallel builds.
+  # Sysrepo uses a lot of unit-tests which take a long time to complete.
+  # More importantly, It is better that the tests are run on multiple CPUs
+  # to work similar to real-world scenarios.
+  GRAPH_CI_DISABLE_BLHC: 1
 
 reprotest:
   extends: .test-reprotest
