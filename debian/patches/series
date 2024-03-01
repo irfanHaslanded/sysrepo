@@ -55,3 +55,4 @@
 0056-Fix-delete-of-oper-leaf-list-entry-with-predicate.patch
 0057-do-not-inform-subscribers-of-moves-for-oper-list.patch
 0057-shm-sub-BUGFIX-complete-event-check.patch
+0058-common-BUGFIX-do-not-use-partial-atoms.patch
