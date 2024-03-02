@@ -1,0 +1,55 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Sat, 2 Mar 2024 07:36:23 +0000
+Subject: debug: serialize edit and data in sr_apply_changes
+
+When sr_apply_changes fails, it is helpful to have the json for what
+failed to apply. Without it reproducing the problem is time consuming.
+
+If an assertion happens, the json in memory is better to read than
+going through lyd_node structs in gdb.
+
+Closes: ENG-6310
+---
+ src/sysrepo.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 53f7bd0..5ee62f5 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -3946,6 +3946,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+     sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
+     struct sr_mod_info_s mod_info;
+     uint32_t mi_opts;
++    char *edit_json = NULL, *data_json = NULL;
+ 
+     SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds), session, err_info);
+ 
+@@ -3975,6 +3976,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+         goto cleanup;
+     }
+ 
++    lyd_print_mem(&edit_json, session->dt[session->ds].edit->tree, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
++    lyd_print_mem(&data_json, mod_info.data, LYD_JSON,LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
++
+     /* create diff */
+     if (mod_info.ds == SR_DS_OPERATIONAL) {
+         err_info = sr_modinfo_edit_merge(&mod_info, session->dt[session->ds].edit->tree, 1);
+@@ -3997,12 +4001,17 @@ cleanup:
+         /* free applied edit */
+         sr_release_data(session->dt[session->ds].edit);
+         session->dt[session->ds].edit = NULL;
++    } else {
++        SR_LOG_WRN("Failed to apply changes data %s edit %s", data_json, edit_json);
+     }
+     if (cb_err_info) {
+         /* return callback error if some was generated */
+         sr_errinfo_merge(&err_info, cb_err_info);
+         sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+     }
++
++    free(edit_json);
++    free(data_json);
+     SR_LOG_INF("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
+     return sr_api_ret(session, err_info);
+ }
