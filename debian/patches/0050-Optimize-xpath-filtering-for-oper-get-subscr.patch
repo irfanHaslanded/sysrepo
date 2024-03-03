@@ -387,10 +387,10 @@ index ec54bd8..09f68e3 100644
  }
  #endif
 diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
-index e4ef857..5dc2312 100644
+index 5c70c7c..e1c5650 100644
 --- a/tests/test_subscr_filtering.c
 +++ b/tests/test_subscr_filtering.c
-@@ -165,6 +165,15 @@ module_error_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
+@@ -166,6 +166,15 @@ module_error_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
      TLOG_INF("%s called with %s %s", __func__, module_name, xpath);
      return SR_ERR_OPERATION_FAILED;
  }
@@ -406,7 +406,7 @@ index e4ef857..5dc2312 100644
  /**
   * Check that changes which have all xpaths filtered are not called back
   * tests ENG-5259
-@@ -178,6 +187,8 @@ test_subscr_none(void **arg)
+@@ -179,6 +188,8 @@ test_subscr_none(void **arg)
      int i = 0, ret;
      cb_stats stats[4];
      int expected_counts[] = {0, 0, 0, 1};
@@ -415,7 +415,7 @@ index e4ef857..5dc2312 100644
  
      sr_session_start(st->conn, SR_DS_RUNNING, &st->sess);
      memset(subscr, 0, sizeof(subscr));
-@@ -232,6 +243,31 @@ test_subscr_none(void **arg)
+@@ -233,6 +244,31 @@ test_subscr_none(void **arg)
          assert_int_equal(expected_counts[i], stats[i].count);
      }
  

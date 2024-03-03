@@ -164,10 +164,10 @@ index 53edfdd..7523160 100644
  }
  
 diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
-index 6b776de..e4ef857 100644
+index 23d19c8..5c70c7c 100644
 --- a/tests/test_subscr_filtering.c
 +++ b/tests/test_subscr_filtering.c
-@@ -670,7 +670,7 @@ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
+@@ -671,7 +671,7 @@ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
      ret = sr_apply_changes(sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
      TLOG_INF("Apply changes done");

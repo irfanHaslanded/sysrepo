@@ -44,17 +44,16 @@ index 630c74b..efe9d98 100644
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 9cf99a9..6a5e95f 100644
+index 6a48b44..022ff1b 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7389,11 +7389,12 @@ main(void)
+@@ -7219,10 +7219,11 @@ main(void)
          cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),
 -        cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
 +//        cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
-         cmocka_unit_test_setup_teardown(test_change_iter, setup_f, teardown_f),
      };
 -
 +    // TODO FIXME after urge lock is fixed, this test must be enabled
