@@ -642,7 +642,7 @@ index ef62b36..ad67283 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index adcf16c..917c6a6 100644
+index adcf16c..af2c976 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1576,7 +1576,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
@@ -683,7 +683,7 @@ index adcf16c..917c6a6 100644
      }
  
 -    for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i]; ++i) {
-+    for (i = 0; i < SR_RWLOCK_READ_LIMIT; ++i) {
++    for (i = 0; i < SR_RWLOCK_READ_LIMIT && rwlock->readers[i]; ++i) {
          if ((err_info = sr_lyd_new_list(parent, list_name, NULL, &list))) {
              goto cleanup;
          }

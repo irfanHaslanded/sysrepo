@@ -24,7 +24,7 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index f4443dc..b845250 100644
+index 4e24f5d..8ff4650 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -88,7 +88,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)

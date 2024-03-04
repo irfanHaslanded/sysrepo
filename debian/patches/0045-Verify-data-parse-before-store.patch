@@ -12,7 +12,7 @@ Dump the failed datastore file to .failed file for debugging
  1 file changed, 81 insertions(+), 8 deletions(-)
 
 diff --git a/src/plugins/ds_json.c b/src/plugins/ds_json.c
-index 14f9834..ac2dbac 100644
+index 14f9834..d18225e 100644
 --- a/src/plugins/ds_json.c
 +++ b/src/plugins/ds_json.c
 @@ -45,16 +45,70 @@ static sr_error_info_t *srpds_json_load(const struct lys_module *mod, sr_datasto
@@ -88,7 +88,7 @@ index 14f9834..ac2dbac 100644
  
      /* get path */
      if ((err_info = srpjson_get_path(srpds_name, mod->name, ds, &path))) {
-@@ -124,24 +178,43 @@ srpds_json_store_(const struct lys_module *mod, sr_datastore_t ds, const struct
+@@ -124,25 +178,44 @@ srpds_json_store_(const struct lys_module *mod, sr_datastore_t ds, const struct
  
      /* print data */
      print_opts = LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS | LYD_PRINT_KEEPEMPTYCONT | LYD_PRINT_WD_IMPL_TAG;
@@ -133,8 +133,9 @@ index 14f9834..ac2dbac 100644
          goto cleanup;
      }
  
+ cleanup:
 +    free(str);
 +
- cleanup:
      /* delete the backup file */
      if (backup && (unlink(bck_path) == -1)) {
+         srplg_log_errinfo(&err_info, srpds_name, NULL, SR_ERR_SYS, "Failed to remove backup \"%s\" (%s).", bck_path,

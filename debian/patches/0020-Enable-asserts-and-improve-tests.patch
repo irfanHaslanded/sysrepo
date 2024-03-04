@@ -52,7 +52,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index eb34d50..f4443dc 100644
+index 8e8e7af..4e24f5d 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
