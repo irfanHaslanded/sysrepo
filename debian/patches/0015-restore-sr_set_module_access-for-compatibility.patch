@@ -8,10 +8,10 @@ Subject: restore sr_set_module_access for compatibility
  2 files changed, 16 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6acab1b..e7107a2 100644
+index 774c140..85c6e40 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7237,3 +7237,15 @@ sr_session_get_event_nc_id(sr_session_ctx_t *session)
+@@ -7225,3 +7225,15 @@ sr_session_get_event_nc_id(sr_session_ctx_t *session)
      return nc_id ? *nc_id : 0;
  }
  
@@ -28,7 +28,7 @@ index 6acab1b..e7107a2 100644
 +    return ret;
 +}
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 76fc622..fc1f916 100644
+index 003b7cf..f62260a 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
 @@ -623,6 +623,10 @@ int sr_get_module_replay_support(sr_conn_ctx_t *conn, const char *module_name, s

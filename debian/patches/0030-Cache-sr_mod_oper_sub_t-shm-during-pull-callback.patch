@@ -35,19 +35,19 @@ Also fix wrong assumption in new_wrlock about cleared events
 
 cherry-picked from 0068-Cache-sr_mod_oper_sub_t-shm-during-pull-callback.patch
 ---
- src/modinfo.c   | 83 +++++++++++++++++++++++++++++++++++++++------------------
- src/shm_ext.c   | 41 ++++++++++------------------
+ src/modinfo.c   | 81 +++++++++++++++++++++++++++++++++++++++------------------
+ src/shm_ext.c   | 41 ++++++++++-------------------
  src/shm_ext.h   |  7 +++--
  src/shm_sub.c   | 23 ++++++++++------
  src/shm_sub.h   |  2 +-
  src/shm_types.h |  9 +++++++
- 6 files changed, 99 insertions(+), 66 deletions(-)
+ 6 files changed, 98 insertions(+), 65 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 226edb8..31703a3 100644
+index 23464bf..d269f5d 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -911,7 +911,7 @@ cleanup:
+@@ -890,7 +890,7 @@ cleanup:
   */
  static sr_error_info_t *
  sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const char **request_xpaths,
@@ -56,7 +56,7 @@ index 226edb8..31703a3 100644
          uint32_t idx1, const struct lyd_node *parent, uint32_t timeout_ms, sr_conn_ctx_t *conn,
          struct lyd_node **oper_data)
  {
-@@ -957,7 +957,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
+@@ -935,7 +935,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
      request_xpath = (req_xpath_count == 1) ? request_xpaths[0] : NULL;
  
      /* get data from client */
@@ -65,7 +65,7 @@ index 226edb8..31703a3 100644
              idx1, timeout_ms, conn, oper_data, &cb_err_info))) {
          sr_errinfo_merge(&err_info, cb_err_info);
          goto cleanup;
-@@ -1047,6 +1047,17 @@ cleanup:
+@@ -1023,6 +1023,17 @@ cleanup:
      return err_info;
  }
  
@@ -83,7 +83,7 @@ index 226edb8..31703a3 100644
  /**
   * @brief Update (replace or append) operational data for a specific module.
   *
-@@ -1073,6 +1084,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1049,6 +1060,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      int required, merged;
      struct ly_set *set = NULL;
      struct lyd_node *edit = NULL, *oper_data;
@@ -92,7 +92,7 @@ index 226edb8..31703a3 100644
  
      if (!(get_oper_opts & SR_OPER_NO_STORED)) {
          /* get stored operational edit */
-@@ -1110,31 +1123,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1085,31 +1098,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
@@ -151,7 +151,7 @@ index 226edb8..31703a3 100644
                      request_xpaths[req_xpath_count] = mod->xpaths[j];
                      ++req_xpath_count;
                  }
-@@ -1148,13 +1182,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1123,13 +1157,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* remove any present data */
          if (!(xpath_subs[0].opts & SR_SUBSCR_OPER_MERGE) && (err_info = sr_lyd_xpath_complement(data, sub_xpath))) {
@@ -167,7 +167,7 @@ index 226edb8..31703a3 100644
              }
              if (merged) {
                  /* we have the data */
-@@ -1164,7 +1198,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1139,7 +1173,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* trim the last node to get the parent */
          if ((err_info = sr_xpath_trim_last_node(sub_xpath, &parent_xpath))) {
@@ -176,16 +176,16 @@ index 226edb8..31703a3 100644
          }
  
          if (parent_xpath) {
-@@ -1175,7 +1209,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1149,7 +1183,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+             }
  
-             if (lyd_find_xpath(*data, parent_xpath, &set)) {
-                 sr_errinfo_new_ly(&err_info, mod->ly_mod->ctx, NULL);
+             if ((err_info = sr_lyd_find_xpath(*data, parent_xpath, &set))) {
 -                goto cleanup_opergetsub_ext_unlock;
 +                goto cleanup;
              }
  
              if (!set->count) {
-@@ -1187,29 +1221,29 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1161,21 +1195,21 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              if (xpath_subs[0].opts & SR_SUBSCR_OPER_ONCE) {
                  /* get oper data from the client */
                  if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
@@ -196,9 +196,8 @@ index 226edb8..31703a3 100644
                  }
  
                  /* merge into one data tree */
-                 if (lyd_merge_siblings(data, oper_data, LYD_MERGE_DESTRUCT)) {
+                 if ((err_info = sr_lyd_merge(data, oper_data, 1, LYD_MERGE_DESTRUCT))) {
                      lyd_free_all(oper_data);
-                     sr_errinfo_new_ly(&err_info, mod->ly_mod->ctx, NULL);
 -                    goto cleanup_opergetsub_ext_unlock;
 +                    goto cleanup;
                  }
@@ -213,15 +212,7 @@ index 226edb8..31703a3 100644
                      }
  
                      /* merge into one data tree */
-                     if (lyd_merge_siblings(data, oper_data, LYD_MERGE_DESTRUCT)) {
-                         lyd_free_all(oper_data);
-                         sr_errinfo_new_ly(&err_info, mod->ly_mod->ctx, NULL);
--                        goto cleanup_opergetsub_ext_unlock;
-+                        goto cleanup;
-                     }
-                 }
-             }
-@@ -1223,14 +1257,14 @@ next_iter:
+@@ -1195,13 +1229,13 @@ next_iter:
          } else {
              /* top-level data */
              if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
@@ -231,15 +222,14 @@ index 226edb8..31703a3 100644
 +                goto cleanup;
              }
  
-             if (lyd_merge_siblings(data, oper_data, LYD_MERGE_DESTRUCT)) {
+             if ((err_info = sr_lyd_merge(data, oper_data, 1, LYD_MERGE_DESTRUCT))) {
                  lyd_free_all(oper_data);
-                 sr_errinfo_new_ly(&err_info, mod->ly_mod->ctx, NULL);
 -                goto cleanup_opergetsub_ext_unlock;
 +                goto cleanup;
              }
          }
  
-@@ -1239,14 +1273,11 @@ next_iter:
+@@ -1210,14 +1244,11 @@ next_iter:
          req_xpath_count = 0;
      }
  
@@ -382,10 +372,10 @@ index 3a1c368..df3503c 100644
  /**
   * @brief Add main SHM module operational poll subscription.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index c80b979..cbce59b 100644
+index 6b2a0e6..5bdf7a3 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -361,6 +361,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -362,6 +362,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
          ret = sr_cond_clockwait(&sub_shm->lock.cond, &sub_shm->lock.mutex, COMPAT_CLOCK_ID, &timeout_abs);
      }
  
@@ -393,7 +383,7 @@ index c80b979..cbce59b 100644
      if (!sub_shm->lock.readers[0]) {
          /* FAKE WRITE LOCK */
          assert(!sub_shm->lock.writer);
-@@ -368,15 +369,17 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -369,15 +370,17 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
  
          if (ret == ETIMEDOUT) {
              /* try to recover the event again in case the originator crashed later */
@@ -415,7 +405,7 @@ index c80b979..cbce59b 100644
      last_request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
  
      if (ret) {
-@@ -490,6 +493,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -491,6 +494,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              /* event failed */
              if (clear_ev_on_err) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
@@ -423,7 +413,7 @@ index c80b979..cbce59b 100644
              } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_ERROR);
              }
-@@ -2055,7 +2059,7 @@ cleanup:
+@@ -2059,7 +2063,7 @@ cleanup:
  
  sr_error_info_t *
  sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, const char *request_xpath,
@@ -432,7 +422,7 @@ index c80b979..cbce59b 100644
          uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **data, sr_error_info_t **cb_err_info)
  {
      sr_error_info_t *err_info = NULL;
-@@ -2065,6 +2069,7 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+@@ -2069,6 +2073,7 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
      char *parent_lyb = NULL;
      struct lyd_node *oper_data;
      sr_cid_t cid;
@@ -440,7 +430,7 @@ index c80b979..cbce59b 100644
  
      if (!request_xpath) {
          request_xpath = "";
-@@ -2072,13 +2077,13 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+@@ -2076,13 +2081,13 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
      cid = conn->cid;
  
      i = 0;
@@ -457,7 +447,7 @@ index c80b979..cbce59b 100644
                  sr_errinfo_free(&err_info);
              }
  
-@@ -2086,6 +2091,8 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+@@ -2090,6 +2095,8 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
              if ((err_info = sr_shmsub_oper_poll_get_sub_change_notify_evpipe(conn, mod->ly_mod->name, xpath))) {
                  sr_errinfo_free(&err_info);
              }

@@ -12,10 +12,10 @@ change the group of data files in this case.
  2 files changed, 60 insertions(+), 11 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 687b6ff..60eb5a1 100644
+index 2ee2f1e..b0d6e2a 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -56,6 +56,8 @@
+@@ -57,6 +57,8 @@
  #include "shm_sub.h"
  #include "sysrepo.h"
  
@@ -24,7 +24,7 @@ index 687b6ff..60eb5a1 100644
  /**
   * @brief Internal datastore plugin array.
   */
-@@ -854,7 +856,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
+@@ -726,7 +728,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
      }
  
      /* update group */
@@ -33,7 +33,7 @@ index 687b6ff..60eb5a1 100644
          if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
              goto cleanup;
          }
-@@ -3505,7 +3507,7 @@ sr_open(const char *path, int flags, mode_t mode)
+@@ -3370,7 +3372,7 @@ sr_open(const char *path, int flags, mode_t mode)
          }
  
          /* set correct group if needed */
@@ -42,7 +42,7 @@ index 687b6ff..60eb5a1 100644
              /* get GID */
              if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
                  sr_errinfo_free(&err_info);
-@@ -3532,13 +3534,16 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3397,13 +3399,16 @@ sr_mkpath(char *path, mode_t mode)
      int r;
      gid_t gid;
  
@@ -61,7 +61,7 @@ index 687b6ff..60eb5a1 100644
          goto cleanup;
      }
  
-@@ -3556,7 +3561,8 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3421,7 +3426,8 @@ sr_mkpath(char *path, mode_t mode)
                  SR_ERRINFO_SYSERRNO(&err_info, "chmod");
                  goto cleanup;
              }
@@ -71,7 +71,7 @@ index 687b6ff..60eb5a1 100644
                  SR_ERRINFO_SYSERRNO(&err_info, "chown");
                  goto cleanup;
              }
-@@ -3576,7 +3582,7 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3441,7 +3447,7 @@ sr_mkpath(char *path, mode_t mode)
              SR_ERRINFO_SYSERRNO(&err_info, "chmod");
              goto cleanup;
          }
@@ -80,8 +80,8 @@ index 687b6ff..60eb5a1 100644
              SR_ERRINFO_SYSERRNO(&err_info, "chown");
              goto cleanup;
          }
-@@ -5674,3 +5680,20 @@ sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name)
- cleanup:
+@@ -5453,3 +5459,20 @@ cleanup:
+ 
      return err_info;
  }
 +
@@ -102,7 +102,7 @@ index 687b6ff..60eb5a1 100644
 +    return is_priviliged;
 +}
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 3468884..71fb66e 100644
+index c0c97d3..4bd0e7c 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -38,6 +38,8 @@

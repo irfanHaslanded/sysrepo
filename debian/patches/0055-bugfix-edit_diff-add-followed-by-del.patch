@@ -9,15 +9,15 @@ the stored data.
 Closes: ENG-5756
 ---
  src/edit_diff.c        | 17 +++++++++++------
- src/sysrepo.c          | 10 ++++++----
+ src/sysrepo.c          |  9 ++++++---
  tests/test_oper_push.c | 34 +++++++++++++++++++++++++++++++---
- 3 files changed, 48 insertions(+), 13 deletions(-)
+ 3 files changed, 48 insertions(+), 12 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 6b8c405..8fdcd19 100644
+index df619d5..3699fec 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3071,17 +3071,18 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
+@@ -3003,17 +3003,18 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -38,14 +38,13 @@ index 6b8c405..8fdcd19 100644
          goto cleanup;
      }
  
-@@ -3597,13 +3598,14 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3525,12 +3526,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
      const char *meta_val = NULL, *def_origin;
      char *rel_xpath = NULL;
      enum edit_op op;
 -    int opts, own_oper;
-+    int opts, own_oper, same_op = 0;
-     LY_ERR lyrc;
 -
++    int opts, own_oper, same_op = 0;
 +    int removal = 0;
      assert(!origin || strchr(origin, ':'));
  
@@ -55,7 +54,7 @@ index 6b8c405..8fdcd19 100644
          opts |= LYD_NEW_PATH_OPAQ;
      }
  
-@@ -3615,10 +3617,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3542,10 +3544,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
          }
          if (match) {
              /* node exists, nothing to create, just merge operations if possible */
@@ -72,10 +71,10 @@ index 6b8c405..8fdcd19 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5e9939e..118047e 100644
+index 52adab6..06349c6 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3376,16 +3376,18 @@ cleanup:
+@@ -3381,7 +3381,7 @@ cleanup:
  }
  
  API int
@@ -84,9 +83,9 @@ index 5e9939e..118047e 100644
  {
      sr_error_info_t *err_info = NULL;
      const char *operation;
-     const struct lysc_node *snode;
-     int ly_log_opts;
--    int isolate = SR_EDIT_ISOLATE & opts;
+@@ -3389,8 +3389,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+     uint32_t temp_lo = 0;
+     int isolate = SR_EDIT_ISOLATE & opts;
  
 -    if (isolate && SR_DS_OPERATIONAL == session->ds) {
 -        return sr_discard_items(session, path);
@@ -99,10 +98,10 @@ index 5e9939e..118047e 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index 6dff3b0..06e5050 100644
+index d40d9e3..0d49a11 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -3457,6 +3457,8 @@ test_oper_set_del_new(void **state)
+@@ -3846,6 +3846,8 @@ test_oper_set_del_new(void **state)
  {
      struct state *st = (struct state *)*state;
      int i, ret;
@@ -111,7 +110,7 @@ index 6dff3b0..06e5050 100644
  
      char *xpath_set[] = {
          "/ietf-interfaces:interfaces-state/interface[name='eth1']/type",
-@@ -3481,18 +3483,43 @@ test_oper_set_del_new(void **state)
+@@ -3870,18 +3872,43 @@ test_oper_set_del_new(void **state)
      assert_int_equal(ret, SR_ERR_OK);
  
      for (i = 0; xpath_set[i]; i++) {
@@ -158,7 +157,7 @@ index 6dff3b0..06e5050 100644
  }
  
  
-@@ -3500,6 +3527,7 @@ int
+@@ -3889,6 +3916,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

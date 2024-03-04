@@ -16,10 +16,10 @@ be used to dump the sessions which hold any module ds locks.
  1 file changed, 2 insertions(+), 5 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ba22531..ac7739c 100644
+index f822bb8..8ea6cda 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -404,6 +404,8 @@ sr_disconnect(sr_conn_ctx_t *conn)
+@@ -411,6 +411,8 @@ sr_disconnect(sr_conn_ctx_t *conn)
          return sr_api_ret(NULL, err_info);
      }
  
@@ -28,7 +28,7 @@ index ba22531..ac7739c 100644
      /* free attributes */
      sr_conn_free(conn);
  
-@@ -716,11 +718,6 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
+@@ -723,11 +725,6 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
          goto error;
      }
  

@@ -7,7 +7,7 @@ Subject: sysrepocfg: change default file format to JSON
  1 file changed, 30 insertions(+), 31 deletions(-)
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index 3830239..66f06a0 100644
+index 5abdb3e..5f1f845 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
 @@ -36,6 +36,8 @@

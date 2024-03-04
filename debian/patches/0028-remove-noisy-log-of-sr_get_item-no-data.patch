@@ -10,7 +10,7 @@ Subject: remove noisy log of sr_get_item no data
  4 files changed, 36 insertions(+), 10 deletions(-)
 
 diff --git a/src/log.c b/src/log.c
-index 062ff0e..0e74d24 100644
+index e15055a..14b394f 100644
 --- a/src/log.c
 +++ b/src/log.c
 @@ -127,7 +127,6 @@ sr_log_msg(int plugin, sr_log_level_t ll, const char *msg)
@@ -75,10 +75,10 @@ index 062ff0e..0e74d24 100644
  sr_errinfo_new_data(sr_error_info_t **err_info, sr_error_t err_code, const char *err_format, const void *err_data,
          const char *msg_format, ...)
 diff --git a/src/log.h b/src/log.h
-index 5949775..ac0576e 100644
+index d7e65b8..e5cdd5f 100644
 --- a/src/log.h
 +++ b/src/log.h
-@@ -150,4 +150,14 @@ void sr_errinfo_merge(sr_error_info_t **err_info, sr_error_info_t *err_info2);
+@@ -124,4 +124,14 @@ void sr_errinfo_merge(sr_error_info_t **err_info, sr_error_info_t *err_info2);
   */
  void sr_log(sr_log_level_t ll, const char *format, ...) _FORMAT_PRINTF(2, 3);
  
@@ -94,10 +94,10 @@ index 5949775..ac0576e 100644
 +        sr_error_t err_code, const char *msg_format, ...) __attribute__ ((format (printf, 4, 5)));
  #endif
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 0de807b..6039642 100644
+index 424e591..3f99f26 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2715,7 +2715,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
+@@ -2725,7 +2725,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
          sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "More subtrees match \"%s\".", path);
          goto cleanup;
      } else if (!set->count) {

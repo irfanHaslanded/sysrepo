@@ -12,10 +12,10 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 1acf7a8..03e63e2 100644
+index cf38524..2fa107a 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -87,7 +87,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
+@@ -88,7 +88,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
      char buf[512] = "";
      cursor = snprintf(buf, sizeof(buf), "%s CID wr %" PRIu32 " upgr %" PRIu32 " rd", msg, rwlock->writer, rwlock->upgr);
      for (i = 0; SR_IS_READER_VALID(rwlock, i); i++) {
@@ -27,7 +27,7 @@ index 1acf7a8..03e63e2 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5815,7 +5818,7 @@ sr_is_priviliged(void)
+@@ -5594,7 +5597,7 @@ sr_is_priviliged(void)
  }
  
  void
@@ -37,10 +37,10 @@ index 1acf7a8..03e63e2 100644
      if (enable) {
          /* Set the MSB to enable debug logs */
 diff --git a/src/common.h b/src/common.h
-index 5b33dac..e0d64a1 100644
+index a2b3548..ed3f273 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1411,4 +1411,9 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -1372,4 +1372,9 @@ typedef enum sr_val_ly2sr_opts_e {
   */
  sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
  
@@ -137,10 +137,10 @@ index faa26f1..15a3b74 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 1698ac8..0de807b 100644
+index 373ffca..424e591 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7261,3 +7261,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7249,3 +7249,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }
@@ -177,7 +177,7 @@ index 1698ac8..0de807b 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index fc1f916..49c5e2f 100644
+index f62260a..3a0a1e5 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
 @@ -1862,6 +1862,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)

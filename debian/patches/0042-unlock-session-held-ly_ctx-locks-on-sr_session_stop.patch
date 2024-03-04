@@ -8,10 +8,10 @@ Subject: unlock session held ly_ctx locks on sr_session_stop
  2 files changed, 15 insertions(+), 2 deletions(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index ee834e1..3d0f8f4 100644
+index 50231fb..ef62b36 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
-@@ -206,6 +206,7 @@ struct sr_session_ctx_s {
+@@ -203,6 +203,7 @@ struct sr_session_ctx_s {
          } *first;                   /**< First stored notification buffer node. */
          struct sr_sess_notif_buf_node *last;    /**< Last stored notification buffer node. */
      } notif_buf;                    /**< Notification buffering attributes. */
@@ -20,10 +20,10 @@ index ee834e1..3d0f8f4 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 288fc64..474ecc3 100644
+index e8728c4..615288f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -434,7 +434,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)
+@@ -441,7 +441,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)
  API const struct ly_ctx *
  sr_session_acquire_context(sr_session_ctx_t *session)
  {
@@ -36,7 +36,7 @@ index 288fc64..474ecc3 100644
  }
  
  API void
-@@ -448,6 +452,7 @@ API void
+@@ -455,6 +459,7 @@ API void
  sr_session_release_context(sr_session_ctx_t *session)
  {
      sr_release_context(session->conn);
@@ -44,7 +44,7 @@ index 288fc64..474ecc3 100644
  }
  
  API uint32_t
-@@ -831,6 +836,7 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -838,6 +843,7 @@ _sr_session_stop(sr_session_ctx_t *session)
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      sr_datastore_t ds;
@@ -52,7 +52,7 @@ index 288fc64..474ecc3 100644
  
      /* subscriptions need to be freed before, with a WRITE lock */
      assert(!session->subscription_count && !session->subscriptions);
-@@ -853,7 +859,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -860,7 +866,13 @@ _sr_session_stop(sr_session_ctx_t *session)
      sr_shmmod_release_locks(session->conn, session->sid);
  
      /* CONTEXT UNLOCK */

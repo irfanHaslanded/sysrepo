@@ -3,37 +3,11 @@ Date: Wed, 23 Aug 2023 09:01:25 +0000
 Subject: cache invalidation without file m_time
 
 ---
- src/common.c          | 7 -------
  src/plugins/ds_json.c | 2 +-
- 2 files changed, 1 insertion(+), 8 deletions(-)
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/src/common.c b/src/common.c
-index efe9d98..a95e5e8 100644
---- a/src/common.c
-+++ b/src/common.c
-@@ -3345,7 +3345,6 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
-     sr_error_info_t *err_info = NULL, *tmp_err;
-     struct sr_mod_info_mod_s *mod;
-     struct sr_run_cache_s *cmod;
--    struct timespec mtime;
-     struct lyd_node *mod_data;
-     uint32_t i, j;
-     void *mem;
-@@ -3390,12 +3389,6 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
-             ++conn->run_cache_mod_count;
-         }
- 
--        /* get last_modif timestamp of module running data */
--        if ((err_info = mod->ds_handle[SR_DS_RUNNING]->plugin->last_modif_cb(mod->ly_mod, SR_DS_RUNNING,
--                mod->ds_handle[SR_DS_RUNNING]->plg_data, &mtime))) {
--            goto cleanup;
--        }
--
-         /* check whether the data are current */
-         if (cmod->id == mod->shm_mod->run_cache_id) {
-             continue;
 diff --git a/src/plugins/ds_json.c b/src/plugins/ds_json.c
-index ac52495..8b582da 100644
+index ac2dbac..d18225e 100644
 --- a/src/plugins/ds_json.c
 +++ b/src/plugins/ds_json.c
 @@ -213,9 +213,9 @@ srpds_json_store_(const struct lys_module *mod, sr_datastore_t ds, const struct

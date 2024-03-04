@@ -11,7 +11,7 @@ sysrepocfg: Add simple ut for oper import
  create mode 100755 tests/test_sysrepocfg_oper.sh
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index c6c3336..3830239 100644
+index c6b20a9..5abdb3e 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
 @@ -20,6 +20,7 @@

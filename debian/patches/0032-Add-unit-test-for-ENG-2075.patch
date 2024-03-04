@@ -8,7 +8,7 @@ cherry-picked from 0021-Add-unit-test-for-ENG-2075.patch
  1 file changed, 172 insertions(+)
 
 diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
-index 6b776de..23d19c8 100644
+index 6b776de..a2b0499 100644
 --- a/tests/test_subscr_filtering.c
 +++ b/tests/test_subscr_filtering.c
 @@ -44,6 +44,7 @@ struct state {
@@ -19,7 +19,7 @@ index 6b776de..23d19c8 100644
  };
  
  static int
-@@ -1159,6 +1160,176 @@ test_subscr_oper_update_deadlock(void **arg)
+@@ -1159,10 +1160,181 @@ test_subscr_oper_update_deadlock(void **arg)
      assert_int_equal(ret, SR_ERR_OK);
  }
  
@@ -87,12 +87,11 @@ index 6b776de..23d19c8 100644
 +        /* 1st change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
 +        assert_int_equal(ret, SR_ERR_OK);
-+        assert_int_equal(op, SR_OP_CREATED);
-+        assert_null(old_val);
-+        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1003']");
++        assert_int_equal(op, SR_OP_DELETED);
++        assert_non_null(old_val);
++        assert_null(new_val);
++        assert_string_equal(old_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1000']");
 +        sr_free_val(old_val);
-+        sr_free_val(new_val);
 +
 +        /* 2nd change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
@@ -100,7 +99,8 @@ index 6b776de..23d19c8 100644
 +        assert_int_equal(op, SR_OP_CREATED);
 +        assert_null(old_val);
 +        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1004']");
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1003']");
++        sr_free_val(old_val);
 +        sr_free_val(new_val);
 +
 +        /* 3rd change */
@@ -109,17 +109,17 @@ index 6b776de..23d19c8 100644
 +        assert_int_equal(op, SR_OP_CREATED);
 +        assert_null(old_val);
 +        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1005']");
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1004']");
 +        sr_free_val(new_val);
 +
 +        /* 4th change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
 +        assert_int_equal(ret, SR_ERR_OK);
-+        assert_int_equal(op, SR_OP_DELETED);
-+        assert_non_null(old_val);
-+        assert_null(new_val);
-+        assert_string_equal(old_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1000']");
-+        sr_free_val(old_val);
++        assert_int_equal(op, SR_OP_CREATED);
++        assert_null(old_val);
++        assert_non_null(new_val);
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1005']");
++        sr_free_val(new_val);
 +
 +        sr_free_change_iter(iter);
 +        break;
@@ -196,11 +196,8 @@ index 6b776de..23d19c8 100644
  int
  main(void)
  {
-@@ -1174,6 +1345,7 @@ main(void)
-         cmocka_unit_test(test_multisub_processing_race),
-         cmocka_unit_test(test_massive_scale),
-         cmocka_unit_test(test_subscr_oper_update_deadlock),
+     const struct CMUnitTest tests[] = {
 +        cmocka_unit_test(test_change_iter),
-     };
-     test_full_scale = getenv("TEST_FULL_SCALE") != NULL;
-     setenv("CMOCKA_TEST_ABORT", "1", 1);
+         cmocka_unit_test(test_subscr_none),
+         cmocka_unit_test(test_subscription_filtering),
+         cmocka_unit_test(test_multisub_filtering),
