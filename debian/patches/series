@@ -57,3 +57,4 @@
 0057-shm-sub-BUGFIX-complete-event-check.patch
 0058-common-BUGFIX-do-not-use-partial-atoms.patch
 0059-debug-serialize-edit-and-data-in-sr_apply_changes.patch
+0060-bugfix-shm_sub-event-type-finished-instead-of-none.patch
