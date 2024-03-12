@@ -18,6 +18,8 @@ Architecture: any
 Provides:
  ${graphnos-yang:Provides}
 Conflicts: ${graphnos-yang:Conflicts}
+Breaks: libsysrepo, libsysrepo7 (< 2.2.161)
+Replaces: libsysrepo, libsysrepo7 (< 2.2.161)
 Description: YANG-based configuration and operational data store - runtime
  Applications can use sysrepo to store their configuration modeled by provided
  YANG model instead of using e.g. flat configuration files. Sysrepo will ensure
@@ -42,8 +44,8 @@ Package: libsysrepo7-dev
 Depends: libyang3-dev,
          libsysrepo7 (= ${binary:Version}),
          ${misc:Depends}
-Breaks: libsysrepo-dev
-Replaces: libsysrepo-dev
+Breaks: libsysrepo-dev, libsysrepo7-dev (< 2.2.161)
+Replaces: libsysrepo-dev, libsysrepo7-dev (< 2.2.161)
 Section: libdevel
 Architecture: any
 Description: YANG-based configuration and operational data store - development files
