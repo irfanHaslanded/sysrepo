@@ -1,0 +1,87 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 13 Mar 2024 15:54:04 +0000
+Subject: Revert libyang err msg changes
+
+This reverts f04900891d17e3fd5a9634971c3a34a0c7c43b9f
+---
+ src/ly_wrap.c           | 5 ++++-
+ tests/test_notif.c      | 6 +++---
+ tests/test_rpc_action.c | 4 ++--
+ 3 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/src/ly_wrap.c b/src/ly_wrap.c
+index abdd81b..f6d607a 100644
+--- a/src/ly_wrap.c
++++ b/src/ly_wrap.c
+@@ -48,6 +48,7 @@ sr_errinfo_new_ly(sr_error_info_t **err_info, const struct ly_ctx *ly_ctx, const
+ {
+     const struct ly_err_item *e = NULL;
+     const struct lyd_node *node;
++    const char *path = NULL, *path_type = NULL;
+ 
+     if (ly_ctx) {
+         e = ly_err_first(ly_ctx);
+@@ -81,7 +82,9 @@ sr_errinfo_new_ly(sr_error_info_t **err_info, const struct ly_ctx *ly_ctx, const
+             assert(e->level == LY_LLERR);
+             /* store it and print it */
+             if (e->data_path || e->schema_path) {
+-                sr_errinfo_new(err_info, err_code, "%s (path \"%s\")", e->msg, e->data_path ? e->data_path : e->schema_path);
++                path_type = e->data_path ? "Data" : "Schema";
++                path =  e->data_path ? e->data_path : e->schema_path;
++                sr_errinfo_new(err_info, err_code, "%s (%s location \"%s\".)", e->msg, path_type, path);
+             } else {
+                 sr_errinfo_new(err_info, err_code, "%s", e->msg);
+             }
+diff --git a/tests/test_notif.c b/tests/test_notif.c
+index 90681df..38a7327 100644
+--- a/tests/test_notif.c
++++ b/tests/test_notif.c
+@@ -505,7 +505,7 @@ test_oper_dep(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 2);
+     assert_string_equal(err_info->err[0].message, "Invalid instance-identifier \"/ops:cont/list1[k='key']/cont2\" value "
+-            "- required instance not found. (path \"/ops:notif3/list2[k='k']/l15\")");
++            "- required instance not found. (Data location \"/ops:notif3/list2[k='k']/l15\".)");
+     assert_string_equal(err_info->err[1].message, "Notification validation failed.");
+ 
+     /* subscribe to required ops oper data and some non-required */
+@@ -522,7 +522,7 @@ test_oper_dep(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 2);
+     assert_string_equal(err_info->err[0].message, "Invalid leafref value \"l1-val\" - no target instance \"/or:l1\" with the same value. "
+-            "(path \"/ops:notif3/list2[k='k']/l14\")");
++            "(Data location \"/ops:notif3/list2[k='k']/l14\".)");
+     assert_string_equal(err_info->err[1].message, "Notification validation failed.");
+ 
+     /* subscribe to required ops-ref oper data and some non-required */
+@@ -554,7 +554,7 @@ test_oper_dep(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 1);
+     assert_string_equal(err_info->err[0].message, "Invalid instance-identifier \"/ops-ref:l101\" value - semantic error: "
+-            "Not found node \"l101\" in path. (path \"/ops:cont/cont3/notif2/l13\")");
++            "Not found node \"l101\" in path. (Schema location \"/ops:cont/cont3/notif2/l13\".)");
+ 
+     /* correct the instance-identifier */
+     input[0].data.string_val = "/ops-ref:l2";
+diff --git a/tests/test_rpc_action.c b/tests/test_rpc_action.c
+index b546212..ce97433 100644
+--- a/tests/test_rpc_action.c
++++ b/tests/test_rpc_action.c
+@@ -358,7 +358,7 @@ test_rpc(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 2);
+     assert_string_equal(err_info->err[0].message, "Invalid leafref value \"l1-val\" - no target instance \"/or:l1\" with the same value. "
+-            "(path \"/ops:rpc1/l1\")");
++            "(Data location \"/ops:rpc1/l1\".)");
+     assert_null(err_info->err[0].error_format);
+     assert_string_equal(err_info->err[1].message, "RPC input validation failed.");
+     assert_null(err_info->err[1].error_format);
+@@ -388,7 +388,7 @@ test_rpc(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 2);
+     assert_string_equal(err_info->err[0].message, "Invalid leafref value \"inval-ref\" - no target instance \"/or:l2\" "
+-            "with the same value. (path \"/ops:rpc2/cont/l3\")");
++            "with the same value. (Data location \"/ops:rpc2/cont/l3\".)");
+     assert_null(err_info->err[0].error_format);
+     assert_string_equal(err_info->err[1].message, "RPC output validation failed.");
+     assert_null(err_info->err[1].error_format);
