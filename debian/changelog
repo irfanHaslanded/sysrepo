@@ -1439,7 +1439,7 @@ sysrepo (2.2.161-1) UNRELEASED; urgency=medium
   * test UPDATE push oper data leaf-list
   * ly_wrap UPDATE lyd_find_path optional incomplete support
   * edit diff BUGFIX use intermediate found parents
-  * doc UPDATE clearify last_modif pluing ds callback
+  * doc UPDATE clarify last_modif pluing ds callback
 
   [ aPiecek ]
   * sysrepo FEATURE sorting of data nodes
@@ -1454,7 +1454,7 @@ sysrepo (2.2.161-1) UNRELEASED; urgency=medium
   * VERSION bump to version 2.2.157
   * common BUGFIX do not use partial atoms
   * SOVERSION bump to version 7.23.9
-  * VERSION bump ot version 2.2.158
+  * VERSION bump to version 2.2.158
 
   [ IrfanMohammad ]
   * common BUGFIX do not use partial atoms
