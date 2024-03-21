@@ -16,10 +16,10 @@ Subject: Allow runtime configurable shm dir
  5 files changed, 31 insertions(+), 12 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 51f56f7..630c74b 100644
+index c54a2d1..28e5780 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -1148,6 +1148,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
+@@ -1018,6 +1018,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
      return err_info;
  }
  
@@ -40,7 +40,7 @@ index 51f56f7..630c74b 100644
  /**
   * @brief Get global SHM prefix prepended to all SHM files.
   *
-@@ -1181,7 +1195,7 @@ sr_path_main_shm(char **path)
+@@ -1051,7 +1065,7 @@ sr_path_main_shm(char **path)
          return err_info;
      }
  
@@ -49,7 +49,7 @@ index 51f56f7..630c74b 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1200,7 +1214,7 @@ sr_path_mod_shm(char **path)
+@@ -1070,7 +1084,7 @@ sr_path_mod_shm(char **path)
          return err_info;
      }
  
@@ -58,7 +58,7 @@ index 51f56f7..630c74b 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1219,7 +1233,7 @@ sr_path_ext_shm(char **path)
+@@ -1089,7 +1103,7 @@ sr_path_ext_shm(char **path)
          return err_info;
      }
  
@@ -67,7 +67,7 @@ index 51f56f7..630c74b 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1240,9 +1254,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
+@@ -1110,9 +1124,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
      }
  
      if (suffix2 > -1) {
@@ -79,7 +79,7 @@ index 51f56f7..630c74b 100644
      }
  
      if (ret == -1) {
-@@ -1264,9 +1278,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
+@@ -1134,9 +1148,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
      }
  
      if (suffix2 > -1) {
@@ -92,10 +92,10 @@ index 51f56f7..630c74b 100644
  
      if (ret == -1) {
 diff --git a/src/common.h b/src/common.h
-index 6b4413e..f4d671e 100644
+index df83c94..ed39d45 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1418,4 +1418,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
+@@ -1379,4 +1379,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
   * */
  void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
@@ -103,7 +103,7 @@ index 6b4413e..f4d671e 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index fb86812..81df377 100644
+index 11237de..58f289a 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -34,7 +34,7 @@

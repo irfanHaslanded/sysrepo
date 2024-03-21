@@ -13,7 +13,7 @@ with debugging.
  1 file changed, 18 insertions(+), 7 deletions(-)
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index 66f06a0..04e1812 100644
+index 5f1f845..2729609 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
 @@ -94,6 +94,7 @@ help_print(void)

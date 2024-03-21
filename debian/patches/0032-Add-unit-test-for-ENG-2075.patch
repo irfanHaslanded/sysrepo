@@ -4,15 +4,23 @@ Subject: Add unit-test for ENG-2075
 
 cherry-picked from 0021-Add-unit-test-for-ENG-2075.patch
 ---
- tests/test_apply_changes.c | 171 +++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 171 insertions(+)
+ tests/test_subscr_filtering.c | 172 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 172 insertions(+)
 
-diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index e376473..f39b14c 100644
---- a/tests/test_apply_changes.c
-+++ b/tests/test_apply_changes.c
-@@ -7188,6 +7188,176 @@ test_mult_update(void **state)
-     sr_session_stop(sess);
+diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
+index 6b776de..a2b0499 100644
+--- a/tests/test_subscr_filtering.c
++++ b/tests/test_subscr_filtering.c
+@@ -44,6 +44,7 @@ struct state {
+     pthread_barrier_t barrier;
+     ATOMIC_T invocation_count;
+     uint32_t id;
++    ATOMIC_T cb_called;
+ };
+ 
+ static int
+@@ -1159,10 +1160,181 @@ test_subscr_oper_update_deadlock(void **arg)
+     assert_int_equal(ret, SR_ERR_OK);
  }
  
 +/* Test for ENG-2075 */
@@ -79,12 +87,11 @@ index e376473..f39b14c 100644
 +        /* 1st change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
 +        assert_int_equal(ret, SR_ERR_OK);
-+        assert_int_equal(op, SR_OP_CREATED);
-+        assert_null(old_val);
-+        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1003']");
++        assert_int_equal(op, SR_OP_DELETED);
++        assert_non_null(old_val);
++        assert_null(new_val);
++        assert_string_equal(old_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1000']");
 +        sr_free_val(old_val);
-+        sr_free_val(new_val);
 +
 +        /* 2nd change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
@@ -92,7 +99,8 @@ index e376473..f39b14c 100644
 +        assert_int_equal(op, SR_OP_CREATED);
 +        assert_null(old_val);
 +        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1004']");
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1003']");
++        sr_free_val(old_val);
 +        sr_free_val(new_val);
 +
 +        /* 3rd change */
@@ -101,17 +109,17 @@ index e376473..f39b14c 100644
 +        assert_int_equal(op, SR_OP_CREATED);
 +        assert_null(old_val);
 +        assert_non_null(new_val);
-+        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1005']");
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1004']");
 +        sr_free_val(new_val);
 +
 +        /* 4th change */
 +        ret = sr_get_change_next(session, iter, &op, &old_val, &new_val);
 +        assert_int_equal(ret, SR_ERR_OK);
-+        assert_int_equal(op, SR_OP_DELETED);
-+        assert_non_null(old_val);
-+        assert_null(new_val);
-+        assert_string_equal(old_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1000']");
-+        sr_free_val(old_val);
++        assert_int_equal(op, SR_OP_CREATED);
++        assert_null(old_val);
++        assert_non_null(new_val);
++        assert_string_equal(new_val->xpath, "/ietf-interfaces:interfaces/interface[name='eth1005']");
++        sr_free_val(new_val);
 +
 +        sr_free_change_iter(iter);
 +        break;
@@ -185,14 +193,11 @@ index e376473..f39b14c 100644
 +    assert_int_equal(ret, SR_ERR_OK);
 +}
 +
- /* MAIN */
  int
  main(void)
-@@ -7218,6 +7388,7 @@ main(void)
-         cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),
-         cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
-         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
-+        cmocka_unit_test_setup_teardown(test_change_iter, setup_f, teardown_f),
-     };
- 
-     setenv("CMOCKA_TEST_ABORT", "1", 1);
+ {
+     const struct CMUnitTest tests[] = {
++        cmocka_unit_test(test_change_iter),
+         cmocka_unit_test(test_subscr_none),
+         cmocka_unit_test(test_subscription_filtering),
+         cmocka_unit_test(test_multisub_filtering),

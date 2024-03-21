@@ -4,8 +4,8 @@
  * @brief sysrepo API routines
  *
  * @copyright
- * Copyright (c) 2018 - 2023 Deutsche Telekom AG.
- * Copyright (c) 2018 - 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@
 #include "context_change.h"
 #include "edit_diff.h"
 #include "log.h"
+#include "ly_wrap.h"
 #include "lyd_mods.h"
 #include "modinfo.h"
 #include "plugins_datastore.h"
@@ -114,10 +115,15 @@ sr_conn_new(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
     if ((err_info = sr_rwlock_init(&conn->oper_cache_lock, 0))) {
         goto error10;
     }
+    if ((err_info = sr_mutex_init(&conn->oper_push_mod_lock, 0))) {
+        goto error11;
+    }
 
     *conn_p = conn;
     return NULL;
 
+error11:
+    pthread_mutex_destroy(&conn->oper_push_mod_lock);
 error10:
     sr_ntf_handle_free(conn->ntf_handles, conn->ntf_handle_count);
 error9:
@@ -189,6 +195,7 @@ sr_conn_free(sr_conn_ctx_t *conn)
         free(conn->oper_push_mods[i]);
     }
     free(conn->oper_push_mods);
+    pthread_mutex_destroy(&conn->oper_push_mod_lock);
 
     free(conn);
 }
@@ -865,9 +872,7 @@ _sr_session_stop(sr_session_ctx_t *session)
     free(session->orig_data);
     free(session->ev_data.orig_name);
     free(session->ev_data.orig_data);
-    free(session->ev_error.message);
-    free(session->ev_error.format);
-    free(session->ev_error.data);
+    sr_errinfo_free(&session->ev_err_info);
     pthread_mutex_destroy(&session->ptr_lock);
     for (ds = 0; ds < SR_DS_COUNT; ++ds) {
         sr_release_data(session->dt[ds].edit);
@@ -1044,36 +1049,23 @@ API int
 sr_session_dup_error(sr_session_ctx_t *src_session, sr_session_ctx_t *trg_session)
 {
     sr_error_info_t *err_info = NULL;
-    const void *err_data;
-    int ret;
+    uint32_t i;
 
     SR_CHECK_ARG_APIRET(!src_session || !trg_session, NULL, err_info);
 
     if (!src_session->err_info) {
         /* no error info to duplicate */
-        return sr_api_ret(trg_session, NULL);
+        goto cleanup;
     }
 
-    /* message */
-    ret = sr_session_set_error_message(trg_session, "%s", src_session->err_info->err[0].message);
-    if (ret) {
-        return ret;
-    }
+    /* free any previous even error */
+    sr_errinfo_free(&src_session->ev_err_info);
 
-    /* format */
-    ret = sr_session_set_error_format(trg_session, src_session->err_info->err[0].error_format);
-    if (ret) {
-        return ret;
-    }
-
-    /* data */
-    free(trg_session->ev_error.data);
-    trg_session->ev_error.data = NULL;
-    err_data = src_session->err_info->err[0].error_data;
-    if (err_data) {
-        trg_session->ev_error.data = malloc(sr_ev_data_size(err_data));
-        SR_CHECK_MEM_GOTO(!trg_session->ev_error.data, err_info, cleanup);
-        memcpy(trg_session->ev_error.data, err_data, sr_ev_data_size(err_data));
+    /* duplicate all src errors */
+    for (i = 0; i < src_session->err_info->err_count; ++i) {
+        sr_errinfo_add(&trg_session->ev_err_info, src_session->err_info->err[i].err_code,
+                src_session->err_info->err[i].error_format, src_session->err_info->err[i].error_data,
+                src_session->err_info->err[i].message, NULL);
     }
 
 cleanup:
@@ -1081,22 +1073,34 @@ cleanup:
 }
 
 API int
+sr_session_set_error(sr_session_ctx_t *session, const char *err_format_name, sr_error_t err_code,
+        const char *err_msg_format, ...)
+{
+    sr_error_info_t *err_info = NULL;
+    va_list vargs;
+
+    SR_CHECK_ARG_APIRET(!session || ((session->ev != SR_SUB_EV_CHANGE) && (session->ev != SR_SUB_EV_UPDATE) &&
+            (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)) || !err_code || !err_msg_format,
+            session, err_info);
+
+    va_start(vargs, err_msg_format);
+    sr_errinfo_add(&session->ev_err_info, err_code, err_format_name, NULL, err_msg_format, &vargs);
+    va_end(vargs);
+
+    return sr_api_ret(session, err_info);
+}
+
+API int
 sr_session_set_error_message(sr_session_ctx_t *session, const char *format, ...)
 {
     sr_error_info_t *err_info = NULL;
     va_list vargs;
-    char *err_msg;
 
     SR_CHECK_ARG_APIRET(!session || ((session->ev != SR_SUB_EV_CHANGE) && (session->ev != SR_SUB_EV_UPDATE) &&
             (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)) || !format, session, err_info);
 
     va_start(vargs, format);
-    if (vasprintf(&err_msg, format, vargs) == -1) {
-        SR_ERRINFO_MEM(&err_info);
-    } else {
-        free(session->ev_error.message);
-        session->ev_error.message = err_msg;
-    }
+    sr_errinfo_add(&session->ev_err_info, SR_ERR_OPERATION_FAILED, NULL, NULL, format, &vargs);
     va_end(vargs);
 
     return sr_api_ret(session, err_info);
@@ -1109,7 +1113,7 @@ sr_session_set_error_format(sr_session_ctx_t *session, const char *error_format)
     char *err_format;
 
     SR_CHECK_ARG_APIRET(!session || ((session->ev != SR_SUB_EV_CHANGE) && (session->ev != SR_SUB_EV_UPDATE) &&
-            (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)), session, err_info);
+            (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)) || !session->ev_err_info, session, err_info);
 
     if (error_format) {
         if (!(err_format = strdup(error_format))) {
@@ -1120,8 +1124,8 @@ sr_session_set_error_format(sr_session_ctx_t *session, const char *error_format)
         err_format = NULL;
     }
 
-    free(session->ev_error.format);
-    session->ev_error.format = err_format;
+    free(session->ev_err_info->err[session->ev_err_info->err_count - 1].error_format);
+    session->ev_err_info->err[session->ev_err_info->err_count - 1].error_format = err_format;
 
     return sr_api_ret(session, NULL);
 }
@@ -1132,10 +1136,10 @@ sr_session_push_error_data(sr_session_ctx_t *session, uint32_t size, const void 
     sr_error_info_t *err_info = NULL;
 
     SR_CHECK_ARG_APIRET(!session || ((session->ev != SR_SUB_EV_CHANGE) && (session->ev != SR_SUB_EV_UPDATE) &&
-            (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)) || !session->ev_error.format || !size ||
-            !data, session, err_info);
+            (session->ev != SR_SUB_EV_OPER) && (session->ev != SR_SUB_EV_RPC)) || !session->ev_err_info ||
+            !session->ev_err_info->err[session->ev_err_info->err_count - 1].error_format || !size || !data, session, err_info);
 
-    err_info = sr_ev_data_push(&session->ev_error.data, size, data);
+    err_info = sr_ev_data_push(&session->ev_err_info->err[session->ev_err_info->err_count - 1].error_data, size, data);
     return sr_api_ret(session, err_info);
 }
 
@@ -1328,7 +1332,6 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
     sr_error_info_t *err_info = NULL;
     const struct lys_module *ly_mod;
     const sr_module_ds_t sr_empty_module_ds = {0};
-    struct ly_in *in = NULL;
     char *mod_name = NULL;
     LYS_INFORMAT format;
     sr_datastore_t ds;
@@ -1375,13 +1378,8 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
     }
 
     /* parse the module with the features */
-    if (ly_in_new_filepath(new_mod->schema_path, 0, &in)) {
-        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Failed to create input handler for \"%s\".",
-                new_mod->schema_path);
-        goto cleanup;
-    }
-    if (lys_parse(new_ctx, in, format, new_mod->features, (struct lys_module **)&new_mod->ly_mod)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+    if ((err_info = sr_lys_parse(new_ctx, NULL, new_mod->schema_path, format, new_mod->features,
+            (struct lys_module **)&new_mod->ly_mod))) {
         goto cleanup;
     }
 
@@ -1404,7 +1402,6 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
     }
 
 cleanup:
-    ly_in_free(in, 0);
     free(mod_name);
     return err_info;
 }
@@ -1425,14 +1422,15 @@ static int
 _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *data, const char *data_path,
         LYD_FORMAT format, sr_int_install_mod_t **new_mods, uint32_t *new_mod_count)
 {
-    sr_error_info_t *err_info = NULL;
+    sr_error_info_t *err_info = NULL, *tmp_err;
     struct ly_ctx *new_ctx = NULL, *old_ctx = NULL;
-    struct lyd_node *mod_data = NULL, *sr_mods = NULL;
+    struct lyd_node *mod_data = NULL, *sr_mods = NULL, *sr_del_mods = NULL;
     sr_int_install_mod_t *nmod;
     struct sr_data_update_s data_info = {0};
     sr_lock_mode_t ctx_mode = SR_LOCK_NONE;
     uint32_t i, search_dir_count = 0;
-    int installed;
+    int installed, mod_shm_changed = 0;
+    struct ly_set mod_set = {0};
 
     /* create new temporary context */
     if ((err_info = sr_ly_ctx_init(conn, &new_ctx))) {
@@ -1479,8 +1477,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
     }
 
     /* compile the final context */
-    if (ly_ctx_compile(new_ctx)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+    if ((err_info = sr_ly_ctx_compile(new_ctx))) {
         goto cleanup;
     }
 
@@ -1488,7 +1485,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
     ly_ctx_unset_searchdir_last(new_ctx, search_dir_count);
 
     /* parse modules data, if any */
-    if ((err_info = sr_lyd_parse_module_data(new_ctx, data, data_path, format, &mod_data))) {
+    if ((err_info = sr_lyd_parse_data(new_ctx, data, data_path, format, LYD_PARSE_ONLY | LYD_PARSE_STRICT, 0, &mod_data))) {
         goto cleanup;
     }
 
@@ -1515,22 +1512,48 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
 
     /* update SHM modules */
     if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
-        goto cleanup;
+        goto error1;
     }
+    mod_shm_changed = 1;
 
     /* finish adding the modules */
     if ((err_info = sr_lycc_add_modules(conn, *new_mods, *new_mod_count))) {
-        goto cleanup;
+        goto error1;
     }
 
     /* store new data if they differ */
     if ((err_info = sr_lycc_store_data_if_differ(conn, new_ctx, sr_mods, &data_info))) {
-        goto cleanup;
+        goto error2;
     }
 
     /* update content ID and safely switch the context */
     SR_CONN_MAIN_SHM(conn)->content_id = ly_ctx_get_modules_hash(new_ctx);
     sr_conn_ctx_switch(conn, &new_ctx, &old_ctx);
+
+    goto cleanup;
+
+error2:
+    /* revert adding the modules */
+    if ((tmp_err = sr_lycc_add_modules_revert(conn, *new_mods, *new_mod_count))) {
+        sr_errinfo_merge(&err_info, tmp_err);
+    }
+
+error1:
+    /* revert lydmods data */
+    for (i = 0; i < *new_mod_count; ++i) {
+        ly_set_add(&mod_set, (*new_mods)[i].ly_mod, 1, NULL);
+    }
+    lyd_free_siblings(sr_mods);
+    if ((tmp_err = sr_lydmods_change_del_module(conn->ly_ctx, new_ctx, &mod_set, conn, &sr_del_mods, &sr_mods))) {
+        sr_errinfo_merge(&err_info, tmp_err);
+    }
+    ly_set_erase(&mod_set, NULL);
+    lyd_free_siblings(sr_del_mods);
+
+    /* revert SHM module changes */
+    if (mod_shm_changed && (tmp_err = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
+        sr_errinfo_merge(&err_info, tmp_err);
+    }
 
 cleanup:
     sr_lycc_update_data_clear(&data_info);
@@ -1851,7 +1874,6 @@ sr_update_modules_prepare(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, const cha
     sr_int_update_mod_t *upd_mods = NULL;
     const struct lys_module *old_mod, *upd_mod;
     const char **features = NULL, *no_features[] = {NULL};
-    struct ly_in *in = NULL;
     struct lysp_feature *f = NULL;
     uint32_t i, j, schema_path_count = 0, feat_count = 0;
 
@@ -1914,12 +1936,8 @@ sr_update_modules_prepare(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, const cha
         }
 
         /* try to parse the updated module, if already an import, at least implement it and set the features */
-        if (ly_in_new_filepath(upd_mods[i].schema_path, 0, &in)) {
-            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Failed to parse \"%s\".", upd_mods[i].schema_path);
-            goto cleanup;
-        }
-        if (lys_parse(new_ctx, in, upd_mods[i].format, features ? features : no_features, (struct lys_module **)&upd_mod)) {
-            sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+        if ((err_info = sr_lys_parse(new_ctx, NULL, upd_mods[i].schema_path, upd_mods[i].format,
+                features ? features : no_features, (struct lys_module **)&upd_mod))) {
             goto cleanup;
         }
 
@@ -1932,8 +1950,6 @@ sr_update_modules_prepare(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, const cha
         free(features);
         features = NULL;
         feat_count = 0;
-        ly_in_free(in, 0);
-        in = NULL;
     }
 
 cleanup:
@@ -1942,7 +1958,6 @@ cleanup:
     }
     free(upd_mods);
     free(features);
-    ly_in_free(in, 0);
     return err_info;
 }
 
@@ -1981,8 +1996,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
     }
 
     /* compile the final context */
-    if (ly_ctx_compile(new_ctx)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+    if ((err_info = sr_ly_ctx_compile(new_ctx))) {
         goto cleanup;
     }
 
@@ -2385,15 +2399,13 @@ sr_load_module(struct ly_ctx *ly_ctx, const struct lys_module *old_mod, const ch
         if (f->flags & LYS_FENABLED) {
             /* skip the disabled feature */
             if (enable || strcmp(f->name, feature_name)) {
-                if (ly_set_add(&feat_set, (void *)f->name, 1, NULL)) {
-                    sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+                if ((err_info = sr_ly_set_add(&feat_set, (void *)f->name))) {
                     goto cleanup;
                 }
             }
         } else if (enable && !strcmp(f->name, feature_name)) {
             /* add newly enabled feature */
-            if (ly_set_add(&feat_set, (void *)f->name, 1, NULL)) {
-                sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+            if ((err_info = sr_ly_set_add(&feat_set, (void *)f->name))) {
                 goto cleanup;
             }
         }
@@ -2409,14 +2421,12 @@ sr_load_module(struct ly_ctx *ly_ctx, const struct lys_module *old_mod, const ch
     }
 
     /* load the module */
-    if (!(*new_mod = ly_ctx_load_module(ly_ctx, old_mod->name, old_mod->revision, features))) {
-        sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+    if ((err_info = sr_ly_ctx_load_module(ly_ctx, old_mod->name, old_mod->revision, features, new_mod))) {
         goto cleanup;
     }
 
     /* compile */
-    if (ly_ctx_compile(ly_ctx)) {
-        sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+    if ((err_info = sr_ly_ctx_compile(ly_ctx))) {
         goto cleanup;
     }
 
@@ -2899,8 +2909,7 @@ sr_get_subtree(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms,
     }
 
     /* set result */
-    if (lyd_dup_single(set->dnodes[0], NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_PARENTS, &(*subtree)->tree)) {
-        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+    if ((err_info = sr_lyd_dup(set->dnodes[0], NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_PARENTS, 0, &(*subtree)->tree))) {
         goto cleanup;
     }
 
@@ -3018,8 +3027,7 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
 
         /* duplicate subtree and connect it to an existing parent, if any */
         dup_opts = (max_depth ? 0 : LYD_DUP_RECURSIVE) | LYD_DUP_WITH_PARENTS | LYD_DUP_WITH_FLAGS;
-        if (lyd_dup_single(set->dnodes[i], (struct lyd_node_inner *)parent, dup_opts, &node)) {
-            sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+        if ((err_info = sr_lyd_dup(set->dnodes[i], parent, dup_opts, 0, &node))) {
             goto cleanup;
         }
 
@@ -3027,7 +3035,7 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
         for (node_parent = node; lyd_parent(node_parent) != parent; node_parent = lyd_parent(node_parent)) {}
 
         /* duplicate only to the specified depth */
-        if (max_depth && (err_info = sr_lyd_dup(set->dnodes[i], max_depth, node))) {
+        if (max_depth && (err_info = sr_lyd_dup_r(set->dnodes[i], max_depth, node))) {
             lyd_free_tree(node_parent);
             goto cleanup;
         }
@@ -3044,8 +3052,7 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
 
         if (!parent) {
             /* connect to the result */
-            if (lyd_insert_sibling((*data)->tree, node_parent, &(*data)->tree)) {
-                sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+            if ((err_info = sr_lyd_insert_sibling((*data)->tree, node_parent, &(*data)->tree))) {
                 lyd_free_tree(node);
                 goto cleanup;
             }
@@ -3058,8 +3065,7 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
             rec.input_parent = input_node;
             rec.result_parent = node;
             assert(rec.input_parent->schema == rec.result_parent->schema);
-            if (lyht_insert(ht, &rec, hash, NULL)) {
-                sr_errinfo_new(&err_info, SR_ERR_LY, "%s", ly_last_errmsg());
+            if ((err_info = sr_lyht_insert(ht, &rec, hash))) {
                 goto cleanup;
             }
 
@@ -3140,8 +3146,7 @@ sr_get_node(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
     }
 
     /* return found node */
-    if (lyd_dup_single(set->dnodes[0], NULL, LYD_DUP_WITH_FLAGS, &n)) {
-        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+    if ((err_info = sr_lyd_dup(set->dnodes[0], NULL, LYD_DUP_WITH_FLAGS, 0, &n))) {
         goto cleanup;
     }
     (*node)->tree = n;
@@ -3322,7 +3327,7 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
     sr_error_info_t *err_info = NULL;
     const char *operation;
     const struct lysc_node *snode;
-    int ly_log_opts;
+    uint32_t temp_lo = 0;
 
     SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
 
@@ -3339,7 +3344,7 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
     }
 
     /* turn off logging */
-    ly_log_opts = ly_log_options(0);
+    ly_temp_log_options(&temp_lo);
     if ((path[strlen(path) - 1] != ']') && (snode = lys_find_path(session->conn->ly_ctx, NULL, path, 0)) &&
             (snode->nodetype & (LYS_LEAFLIST | LYS_LIST)) &&
             !strcmp((path + strlen(path)) - strlen(snode->name), snode->name)) {
@@ -3349,7 +3354,7 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
     } else {
         operation = "remove";
     }
-    ly_log_options(ly_log_opts);
+    ly_temp_log_options(NULL);
 
     /* add the operation into edit */
     err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
@@ -3392,11 +3397,13 @@ sr_discard_items(sr_session_ctx_t *session, const char *xpath)
     }
 
     /* add the operation into edit */
-    if (lyd_new_opaq(NULL, session->conn->ly_ctx, "discard-items", xpath, "sysrepo", "sysrepo", &node)) {
-        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+    if ((err_info = sr_lyd_new_opaq(session->conn->ly_ctx, "discard-items", xpath, "sysrepo", "sysrepo", &node))) {
         goto cleanup;
     }
-    lyd_insert_sibling(session->dt[session->ds].edit->tree, node, &session->dt[session->ds].edit->tree);
+    if ((err_info = sr_lyd_insert_sibling(session->dt[session->ds].edit->tree, node, &session->dt[session->ds].edit->tree))) {
+        lyd_free_tree(node);
+        goto cleanup;
+    }
 
 cleanup:
     if (session->dt[session->ds].edit && !session->dt[session->ds].edit->tree) {
@@ -3478,8 +3485,7 @@ sr_edit_batch(sr_session_ctx_t *session, const struct lyd_node *edit, const char
         goto cleanup_unlock;
     }
 
-    if (lyd_dup_siblings(edit, NULL, LYD_DUP_RECURSIVE, &dup_edit)) {
-        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+    if ((err_info = sr_lyd_dup(edit, NULL, LYD_DUP_RECURSIVE, 1, &dup_edit))) {
         goto cleanup_unlock;
     }
 
@@ -3503,8 +3509,7 @@ sr_edit_batch(sr_session_ctx_t *session, const struct lyd_node *edit, const char
                 } else if (lysc_is_dup_inst_list(elem->schema) &&
                         !lyd_find_meta(elem->meta, NULL, "sysrepo:dup-inst-list-position")) {
                     /* fine, just create the metadata with empty value so that the instance is created */
-                    if (lyd_new_meta(NULL, elem, NULL, "sysrepo:dup-inst-list-position", "", 0, NULL)) {
-                        sr_errinfo_new_ly(&err_info, LYD_CTX(elem), elem);
+                    if ((err_info = sr_lyd_new_meta(elem, NULL, "sysrepo:dup-inst-list-position", ""))) {
                         goto cleanup_unlock;
                     }
                 }
@@ -3678,9 +3683,8 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
     struct sr_denied denied = {0};
     sr_lock_mode_t change_sub_lock = SR_LOCK_NONE;
     uint32_t sid = 0;
-    char *orig_name = NULL, *str;
+    char *orig_name = NULL;
     void *orig_data = NULL;
-    int r;
 
     *cb_err_info = NULL;
 
@@ -3703,22 +3707,19 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
         }
 
         if (denied.denied) {
-            /* access denied */
+            /* access denied, print detailed reason and generate more generic NETCONF error */
             if (denied.rule_name) {
-                r = asprintf(&str, "NACM access denied by the rule \"%s\".", denied.rule_name);
+                sr_log(SR_LL_ERR, "NACM access denied by the rule \"%s\".", denied.rule_name);
             } else if (denied.def) {
-                r = asprintf(&str, "NACM access denied by \"%s\" node extension \"%s\".", LYD_NAME(denied.node),
+                sr_log(SR_LL_ERR, "NACM access denied by \"%s\" node extension \"%s\".", LYD_NAME(denied.node),
                         denied.def->name);
             } else {
-                r = asprintf(&str, "NACM access denied by the default NACM permissions.");
+                sr_log(SR_LL_ERR, "NACM access denied by the default NACM permissions.");
             }
-            if (r == -1) {
-                str = NULL;
-            }
-            sr_errinfo_new_nacm(&err_info, str, "protocol", "access-denied", NULL, denied.node,
+
+            sr_errinfo_new_nacm(&err_info, "protocol", "access-denied", NULL, denied.node,
                     "Access to the data model \"%s\" is denied because \"%s\" NACM authorization failed.",
                     denied.node->schema->module->name, session->nacm_user);
-            free(str);
             goto cleanup;
         }
     }
@@ -5072,10 +5073,10 @@ sr_module_change_subscribe_enable(sr_session_ctx_t *session, struct sr_mod_info_
         err_code = callback(ev_sess, sub_id, ly_mod->name, xpath, sr_ev2api(ev_sess->ev), 0, private_data);
         if (err_code != SR_ERR_OK) {
             /* callback failed but it is the only one so no "abort" event is necessary */
-            if (ev_sess->ev_error.message || ev_sess->ev_error.format) {
+            if (ev_sess->ev_err_info) {
                 /* remember callback error info */
-                sr_errinfo_new_data(&err_info, err_code, ev_sess->ev_error.format, ev_sess->ev_error.data, "%s",
-                        ev_sess->ev_error.message ? ev_sess->ev_error.message : sr_strerror(err_code));
+                sr_errinfo_merge(&err_info, ev_sess->ev_err_info);
+                ev_sess->ev_err_info = NULL;
             }
             sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "Subscribing to \"%s\" changes failed.", ly_mod->name);
             goto cleanup;
@@ -5421,13 +5422,11 @@ _sr_get_changes_iter(sr_session_ctx_t *session, const char *xpath, int dup, sr_c
 
     if (session->dt[session->ds].diff) {
         if (dup) {
-            if (lyd_dup_siblings(session->dt[session->ds].diff, NULL, LYD_DUP_RECURSIVE, &(*iter)->diff)) {
-                sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+            if ((err_info = sr_lyd_dup(session->dt[session->ds].diff, NULL, LYD_DUP_RECURSIVE, 1, &(*iter)->diff))) {
                 goto error;
             }
         }
-        if (lyd_find_xpath(session->dt[session->ds].diff, xpath, &(*iter)->set)) {
-            sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
+        if ((err_info = sr_lyd_find_xpath(session->dt[session->ds].diff, xpath, &(*iter)->set))) {
             goto error;
         }
     } else {
@@ -5474,7 +5473,6 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
     sr_val_t *sr_val;
     struct lyd_node *node_dup = NULL;
     const struct lyd_node *node_ptr;
-    LY_ERR lyrc;
 
     sr_val = calloc(1, sizeof *sr_val);
     SR_CHECK_MEM_GOTO(!sr_val, err_info, cleanup);
@@ -5482,19 +5480,14 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
     if (value_str) {
         /* replace the value in a node copy so that this specific one is stored */
         assert(node->schema->nodetype & (LYS_LEAF | LYS_LEAFLIST));
-        lyrc = lyd_dup_single(node, NULL, 0, &node_dup);
-        if (lyrc) {
-            sr_errinfo_new_ly(&err_info, LYD_CTX(node), NULL);
+        if ((err_info = sr_lyd_dup(node, NULL, 0, 0, &node_dup))) {
             goto cleanup;
         }
 
-        lyrc = lyd_change_term(node_dup, value_str);
-        if (lyrc && (lyrc != LY_EEXIST) && (lyrc != LY_ENOT)) {
-            sr_errinfo_new_ly(&err_info, LYD_CTX(node), NULL);
+        if ((err_info = sr_lyd_change_term(node_dup, value_str, 1))) {
             goto cleanup;
         }
-        if (node->parent && lyd_insert_child(lyd_parent(node), node_dup)) {
-            sr_errinfo_new_ly(&err_info, LYD_CTX(node), NULL);
+        if (node->parent && (err_info = sr_lyd_insert_child(lyd_parent(node), node_dup))) {
             goto cleanup;
         }
         node_dup->flags |= node->flags & LYD_DEFAULT;
@@ -6056,8 +6049,7 @@ sr_rpc_internal_input_update(sr_conn_ctx_t *conn, struct lyd_node *input_op)
             continue;
         }
 
-        if (lyd_new_term(input_op, ly_srfd_mod, "module", ly_mod->name, 0, NULL)) {
-            sr_errinfo_new_ly(&err_info, conn->ly_ctx, NULL);
+        if ((err_info = sr_lyd_new_term(input_op, ly_srfd_mod, "module", ly_mod->name))) {
             return err_info;
         }
     }
@@ -6315,7 +6307,6 @@ sr_rpc_send_tree(sr_session_ctx_t *session, struct lyd_node *input, uint32_t tim
     struct lyd_node *input_top, *input_op, *ext_parent = NULL;
     char *path = NULL, *str, *parent_path = NULL;
     struct sr_denied denied = {0};
-    int r;
 
     SR_CHECK_ARG_APIRET(!session || !input || !output, session, err_info);
 
@@ -6372,18 +6363,15 @@ sr_rpc_send_tree(sr_session_ctx_t *session, struct lyd_node *input, uint32_t tim
         if (denied.denied) {
             /* access denied */
             if (denied.rule_name) {
-                r = asprintf(&str, "NACM access denied by the rule \"%s\".", denied.rule_name);
+                sr_log(SR_LL_ERR, "NACM access denied by the rule \"%s\".", denied.rule_name);
             } else if (denied.def) {
-                r = asprintf(&str, "NACM access denied by \"%s\" node extension \"%s\".", LYD_NAME(denied.node), denied.def->name);
+                sr_log(SR_LL_ERR, "NACM access denied by \"%s\" node extension \"%s\".", LYD_NAME(denied.node), denied.def->name);
             } else {
-                r = asprintf(&str, "NACM access denied by the default NACM permissions.");
+                sr_log(SR_LL_ERR, "NACM access denied by the default NACM permissions.");
             }
-            if (r == -1) {
-                str = NULL;
-            }
-            sr_errinfo_new_nacm(&err_info, str, "protocol", "access-denied", NULL, denied.node,
+
+            sr_errinfo_new_nacm(&err_info, "protocol", "access-denied", NULL, denied.node,
                     "Executing the operation is denied because \"%s\" NACM authorization failed.", session->nacm_user);
-            free(str);
             goto cleanup;
         }
     }

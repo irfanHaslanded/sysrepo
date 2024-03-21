@@ -7,10 +7,10 @@ Subject: Fix ncid originator name
  1 file changed, 8 insertions(+), 1 deletion(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 0bd4fca..be221c8 100644
+index 8f54001..d6a35ed 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7219,9 +7219,17 @@ cleanup:
+@@ -7207,9 +7207,17 @@ cleanup:
  API void
  sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  {
@@ -28,7 +28,7 @@ index 0bd4fca..be221c8 100644
      sr_session_push_orig_data(session, sizeof nc_id, &nc_id);
  }
  
-@@ -7235,7 +7243,6 @@ sr_session_get_event_nc_id(sr_session_ctx_t *session)
+@@ -7223,7 +7231,6 @@ sr_session_get_event_nc_id(sr_session_ctx_t *session)
      }
  
      sr_session_get_orig_data(session, 0, &size, (const void **)&nc_id);

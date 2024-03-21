@@ -18,10 +18,10 @@ cherry-picked from 0038-common-allow-disabling-connection-liveliness-check.patch
  1 file changed, 13 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index b0d4fa9..96b7891 100644
+index c34e44b..bfc4e9e 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3075,11 +3075,24 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2945,11 +2945,24 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      }
  }
  

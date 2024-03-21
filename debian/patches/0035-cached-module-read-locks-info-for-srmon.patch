@@ -22,22 +22,21 @@ cherry-picked from 0063-Remove-unnecessary-read-locks-from-srmon.patch
  3 files changed, 66 insertions(+), 10 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index b75bd50..35e47b2 100644
+index 5895126..a0e22d2 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1574,9 +1574,11 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1557,8 +1557,10 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
      sr_error_info_t *err_info = NULL;
      sr_cid_t cid, skip_read_upgr_cid = 0;
      uint32_t i;
 +
  #define PATH_LEN 128
      char path[PATH_LEN];
-     struct ly_ctx *ly_ctx;
 +    sr_cid_t reader_cids[SR_RWLOCK_READ_LIMIT] = {0};
  
-     ly_ctx = (struct ly_ctx *)LYD_CTX(ctx_node);
+     /* unlocked access to the lock, possible wrong/stale values should not matter */
  
-@@ -1591,13 +1593,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1573,13 +1575,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          skip_read_upgr_cid = cid;
      }
  
@@ -56,8 +55,8 @@ index b75bd50..35e47b2 100644
              continue;
          }
  
-@@ -1607,6 +1608,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
-             sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+@@ -1588,6 +1589,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+         if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
 +
@@ -164,10 +163,10 @@ index 53edfdd..7523160 100644
  }
  
 diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
-index 6b776de..e4ef857 100644
+index a2b0499..8921ac4 100644
 --- a/tests/test_subscr_filtering.c
 +++ b/tests/test_subscr_filtering.c
-@@ -670,7 +670,7 @@ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
+@@ -671,7 +671,7 @@ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
      ret = sr_apply_changes(sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
      TLOG_INF("Apply changes done");

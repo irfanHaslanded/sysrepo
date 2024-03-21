@@ -56,9 +56,6 @@ const char *sr_strerror(int err_code);
  * other than ::SR_LL_NONE enables the logging to stderr. Setting log level
  * back to ::SR_LL_NONE disables the logging to stderr.
  *
- * @note Please note that this will overwrite your libyang logging settings.
- * Also, only libyang errors are printed, if enabled.
- *
  * @param[in] log_level Requested log level (verbosity).
  */
 void sr_log_stderr(sr_log_level_t log_level);
@@ -81,8 +78,7 @@ sr_log_level_t sr_log_get_stderr(void);
  * logged with LOG_DAEMON facility.
  *
  * @note Please note that enabling logging into syslog will overwrite your syslog
- * connection settings (calls openlog), if you are connected to syslog already and
- * also libyang logging settings.
+ * connection settings (calls openlog), if you are connected to syslog already.
  *
  * @param[in] app_name Name of the application. If not set, "sysrepo" will be used.
  * @param[in] log_level Requested log level (verbosity).
@@ -359,29 +355,33 @@ int sr_session_get_error(sr_session_ctx_t *session, const sr_error_info_t **erro
 int sr_session_dup_error(sr_session_ctx_t *src_session, sr_session_ctx_t *trg_session);
 
 /**
- * @brief Set an error message for a failed callback communicated back to the originator.
+ * @brief Set an error for a failed callback communicated back to the originator.
  * Does not print the message.
  *
  * @note Intended for diff-check, change, RPC/action, or operational callbacks to be used
  * on the provided session.
  *
+ * @note Error format @p err_format_name should be used for interpreting the error data set by
+ * ::sr_session_push_error_data(). There are some well-known error formats defined and those errors can be
+ * written/read using [helper utility functions](@ref utils_error_format).
+ *
  * @param[in] session Implicit session provided in a callback.
- * @param[in] format Human-readable format of the error message.
- * @param[in] ... Format parameters.
- * @return Error code (::SR_ERR_OK on success).
+ * @param[in] err_format_name Optional arbitrary error format identifier, set its error data using
+ * ::sr_session_push_error_data().
+ * @param[in] err_code Error code of the error.
+ * @param[in] err_msg_format Error message format.
+ * @param[in] ... Error message format arguments.
+ */
+int sr_session_set_error(sr_session_ctx_t *session, const char *err_format_name, sr_error_t err_code,
+        const char *err_msg_format, ...);
+
+/**
+ * @brief Deprecated, use ::sr_session_set_error().
  */
 int sr_session_set_error_message(sr_session_ctx_t *session, const char *format, ...);
 
 /**
- * @brief Set error data format identifier for a failed callback communicated back to the originator.
- * This format name should be used for interpreting the error data set by ::sr_session_push_error_data().
- *
- * There are some well-known error formats defined and those errors can be written/read using
- * [helper utility functions](@ref utils_error_format).
- *
- * @param[in] session Implicit session provided in a callback.
- * @param[in] error_format Arbitrary error format identifier.
- * @return Error code (::SR_ERR_OK on success).
+ * @brief Deprecated, use ::sr_session_set_error().
  */
 int sr_session_set_error_format(sr_session_ctx_t *session, const char *error_format);
 

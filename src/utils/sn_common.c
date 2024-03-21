@@ -35,6 +35,7 @@
 #include "common.h"
 #include "compat.h"
 #include "log.h"
+#include "ly_wrap.h"
 #include "sysrepo.h"
 
 static struct srsn_state snstate = {
@@ -115,7 +116,7 @@ srsn_filter_xpath_buf_append_attrs(const struct lyd_node *node, char **buf, int 
     sr_error_info_t *err_info = NULL;
     const struct lyd_meta *next;
     int new_size;
-    char *buf_new;
+    char *buf_new, quot;
 
     if (node->schema) {
         LY_LIST_FOR(node->meta, next) {
@@ -124,7 +125,9 @@ srsn_filter_xpath_buf_append_attrs(const struct lyd_node *node, char **buf, int 
             buf_new = realloc(*buf, new_size);
             SR_CHECK_MEM_RET(!buf_new, err_info);
             *buf = buf_new;
-            sprintf((*buf) + (*size - 1), "[@%s:%s='%s']", next->annotation->module->name, next->name, lyd_get_meta_value(next));
+            quot = strchr(lyd_get_meta_value(next), '\'') ? '\"' : '\'';
+            sprintf((*buf) + (*size - 1), "[@%s:%s%c%s%c]", next->annotation->module->name, next->name, quot,
+                    lyd_get_meta_value(next), quot);
             *size = new_size;
         }
     } else {
@@ -152,7 +155,7 @@ srsn_filter_xpath_buf_add_top_content(const struct lyd_node *node, const struct 
 {
     sr_error_info_t *err_info = NULL;
     int size;
-    char *buf;
+    char *buf, quot;
 
     if (!top_mod) {
         top_mod = node->schema->module;
@@ -161,7 +164,8 @@ srsn_filter_xpath_buf_add_top_content(const struct lyd_node *node, const struct 
     size = 1 + strlen(top_mod->name) + 1 + strlen(LYD_NAME(node)) + 9 + strlen(lyd_get_value(node)) + 3;
     buf = malloc(size);
     SR_CHECK_MEM_RET(!buf, err_info);
-    sprintf(buf, "/%s:%s[text()='%s']", top_mod->name, LYD_NAME(node), lyd_get_value(node));
+    quot = strchr(lyd_get_value(node), '\'') ? '\"' : '\'';
+    sprintf(buf, "/%s:%s[text()=%c%s%c]", top_mod->name, LYD_NAME(node), quot, lyd_get_value(node), quot);
 
     if ((err_info = srsn_filter_xpath_buf_append_attrs(node, &buf, &size))) {
         goto cleanup;
@@ -1082,22 +1086,18 @@ sr_error_info_t *
 srsn_ntf_send(struct srsn_sub *sub, const struct timespec *timestamp, const struct lyd_node *ly_ntf)
 {
     sr_error_info_t *err_info = NULL;
-    struct ly_out *out = NULL;
     struct iovec bufs[3];
     uint32_t size;
-    char *ntf_lyb;
+    char *ntf_lyb = NULL;
 
     /* 1) write the timestamp */
     bufs[0].iov_base = (void *)timestamp;
     bufs[0].iov_len = sizeof *timestamp;
 
     /* get the LYB notification data */
-    ly_out_new_memory(&ntf_lyb, 0, &out);
-    if (lyd_print_tree(out, ly_ntf, LYD_LYB, 0)) {
-        sr_errinfo_new_ly(&err_info, LYD_CTX(ly_ntf), ly_ntf);
+    if ((err_info = sr_lyd_print_data(ly_ntf, LYD_LYB, 0, -1, &ntf_lyb, &size))) {
         goto cleanup;
     }
-    size = ly_out_printed(out);
 
     /* 2) write LYB size */
     bufs[1].iov_base = &size;
@@ -1117,7 +1117,7 @@ srsn_ntf_send(struct srsn_sub *sub, const struct timespec *timestamp, const stru
     ATOMIC_INC_RELAXED(sub->sent_count);
 
 cleanup:
-    ly_out_free(out, NULL, 1);
+    free(ntf_lyb);
     return err_info;
 }
 
@@ -1266,12 +1266,11 @@ srsn_ntf_send_terminated(struct srsn_sub *sub, const char *reason)
     ly_ctx = sr_acquire_context(conn);
 
     sprintf(buf, "%" PRIu32, sub->id);
-    if (lyd_new_path(NULL, ly_ctx, "/ietf-subscribed-notifications:subscription-terminated/id", buf, 0, &ly_ntf)) {
-        sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+    if ((err_info = sr_lyd_new_path(NULL, ly_ctx, "/ietf-subscribed-notifications:subscription-terminated/id", buf, 0,
+            &ly_ntf, NULL))) {
         goto cleanup;
     }
-    if (lyd_new_path(ly_ntf, NULL, "reason", reason, 0, NULL)) {
-        sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+    if ((err_info = sr_lyd_new_path(ly_ntf, NULL, "reason", reason, 0, NULL, NULL))) {
         goto cleanup;
     }
 
@@ -1376,8 +1375,7 @@ srsn_ntf_add_dup(const struct lyd_node *notif, const struct timespec *timestamp,
     }
     *ntfs = mem;
 
-    if (lyd_dup_single(notif, NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_FLAGS, &(*ntfs)[*ntf_count].notif)) {
-        sr_errinfo_new_ly(&err_info, LYD_CTX(notif), notif);
+    if ((err_info = sr_lyd_dup(notif, NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_FLAGS, 0, &(*ntfs)[*ntf_count].notif))) {
         sr_errinfo_free(&err_info);
         return;
     }
@@ -1419,11 +1417,15 @@ srsn_sn_rpc_subscribe_cb(sr_session_ctx_t *session, uint32_t UNUSED(sub_id), con
         }
 
         sprintf(buf, "%" PRIu32, sub->id);
-        lyd_new_path(NULL, ly_ctx, "/ietf-subscribed-notifications:replay-completed/id", buf, 0, &ly_ntf);
-        if ((err_info = srsn_ntf_send(sub, timestamp, ly_ntf))) {
+        if (!(err_info = sr_lyd_new_path(NULL, ly_ctx, "/ietf-subscribed-notifications:replay-completed/id", buf, 0,
+                &ly_ntf, NULL))) {
+            if ((err_info = srsn_ntf_send(sub, timestamp, ly_ntf))) {
+                sr_errinfo_free(&err_info);
+            }
+            lyd_free_tree(ly_ntf);
+        } else {
             sr_errinfo_free(&err_info);
         }
-        lyd_free_tree(ly_ntf);
 
         /* now send all the buffered notifications */
         for (i = 0; i < sub->rt_notif_count; ++i) {
