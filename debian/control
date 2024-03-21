@@ -10,7 +10,7 @@ Build-Depends: debhelper (>= 11),
                libsystemd-dev,
                pkg-config,
                valgrind
-Standards-Version: 4.3.0
+Standards-Version: 4.6.2
 
 Package: libsysrepo7
 Depends: libyang3, adduser, ${misc:Depends}, ${shlibs:Depends}
@@ -18,7 +18,7 @@ Architecture: any
 Provides:
  ${graphnos-yang:Provides}
 Conflicts: ${graphnos-yang:Conflicts}
-Breaks: libsysrepo, libsysrepo7 (<< 2.2.161)
+Breaks: libsysrepo
 Replaces: libsysrepo, libsysrepo7 (<< 2.2.161)
 Description: YANG-based configuration and operational data store - runtime
  Applications can use sysrepo to store their configuration modeled by provided
@@ -44,7 +44,7 @@ Package: libsysrepo7-dev
 Depends: libyang3-dev,
          libsysrepo7 (= ${binary:Version}),
          ${misc:Depends}
-Breaks: libsysrepo-dev, libsysrepo7-dev (<< 2.2.161)
+Breaks: libsysrepo-dev
 Replaces: libsysrepo-dev, libsysrepo7-dev (<< 2.2.161)
 Section: libdevel
 Architecture: any
