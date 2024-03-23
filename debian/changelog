@@ -1,4 +1,4 @@
-sysrepo (2.2.152-1) UNRELEASED; urgency=medium
+sysrepo (2.2.161-1) UNRELEASED; urgency=medium
 
   [ Nick Brown ]
   * Revert "Restoring 1.4.100
@@ -1332,7 +1332,162 @@ sysrepo (2.2.152-1) UNRELEASED; urgency=medium
   [ IrfanMohammad ]
   * update patches for upstream/v2.2.152
 
- -- Irfan Mohammad <irfan@graphiant.com>  Thu, 18 Jan 2024 12:10:55 +0000
+  [ Michal Vasko ]
+  * ds json UPDATE try to update file modification time
+  * SOVERSION bump to version 7.23.3
+  * VERSION bump to version 2.2.152
+  * common REFACTOR remove obsolete code
+  * SOVERSION bump to version 7.23.4
+  * VERSION bump to version 2.2.153
+
+  [ IrfanMohammad ]
+  * Enable tests in debian package
+  * Accept empty xpath "" as NULL
+  * Allow sysrepocfg to import oper data
+  * sysrepocfg: change default file format to JSON
+  * sysrepocfg: add -s/--no-subs export argument
+  * relax datastore specification for sysrepocfg
+  * Increase rwlock reader limit to 20
+  * Improve test log debugs and readability
+  * sysrepo: log on connection destroy
+  * more descriptive debugs for no datastore changes
+  * Add SR_SUBSCR_OPER_ONCE option for oper subscr
+  * Add typedefs for compatibility
+  * API to setting and retrieving 64-bit ncid  compat
+  * API sr_set_module_access for compatibility
+  * common: add internal sr_val_ly2sr_with_opts() API
+  * common: add SR_VAL_LY2SR_UNDERLYING_VALUE option
+  * sysrepo: add SR_UNDERLYING_VALUE option
+  * Use progname as ncid originator name
+  * Enable asserts and improve tests
+  * enable log for set and delete
+  * Enable instrumentation for locks
+  * sysrepoctl: on-demand module rwlock tracing
+  * Add type check of format str for printf like fns
+  * Add PTHREAD_MUTEX_ERRORCHECK attr
+  * Log error when subscr thread exits
+  * feature: out of band sysrepo inspection
+
+  [ Jeremie Leska ]
+  * ds json BUGFIX don't rename log files with old notification.
+
+  [ IrfanMohammad ]
+  * remove noisy log of sr_get_item no data
+  * Add change_sub with minimal locks
+  * Cache sr_mod_oper_sub_t shm during pull callback
+  * Filter subscription notification at producer side
+  * Add unit-test for ENG-2075
+  * add tests for module change subscription recovery
+  * descriptive lock debugs and tests
+  * cached module read locks info for srmon
+  * include leaf-list value as XPath predicate
+  * fix skip predicate
+  * Allow runtime configurable shm dir
+  * TESTS sleep and retry with bigger step
+  * fix test failures and improve test infra
+  * disable urge lock
+  * unlock session ly_ctx locks on sr_session_stop
+  * breakage: disable test_edit_set_item_del_parent
+  * implement sr_install_module_perm
+  * Verify data parse before store
+  * cache invalidation without file m_time
+  * Revert complex wrong logic to handle rwlock readers
+  * increase timeout for cb and upgr mod locks
+  * rwlock with retry for better visibility
+  * Optimize xpath filtering for oper get subscr
+  * ignore isolate flag for operational datastore
+  * Enable atomic readers list
+  * subscription memory check for validity
+  * Revert "edit diff UPDATE forbid invalid leaf-list predicates"
+  * bugfix edit_diff add followed by del
+  * discard instead of delete for oper only lists
+  * do not inform subscribers of moves for oper list
+  * remove obsolete debian files
+  * Remove noisy debugs for set and delete
+
+  [ Michal Vasko ]
+  * common BUGFIX memory leaks on error
+
+  [ Nick Brown ]
+  * Switch to SRv2
+
+  [ IrfanMohammad ]
+  * Disable build log hardening checks
+
+  [ Nick Brown ]
+  * A stricter break/replaces to renmaed packages
+
+  [ Michal Vasko ]
+  * ly_wrap REFACTOR use libyang function wrappers
+  * build UPDATE set max cmake version
+  * SOVERSION bump to version 7.23.5
+  * VERSION bump to version 2.2.154
+  * edit diff REFACTOR formatting
+  * common REFACTOR redundant code
+  * sysrepo UPDATE revert installing mdoules on error
+  * SOVERSION bump to version 7.23.6
+  * VERSION bump to version 2.2.155
+  * shm sub BUGFIX complete event check
+
+  [ IrfanMohammad ]
+  * tests: race after timeout of high prio done sub
+  * shm sub BUGFIX complete event check
+
+  [ Michal Vasko ]
+  * plugins ds UPDATE cb to invalidate cache on external changes
+  * doc UPDATE mention some CLI implementations
+  * test UPDATE push oper data leaf-list
+  * ly_wrap UPDATE lyd_find_path optional incomplete support
+  * edit diff BUGFIX use intermediate found parents
+  * doc UPDATE clearify last_modif pluing ds callback
+
+  [ aPiecek ]
+  * sysrepo FEATURE sorting of data nodes
+
+  [ Michal Vasko ]
+  * sysrepo UPDATE libyang v3 updates
+  * SOVERSION bump to version 7.23.7
+  * VERSION bump to version 2.2.156
+  * abi check UPDATE base version needs to support libyang v3
+  * common BUGFIX lock for cached changed oper modules in a connection
+  * SOVERSION bump to version 7.23.8
+  * VERSION bump to version 2.2.157
+  * common BUGFIX do not use partial atoms
+  * SOVERSION bump to version 7.23.9
+  * VERSION bump ot version 2.2.158
+
+  [ IrfanMohammad ]
+  * common BUGFIX do not use partial atoms
+
+  [ Michal Vasko ]
+  * sysrepo UPDATE multiple callback error support
+  * log BUGFIX proper static err_info detection
+  * modinfo BUGFIX memory leak
+  * SOVERSION bump to version 7.24.0
+  * VERSION bump to version 2.2.159
+  * common UPDATE oper required check no param function support
+  * common UPDATE do not add redundant atoms in expr with operators
+  * SOVERSION bump to version 7.24.1
+  * VERSION bump to version 2.2.160
+
+  [ IrfanMohammad ]
+  * debug: serialize edit and data in sr_apply_changes
+  * move tests from apply_changes to subscr_filtering
+
+  [ Michal Vasko ]
+  * edit diff REFACTOR doubled same if condition
+  * edit diff BUGFIX handle merging anyxml/anydata nodes in the edit
+  * edit diff BUGFIX replace op in oper DS is not allowed
+  * SOVERSION bump to version 7.24.2
+  * VERSION bump to version 2.2.161
+  * sysrepo BUGFIX value quote handling
+
+  [ IrfanMohammad ]
+  * Update patches for upstream/v2.2.160
+  * Update patches for upstream/v2.2.161
+  * Update debian packaging for libyang3
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Tue, 12 Mar 2024 00:55:12 +0000
 
 sysrepo (1.4.100-3) unstable; urgency=medium
 
