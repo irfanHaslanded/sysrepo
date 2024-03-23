@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Check that the commit hash of the tag in debian/changelog version
+# is an ancestor of current branch.
+
+# It is necessary to keep exact commits from upstream, if not:
+#  - future merges will result in conflicts.
+#  - difficult to match commits from upstream in local branch
+# This will make sure that prior to merge, commit history is clean
+
+set -e
+
+test TAG == $(gbp config buildpackage.upstream-tree)
+
+TAG_FORMAT_STR=$(gbp config buildpackge.upstream-tag) # "upstream/v%(version)s"
+
+# read the version from the debian/changelog file
+CHANGELOG_VERSION=$(dpkg-parsechangelog -S Version)
+
+# remove the epoch if any
+DEB_VERSION=${CHANGELOG_VERSION#*:}
+
+# remove any debian version
+VERSION=${DEB_VERSION%-*}
+
+# replace '%(version)s' in FORMAT_STR with ${VERSION} for tag name
+TAG_NAME="${TAG_FORMAT_STR//%(version)s/$VERSION}"
+
+# find the commit hash for the tag
+TAG_HASH=$(git rev-parse "${TAG_NAME}")
+
+# check that we have the commit hash of the tag in our history
+if git merge-base --is-ancestor "${TAG_HASH}" HEAD; then
+    echo " - SUCCESS: debian/changelog version ${TAG_NAME} ${TAG_HASH} exists in current branch"
+else
+    echo " - FATAL: expected tag $TAG_NAME ($TAG_HASH) not in current branch"
+    exit 1
+fi
+
