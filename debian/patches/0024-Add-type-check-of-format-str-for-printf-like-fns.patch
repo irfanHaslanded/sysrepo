@@ -24,10 +24,10 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 748961a..1c80f88 100644
+index 4e24f5d..8ff4650 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -88,7 +88,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 2)
+@@ -88,7 +88,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
  # generate only version header, it is needed for docs
  configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
  
@@ -58,10 +58,10 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index a04d52c..226edb8 100644
+index c5374ae..23464bf 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1537,13 +1537,12 @@ cleanup:
+@@ -1520,20 +1520,20 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -76,38 +76,37 @@ index a04d52c..226edb8 100644
 -
  #define PATH_LEN 128
      char path[PATH_LEN];
-     struct ly_ctx *ly_ctx;
-@@ -1553,7 +1552,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+ 
      /* unlocked access to the lock, possible wrong/stale values should not matter */
  
      if ((cid = rwlock->upgr)) {
 -        snprintf(path, PATH_LEN, path_format, cid, "read-upgr");
 +        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='read-upgr']",
 +                lock_name, cid, sr_ds2ident(ds));
-         SR_CHECK_LY_GOTO(lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL), ly_ctx, err_info, cleanup);
- 
-         /* read-upgr lock also holds a read lock, we need to skip it */
-@@ -1570,7 +1570,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+         if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
+             goto cleanup;
+         }
+@@ -1552,7 +1552,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
              continue;
          }
  
 -        snprintf(path, PATH_LEN, path_format, cid, "read");
 +        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='read']",
 +                lock_name, cid, sr_ds2ident(ds));
-         if (lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL)) {
-             sr_errinfo_new_ly(&err_info, ly_ctx, NULL);
+         if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
-@@ -1579,7 +1580,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+         }
+@@ -1560,7 +1561,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
      if (!i && (cid = rwlock->writer)) {
 -        snprintf(path, PATH_LEN, path_format, cid, "write");
 +        snprintf(path, PATH_LEN, "%s[cid='%" PRIu32 "'][datastore='%s'][mode='write']",
 +                lock_name, cid, sr_ds2ident(ds));
-         SR_CHECK_LY_GOTO(lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL), ly_ctx, err_info, cleanup);
-     }
- 
-@@ -1915,8 +1917,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+         if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
+             goto cleanup;
+         }
+@@ -1944,8 +1946,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          shm_lock = &shm_mod->data_lock_info[ds];
  
          /* data-lock */
@@ -117,7 +116,7 @@ index a04d52c..226edb8 100644
  
          if (err_info) {
              return err_info;
-@@ -1957,8 +1958,7 @@ ds_unlock:
+@@ -1991,8 +1992,7 @@ ds_unlock:
  
      /* change-sub-lock */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -128,7 +127,7 @@ index a04d52c..226edb8 100644
          }
      }
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 71fb66e..fb86812 100644
+index 4bd0e7c..11237de 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -129,7 +129,7 @@ sr_error_info_t *
@@ -141,10 +140,10 @@ index 71fb66e..fb86812 100644
      if (srlyb_shm_prefix_cached) {
          *prefix = srlyb_shm_prefix_cached;
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index e35f464..7f2c348 100644
+index dee88a3..b382e58 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -3073,9 +3073,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+@@ -3064,9 +3064,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -157,7 +156,7 @@ index e35f464..7f2c348 100644
      return NULL;
  }
  
-@@ -3523,8 +3523,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
+@@ -3530,8 +3530,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -168,7 +167,7 @@ index e35f464..7f2c348 100644
      return NULL;
  }
  
-@@ -4420,10 +4420,10 @@ process_event:
+@@ -4421,10 +4421,10 @@ process_event:
          if (sub_info.event == SR_SUB_EV_RPC) {
              if (ret == SR_ERR_CALLBACK_SHELVE) {
                  /* processing was shelved, so interupt the whole RPC processing in order to get correct final output */

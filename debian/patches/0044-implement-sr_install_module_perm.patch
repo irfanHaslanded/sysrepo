@@ -10,18 +10,18 @@ Subject: implement sr_install_module_perm
  4 files changed, 125 insertions(+), 8 deletions(-)
 
 diff --git a/src/lyd_mods.c b/src/lyd_mods.c
-index a1b4f43..86e8933 100644
+index fb48207..d57ab30 100644
 --- a/src/lyd_mods.c
 +++ b/src/lyd_mods.c
-@@ -1026,7 +1026,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+@@ -975,7 +975,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
      struct lyd_node *sr_mods = NULL;
      sr_int_install_mod_t *new_mods = NULL;
      uint32_t i, new_mod_count = 0;
 -    const char *mod_origin;
  
  #define SR_INSTALL_INT_MOD(ctx, yang_mod, dep, new_mods, new_mod_count) \
-     if (lys_parse_mem(ctx, yang_mod, LYS_IN_YANG, &ly_mod)) { \
-@@ -1037,7 +1036,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+     if ((err_info = sr_lys_parse(ctx, yang_mod, NULL, LYS_IN_YANG, NULL, &ly_mod))) { \
+@@ -985,7 +984,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
              strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &(new_mods), &(new_mod_count)))) { \
          goto cleanup; \
      } \
@@ -29,7 +29,7 @@ index a1b4f43..86e8933 100644
  
      ly_mod = ly_ctx_get_module_implemented(ly_ctx, "sysrepo");
      SR_CHECK_INT_GOTO(!ly_mod, err_info, cleanup);
-@@ -1060,9 +1058,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+@@ -1012,9 +1010,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
                  strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &new_mods, &new_mod_count))) {
              goto cleanup;
          }
@@ -39,7 +39,7 @@ index a1b4f43..86e8933 100644
      }
  
      /* install ietf-yang-library */
-@@ -1209,11 +1204,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
+@@ -1160,11 +1155,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
                  (*new_mods)[i].owner, (*new_mods)[i].group, (*new_mods)[i].perm, new_mods, new_mod_count))) {
              goto cleanup;
          }
@@ -52,10 +52,10 @@ index a1b4f43..86e8933 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 474ecc3..f322146 100644
+index 615288f..7bf4df4 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -57,6 +57,9 @@
+@@ -58,6 +58,9 @@
  static sr_error_info_t *sr_session_notif_buf_stop(sr_session_ctx_t *session);
  static sr_error_info_t *_sr_session_stop(sr_session_ctx_t *session);
  static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -65,7 +65,7 @@ index 474ecc3..f322146 100644
  
  /**
   * @brief Allocate a new connection structure.
-@@ -1323,6 +1326,32 @@ sr_install_modules_check_features(const struct lys_module *ly_mod, const char **
+@@ -1327,6 +1330,32 @@ sr_install_modules_check_features(const struct lys_module *ly_mod, const char **
      return NULL;
  }
  
@@ -98,7 +98,7 @@ index 474ecc3..f322146 100644
  /**
   * @brief Prepare members of a new module to be installed.
   *
-@@ -1357,8 +1386,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
+@@ -1360,8 +1389,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
              /* module installed with different features */
              goto cleanup;
          }
@@ -114,7 +114,7 @@ index 474ecc3..f322146 100644
          goto cleanup;
      }
  
-@@ -7335,3 +7370,36 @@ cleanup:
+@@ -7323,3 +7358,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  
@@ -152,7 +152,7 @@ index 474ecc3..f322146 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 49c5e2f..ec54bd8 100644
+index 3a0a1e5..6531697 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
 @@ -538,6 +538,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha

@@ -20,12 +20,12 @@ subsequently in the same edit.
 
 Closes: ENG-6050
 ---
- src/sysrepo.c          | 34 ++++++++++++++++++++++++--
+ src/sysrepo.c          | 37 ++++++++++++++++++++++++----
  tests/test_oper_push.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++---
- 2 files changed, 94 insertions(+), 6 deletions(-)
+ 2 files changed, 94 insertions(+), 9 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 118047e..53f7bd0 100644
+index 06349c6..7c72aa3 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -33,6 +33,7 @@
@@ -36,16 +36,21 @@ index 118047e..53f7bd0 100644
  
  #include <libyang/hash_table.h>
  #include <libyang/libyang.h>
-@@ -3382,6 +3383,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3386,10 +3387,10 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+     sr_error_info_t *err_info = NULL;
      const char *operation;
      const struct lysc_node *snode;
-     int ly_log_opts;
+-    uint32_t temp_lo = 0;
+-    int isolate = SR_EDIT_ISOLATE & opts;
+-
+     sr_edit_options_t opts = in_opts;
++    uint32_t temp_lo = 0;
 +    struct lyd_node *node = NULL;
 +    int path_len = 0;
  
-     sr_edit_options_t opts = in_opts;
- 
-@@ -3404,11 +3407,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+     if (session && session->ds == SR_DS_OPERATIONAL) {
+         /* operational datastore does not support isolate flag */
+@@ -3410,11 +3411,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
          }
      }
  
@@ -62,7 +67,7 @@ index 118047e..53f7bd0 100644
 +    }
 +
      /* turn off logging */
-     ly_log_opts = ly_log_options(0);
+     ly_temp_log_options(&temp_lo);
 -    if ((path[strlen(path) - 1] != ']') && (snode = lys_find_path(session->conn->ly_ctx, NULL, path, 0)) &&
 +    if ((path[path_len - 1] != ']') && snode &&
              (snode->nodetype & (LYS_LEAFLIST | LYS_LIST)) &&
@@ -77,7 +82,7 @@ index 118047e..53f7bd0 100644
          operation = "purge";
      } else if (opts & SR_EDIT_STRICT) {
          operation = "delete";
-@@ -3420,6 +3441,15 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3426,6 +3445,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      /* add the operation into edit */
      err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
              NULL, opts & SR_EDIT_ISOLATE);
@@ -85,8 +90,7 @@ index 118047e..53f7bd0 100644
 +
 +discard_items:
 +    /* config false node discard instead of delete in order to allow combining other operations */
-+    if (lyd_new_opaq(NULL, session->conn->ly_ctx, "discard-items", path, "sysrepo", "sysrepo", &node)) {
-+        sr_errinfo_new_ly(&err_info, session->conn->ly_ctx, NULL);
++    if ((err_info = sr_lyd_new_opaq(session->conn->ly_ctx, "discard-items", path, "sysrepo", "sysrepo", &node))) {
 +        goto cleanup;
 +    }
 +    lyd_insert_sibling(session->dt[session->ds].edit->tree, node, &session->dt[session->ds].edit->tree);
@@ -94,7 +98,7 @@ index 118047e..53f7bd0 100644
  cleanup:
      if (session->dt[session->ds].edit && !session->dt[session->ds].edit->tree) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index 06e5050..e34f588 100644
+index 0d49a11..34b7625 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -1187,6 +1187,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
@@ -150,7 +154,7 @@ index 06e5050..e34f588 100644
      sr_unsubscribe(subscr);
  }
  
-@@ -3441,6 +3471,15 @@ test_oper_set_del_leaflist(void **state)
+@@ -3830,6 +3860,15 @@ test_oper_set_del_leaflist(void **state)
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
  
@@ -166,7 +170,7 @@ index 06e5050..e34f588 100644
      ret = sr_get_data(st->sess, xp_base, 0, 0, 0, &data);
      assert_int_equal(ret, SR_ERR_OK);
      sr_release_data(data);
-@@ -3449,6 +3488,26 @@ test_oper_set_del_leaflist(void **state)
+@@ -3838,6 +3877,26 @@ test_oper_set_del_leaflist(void **state)
      assert_int_equal(ret, SR_ERR_OK);
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
@@ -193,7 +197,7 @@ index 06e5050..e34f588 100644
  }
  
  /* TEST */
-@@ -3527,7 +3586,6 @@ int
+@@ -3916,7 +3975,6 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

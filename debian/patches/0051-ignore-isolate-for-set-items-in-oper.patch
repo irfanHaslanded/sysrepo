@@ -10,10 +10,10 @@ ignore isolate for set items in oper
  2 files changed, 65 insertions(+), 2 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 62ca51f..ace9db8 100644
+index c96faef..688e17a 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3291,10 +3291,16 @@ sr_free_values(sr_val_t *values, size_t count)
+@@ -3296,10 +3296,16 @@ sr_free_values(sr_val_t *values, size_t count)
  }
  
  API int
@@ -31,7 +31,7 @@ index 62ca51f..ace9db8 100644
  
      SR_CHECK_ARG_APIRET(!session || (!path && (!value || !value->xpath)) || SR_EDIT_DS_API_CHECK(session->ds, opts),
              session, err_info);
-@@ -3319,10 +3325,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
+@@ -3324,10 +3330,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
  
  API int
  sr_set_item_str(sr_session_ctx_t *session, const char *path, const char *value, const char *origin,
@@ -49,10 +49,10 @@ index 62ca51f..ace9db8 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
-@@ -3370,6 +3382,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3375,6 +3387,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
-     int ly_log_opts;
+     uint32_t temp_lo = 0;
 +    int isolate = SR_EDIT_ISOLATE & opts;
 +
 +    if (isolate && SR_DS_OPERATIONAL == session->ds) {
@@ -62,10 +62,10 @@ index 62ca51f..ace9db8 100644
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index fa19f17..4b9bc11 100644
+index ff88d95..e612329 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -3451,6 +3451,51 @@ test_oper_set_del_leaflist(void **state)
+@@ -3840,6 +3840,51 @@ test_oper_set_del_leaflist(void **state)
      assert_int_equal(ret, SR_ERR_OK);
  }
  
@@ -117,7 +117,7 @@ index fa19f17..4b9bc11 100644
  int
  main(void)
  {
-@@ -3478,6 +3523,7 @@ main(void)
+@@ -3868,6 +3913,7 @@ main(void)
          cmocka_unit_test_teardown(test_schema_mount, clear_up),
          cmocka_unit_test_teardown(test_change_cb, clear_up),
          cmocka_unit_test_teardown(test_oper_set_del_leaflist, clear_up),

@@ -29,10 +29,10 @@ is not needed.
  4 files changed, 24 insertions(+), 13 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index c757e0f..2fd40a3 100644
+index f0dece3..5798047 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -4235,6 +4235,8 @@ sr_ev2str(sr_sub_event_t ev)
+@@ -4107,6 +4107,8 @@ sr_ev2str(sr_sub_event_t ev)
          return "success";
      case SR_SUB_EV_ERROR:
          return "error";
@@ -42,7 +42,7 @@ index c757e0f..2fd40a3 100644
          return "update";
      case SR_SUB_EV_CHANGE:
 diff --git a/src/common_types.h b/src/common_types.h
-index 92718ce..cd41c7e 100644
+index 48e02d5..0279d87 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -94,6 +94,7 @@ typedef enum {
@@ -54,10 +54,10 @@ index 92718ce..cd41c7e 100644
      SR_SUB_EV_UPDATE,           /**< New update event ready. */
      SR_SUB_EV_CHANGE,           /**< New change event ready. */
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index ccd5352..cb50965 100644
+index b199278..39859d7 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -345,7 +345,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -346,7 +346,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
          return err_info;
      }
  
@@ -66,7 +66,7 @@ index ccd5352..cb50965 100644
          /* instead of wating, try to recover the event immediately */
          sr_shmsub_recover(sub_shm);
      }
-@@ -360,7 +360,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -361,7 +361,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      /* wait until there is no event and there are no readers (just like write lock) */
      sr_timeouttime_get(&timeout_abs, SR_SUBSHM_LOCK_TIMEOUT);
      ret = 0;
@@ -75,7 +75,7 @@ index ccd5352..cb50965 100644
              (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event)))) {
          /* COND WAIT */
          ret = sr_cond_clockwait_retry(&sub_shm->lock.cond, &sub_shm->lock.mutex, &timeout_abs);
-@@ -380,7 +380,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -381,7 +381,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
  
          if (ret == ETIMEDOUT) {
              /* try to recover the event again in case the originator crashed later */
@@ -84,7 +84,7 @@ index ccd5352..cb50965 100644
                  sr_shmsub_recover(sub_shm);
                  last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
              }
-@@ -422,7 +422,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -423,7 +423,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
  
  event_handled:
      /* we have write lock and the expected event */
@@ -93,7 +93,7 @@ index ccd5352..cb50965 100644
      return NULL;
  }
  
-@@ -436,6 +436,7 @@ event_handled:
+@@ -437,6 +437,7 @@ event_handled:
   * @param[in] request_id Current request ID of the event in @p sub_shm.
   * @param[in] expected_ev Expected event. Can be:
   *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
@@ -101,7 +101,7 @@ index ccd5352..cb50965 100644
   *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
   *                                    success (never error) event is cleared,
   *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
-@@ -460,7 +461,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -461,7 +462,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
      int ret, write_lock = 0;
      char buf[64] = "";
  
@@ -110,7 +110,7 @@ index ccd5352..cb50965 100644
      assert(shm_data_sub->fd > -1);
  
      *lock_lost = 0;
-@@ -590,8 +591,10 @@ event_handled:
+@@ -597,8 +598,10 @@ event_handled:
              return err_info;
          }
      } else {
@@ -123,7 +123,7 @@ index ccd5352..cb50965 100644
              sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unexpected sub SHM event \"%s\" (expected \"%s\").",
                      sr_ev2str(last_event), sr_ev2str(expected_ev));
              return err_info;
-@@ -609,6 +612,7 @@ event_handled:
+@@ -616,6 +619,7 @@ event_handled:
   * @param[in] sub_shm Subscription SHM.
   * @param[in] expected_ev  Expected event. Can be:
   *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
@@ -131,7 +131,7 @@ index ccd5352..cb50965 100644
   *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
   *                                    success (never error) event is cleared,
   *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
-@@ -648,6 +652,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int
+@@ -655,6 +659,7 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int
   * @param[in] notify_count Size of the array.
   * @param[in] expected_ev  Expected event. Can be:
   *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
@@ -139,7 +139,7 @@ index ccd5352..cb50965 100644
   *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
   *                                    success (never error) event is cleared,
   *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
-@@ -2050,7 +2055,7 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+@@ -2055,7 +2060,7 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
  
          /* wait until the events are processed */
          if ((err_info = sr_shmsub_notify_many_wait_wr((struct sr_shmsub_many_info_s *)notify_subs, sizeof *notify_subs,
@@ -148,7 +148,7 @@ index ccd5352..cb50965 100644
              goto cleanup;
          }
  
-@@ -2271,7 +2276,7 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+@@ -2275,7 +2280,7 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
  
          /* wait until the events are processed */
          if ((err_info = sr_shmsub_notify_many_wait_wr((struct sr_shmsub_many_info_s *)notify_subs, sizeof *notify_subs,
@@ -157,7 +157,7 @@ index ccd5352..cb50965 100644
              goto cleanup;
          }
  
-@@ -3070,7 +3075,7 @@ clear_shm:
+@@ -3061,7 +3066,7 @@ clear_shm:
          }
  
          /* wait until the event is processed */
@@ -166,7 +166,7 @@ index ccd5352..cb50965 100644
                  &shm_data_sub, timeout_ms, &lock_lost, &cb_err_info))) {
              if (lock_lost) {
                  goto cleanup;
-@@ -3323,8 +3328,11 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+@@ -3314,8 +3319,11 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
              break;
          case SR_SUB_EV_DONE:
          case SR_SUB_EV_ABORT:
@@ -179,7 +179,7 @@ index ccd5352..cb50965 100644
              assert(!err_code);
              ATOMIC_STORE_RELAXED(multi_sub_shm->event, SR_SUB_EV_NONE);
              break;
-@@ -3572,7 +3580,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3578,7 +3586,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
          /* no new module event */
          goto cleanup;
      }

@@ -24,7 +24,7 @@ index 43abde0..ed2bb82 100644
          set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 3435d68..6a48b44 100644
+index 69000ea..042a484 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -34,6 +34,9 @@
