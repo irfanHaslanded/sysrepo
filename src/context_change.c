@@ -30,6 +30,7 @@
 #include "common_types.h"
 #include "config.h"
 #include "log.h"
+#include "ly_wrap.h"
 #include "plugins_datastore.h"
 #include "plugins_notification.h"
 #include "shm_ext.h"
@@ -211,9 +212,9 @@ sr_lycc_check_add_modules(sr_conn_ctx_t *conn, const struct ly_ctx *new_ctx)
 }
 
 sr_error_info_t *
-sr_lycc_add_modules(sr_conn_ctx_t *conn, const sr_int_install_mod_t *new_mods, uint32_t new_mod_count)
+sr_lycc_add_modules(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_mods, uint32_t new_mod_count)
 {
-    sr_error_info_t *err_info = NULL;
+    sr_error_info_t *err_info = NULL, *tmp_err;
     const struct lys_module *ly_mod;
     uint32_t i;
     sr_datastore_t ds;
@@ -232,13 +233,13 @@ sr_lycc_add_modules(sr_conn_ctx_t *conn, const sr_int_install_mod_t *new_mods, u
             /* find plugin */
             if ((err_info = sr_ds_handle_find(new_mods[i].module_ds.plugin_name[ds], conn,
                     (const struct sr_ds_handle_s **)&ds_handle))) {
-                return err_info;
+                goto cleanup;
             }
 
             if (!ds_handle->init) {
                 /* call conn_init */
                 if ((err_info = ds_handle->plugin->conn_init_cb(conn, &ds_handle->plg_data))) {
-                    return err_info;
+                    goto cleanup;
                 }
                 ds_handle->init = 1;
             }
@@ -246,22 +247,75 @@ sr_lycc_add_modules(sr_conn_ctx_t *conn, const sr_int_install_mod_t *new_mods, u
             /* call install */
             if ((err_info = ds_handle->plugin->install_cb(ly_mod, ds, new_mods[i].owner, new_mods[i].group,
                     new_mods[i].perm, ds_handle->plg_data))) {
-                return err_info;
+                goto cleanup;
             }
 
             /* call init */
             if ((err_info = ds_handle->plugin->init_cb(ly_mod, ds, ds_handle->plg_data))) {
-                return err_info;
+                goto cleanup;
             }
         }
 
         /* store module YANG with all submodules and imports */
         if ((err_info = sr_store_module_yang_r(ly_mod))) {
-            return err_info;
+            goto cleanup;
+        }
+
+        new_mods[i].installed = 1;
+    }
+
+cleanup:
+    if (err_info && (tmp_err = sr_lycc_add_modules_revert(conn, new_mods, new_mod_count))) {
+        sr_errinfo_merge(&err_info, tmp_err);
+    }
+    return err_info;
+}
+
+sr_error_info_t *
+sr_lycc_add_modules_revert(sr_conn_ctx_t *conn, const sr_int_install_mod_t *new_mods, uint32_t new_mod_count)
+{
+    sr_error_info_t *err_info = NULL;
+    const struct lys_module *ly_mod;
+    uint32_t i;
+    sr_datastore_t ds;
+    struct sr_ds_handle_s *ds_handle;
+    struct ly_set del_set = {0};
+
+    for (i = 0; i < new_mod_count; ++i) {
+        ly_mod = new_mods[i].ly_mod;
+
+        if (!new_mods[i].installed) {
+            continue;
+        }
+
+        /* init module for all DS plugins */
+        for (ds = 0; ds < SR_DS_READ_COUNT; ++ds) {
+            if ((ds == SR_DS_RUNNING) && !new_mods[i].module_ds.plugin_name[ds]) {
+                /* disabled */
+                continue;
+            }
+
+            /* find plugin */
+            if ((err_info = sr_ds_handle_find(new_mods[i].module_ds.plugin_name[ds], conn,
+                    (const struct sr_ds_handle_s **)&ds_handle))) {
+                goto cleanup;
+            }
+
+            /* call uninstall */
+            if ((err_info = ds_handle->plugin->uninstall_cb(ly_mod, ds, ds_handle->plg_data))) {
+                goto cleanup;
+            }
+        }
+
+        /* remove YANG module(s) */
+        if ((err_info = sr_remove_module_yang_r(ly_mod, conn->ly_ctx, &del_set))) {
+            goto cleanup;
         }
     }
 
-    return NULL;
+cleanup:
+    ly_set_erase(&del_set, NULL);
+    return err_info;
 }
 
 sr_error_info_t *
@@ -298,14 +352,13 @@ sr_lycc_del_module(sr_conn_ctx_t *conn, const struct ly_ctx *ly_ctx, const struc
     sr_error_info_t *err_info = NULL;
     const struct lys_module *ly_mod;
     const struct lyd_node *sr_mod = NULL;
-    struct lyd_node *sr_plg_name;
+    struct lyd_node *sr_plg_name, *sr_rpl_sup;
     struct ly_set del_set = {0};
     char *path;
     uint32_t i;
     sr_datastore_t ds;
     const struct sr_ds_handle_s *ds_handle;
     const struct sr_ntf_handle_s *ntf_handle;
-    LY_ERR lyrc;
     int r;
 
     for (i = 0; i < mod_set->count; ++i) {
@@ -322,13 +375,17 @@ sr_lycc_del_module(sr_conn_ctx_t *conn, const struct ly_ctx *ly_ctx, const struc
             /* get plugin name */
             r = asprintf(&path, "plugin[datastore='%s']/name", sr_mod_ds2ident(ds));
             SR_CHECK_MEM_GOTO(r == -1, err_info, cleanup);
-            lyrc = lyd_find_path(sr_mod, path, 0, &sr_plg_name);
+            err_info = sr_lyd_find_path(sr_mod, path, 0, &sr_plg_name);
             free(path);
-            if ((ds == SR_DS_RUNNING) && lyrc) {
+            if (err_info) {
+                goto cleanup;
+            }
+
+            if ((ds == SR_DS_RUNNING) && !sr_plg_name) {
                 /* 'running' disabled */
                 continue;
             }
-            SR_CHECK_INT_GOTO(lyrc, err_info, cleanup);
+            SR_CHECK_INT_GOTO(!sr_plg_name, err_info, cleanup);
 
             /* find plugin */
             if ((err_info = sr_ds_handle_find(lyd_get_value(sr_plg_name), conn, &ds_handle))) {
@@ -342,13 +399,20 @@ sr_lycc_del_module(sr_conn_ctx_t *conn, const struct ly_ctx *ly_ctx, const struc
         }
 
         /* destroy notifications if replay support was enabled */
-        if (!lyd_find_path(sr_mod, "replay-support", 0, NULL)) {
+        if ((err_info = sr_lyd_find_path(sr_mod, "replay-support", 0, &sr_rpl_sup))) {
+            goto cleanup;
+        }
+        if (sr_rpl_sup) {
             /* find plugin */
             r = asprintf(&path, "plugin[datastore='%s']/name", sr_mod_ds2ident(SR_MOD_DS_NOTIF));
             SR_CHECK_MEM_GOTO(r == -1, err_info, cleanup);
-            lyrc = lyd_find_path(sr_mod, path, 0, &sr_plg_name);
+            err_info = sr_lyd_find_path(sr_mod, path, 0, &sr_plg_name);
             free(path);
-            SR_CHECK_INT_GOTO(lyrc, err_info, cleanup);
+            if (err_info) {
+                goto cleanup;
+            }
+
+            SR_CHECK_INT_GOTO(!sr_plg_name, err_info, cleanup);
             if ((err_info = sr_ntf_handle_find(lyd_get_value(sr_plg_name), conn, &ntf_handle))) {
                 goto cleanup;
             }
@@ -459,7 +523,6 @@ sr_lycc_set_replay_support(sr_conn_ctx_t *conn, const struct ly_set *mod_set, in
     struct lyd_node *sr_ntf_name;
     const struct sr_ntf_handle_s *ntf_handle;
     uint32_t i;
-    LY_ERR lyrc;
 
     for (i = 0; i < mod_set->count; ++i) {
         ly_mod = mod_set->objs[i];
@@ -469,12 +532,12 @@ sr_lycc_set_replay_support(sr_conn_ctx_t *conn, const struct ly_set *mod_set, in
             SR_ERRINFO_MEM(&err_info);
             goto cleanup;
         }
-        lyrc = lyd_find_path(sr_mods, path, 0, &sr_ntf_name);
+        err_info = sr_lyd_find_path(sr_mods, path, 0, &sr_ntf_name);
         free(path);
-        if (lyrc) {
-            sr_errinfo_new_ly(&err_info, LYD_CTX(sr_mods), NULL);
+        if (err_info) {
             goto cleanup;
         }
+        SR_CHECK_INT_GOTO(!sr_ntf_name, err_info, cleanup);
 
         /* find plugin */
         if ((err_info = sr_ntf_handle_find(lyd_get_value(sr_ntf_name), conn, &ntf_handle))) {
@@ -591,26 +654,22 @@ sr_lycc_update_data_tree(const struct lyd_node *old_data, uint32_t parse_opts, c
     *new_data = NULL;
 
     /* print the data of all the modules into JSON */
-    if (lyd_print_mem(&data_json, old_data, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS)) {
-        sr_errinfo_new_ly(&err_info, LYD_CTX(old_data), NULL);
+    if ((err_info = sr_lyd_print_data(old_data, LYD_JSON, LYD_PRINT_SHRINK, -1, &data_json, NULL))) {
         goto cleanup;
     }
 
     /* try to load it into the new updated context skipping any unknown nodes */
-    if (lyd_parse_data_mem(new_ctx, data_json, LYD_JSON, parse_opts, 0, new_data)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+    if ((err_info = sr_lyd_parse_data(new_ctx, data_json, NULL, LYD_JSON, parse_opts, 0, new_data))) {
         goto cleanup;
     }
 
     if (append_data) {
         /* link to the new data */
         if (!(*new_data)) {
-            if (lyd_dup_siblings(append_data, NULL, LYD_DUP_RECURSIVE, new_data)) {
-                sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+            if ((err_info = sr_lyd_dup(append_data, NULL, LYD_DUP_RECURSIVE, 1, new_data))) {
                 goto cleanup;
             }
-        } else if (lyd_merge_siblings(new_data, append_data, 0)) {
-            sr_errinfo_new_ly(&err_info, new_ctx, NULL);
+        } else if ((err_info = sr_lyd_merge(new_data, append_data, 1, 0))) {
             goto cleanup;
         }
     }
@@ -635,7 +694,7 @@ sr_lycc_update_data(sr_conn_ctx_t *conn, const struct ly_ctx *new_ctx, const str
     }
 
     /* update data for the new context */
-    parse_opts = LYD_PARSE_NO_STATE | LYD_PARSE_ONLY;
+    parse_opts = LYD_PARSE_NO_STATE | LYD_PARSE_STORE_ONLY;
     if ((err_info = sr_lycc_update_data_tree(data_info->old.start, parse_opts, new_ctx, mod_data, &data_info->new.start))) {
         goto cleanup;
     }
@@ -655,21 +714,15 @@ sr_lycc_update_data(sr_conn_ctx_t *conn, const struct ly_ctx *new_ctx, const str
     }
 
     /* fully validate complete startup, running, and factory-default datastore */
-    if (lyd_validate_all(&data_info->new.start, new_ctx, LYD_VALIDATE_NO_STATE, NULL)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
-        err_info->err[0].err_code = SR_ERR_VALIDATION_FAILED;
+    if ((err_info = sr_lyd_validate_all(&data_info->new.start, new_ctx, LYD_VALIDATE_NO_STATE))) {
         sr_errinfo_new(&err_info, SR_ERR_VALIDATION_FAILED, "Invalid startup datastore data.");
         goto cleanup;
     }
-    if (!data_info->new.run_disabled && lyd_validate_all(&data_info->new.run, new_ctx, LYD_VALIDATE_NO_STATE, NULL)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
-        err_info->err[0].err_code = SR_ERR_VALIDATION_FAILED;
+    if (!data_info->new.run_disabled && (err_info = sr_lyd_validate_all(&data_info->new.run, new_ctx, LYD_VALIDATE_NO_STATE))) {
         sr_errinfo_new(&err_info, SR_ERR_VALIDATION_FAILED, "Invalid running datastore data.");
         goto cleanup;
     }
-    if (lyd_validate_all(&data_info->new.fdflt, new_ctx, LYD_VALIDATE_NO_STATE, NULL)) {
-        sr_errinfo_new_ly(&err_info, new_ctx, NULL);
-        err_info->err[0].err_code = SR_ERR_VALIDATION_FAILED;
+    if ((err_info = sr_lyd_validate_all(&data_info->new.fdflt, new_ctx, LYD_VALIDATE_NO_STATE))) {
         sr_errinfo_new(&err_info, SR_ERR_VALIDATION_FAILED, "Invalid factory-default datastore data.");
         goto cleanup;
     }
@@ -702,7 +755,6 @@ sr_lycc_store_data_ds_if_differ(sr_conn_ctx_t *conn, const struct ly_ctx *new_ct
     char *xpath;
     uint32_t idx = 0, ly_log_opts = 0;
     int diff;
-    LY_ERR lyrc;
 
     while ((new_ly_mod = ly_ctx_get_module_iter(new_ctx, &idx))) {
         if (!new_ly_mod->implemented || !strcmp(new_ly_mod->name, "sysrepo")) {
@@ -730,10 +782,9 @@ sr_lycc_store_data_ds_if_differ(sr_conn_ctx_t *conn, const struct ly_ctx *new_ct
             SR_ERRINFO_MEM(&err_info);
             break;
         }
-        lyrc = lyd_find_xpath(sr_mods, xpath, &set);
+        err_info = sr_lyd_find_xpath(sr_mods, xpath, &set);
         free(xpath);
-        if (lyrc) {
-            sr_errinfo_new_ly(&err_info, conn->ly_ctx, NULL);
+        if (err_info) {
             break;
         } else if (!set->count && (ds == SR_DS_RUNNING)) {
             /* 'running' disabled */

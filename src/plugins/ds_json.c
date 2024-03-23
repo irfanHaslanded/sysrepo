@@ -152,6 +152,9 @@ cleanup:
     if (fd > -1) {
         close(fd);
     }
+    if (err_info && creat) {
+        unlink(path);
+    }
     free(path);
     free(bck_path);
     return err_info;
@@ -504,7 +507,7 @@ srpds_json_load(const struct lys_module *mod, sr_datastore_t ds, const char **UN
     }
 
     /* set parse options */
-    parse_opts = LYD_PARSE_ONLY | LYD_PARSE_ORDERED;
+    parse_opts = LYD_PARSE_STORE_ONLY | LYD_PARSE_ORDERED;
     if (ds == SR_DS_OPERATIONAL) {
         /* edit may include opaque nodes */
         parse_opts |= LYD_PARSE_OPAQ;
@@ -873,4 +876,5 @@ const struct srplg_ds_s srpds_json = {
     .access_get_cb = srpds_json_access_get,
     .access_check_cb = srpds_json_access_check,
     .last_modif_cb = srpds_json_last_modif,
+    .data_version_cb = NULL,
 };

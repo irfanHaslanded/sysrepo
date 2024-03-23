@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 2.8.12...3.28.1)
 
 project(sysrepo)
 set(SYSREPO_DESC "YANG-based system repository for all-around configuration management.")
@@ -65,22 +65,22 @@ endif()
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
 set(SYSREPO_MINOR_VERSION 2)
-set(SYSREPO_MICRO_VERSION 151)
+set(SYSREPO_MICRO_VERSION 161)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
 # Major version is changed with every backward non-compatible API/ABI change, minor version changes
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
-set(SYSREPO_MINOR_SOVERSION 23)
+set(SYSREPO_MINOR_SOVERSION 24)
 set(SYSREPO_MICRO_SOVERSION 2)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
 # Version of libyang library that this sysrepo depends on
-set(LIBYANG_DEP_VERSION 2.1.140)
-set(LIBYANG_DEP_SOVERSION 2.45.4)
-set(LIBYANG_DEP_SOVERSION_MAJOR 2)
+set(LIBYANG_DEP_VERSION 2.2.0)
+set(LIBYANG_DEP_SOVERSION 3.0.0)
+set(LIBYANG_DEP_SOVERSION_MAJOR 3)
 
 # generate only version header, it is needed for docs
 configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
@@ -219,6 +219,7 @@ message(STATUS "SRPD plugins path:  ${SRPD_PLUGINS_PATH}")
 set(LIB_SRC
     src/sysrepo.c
     src/common.c
+    src/ly_wrap.c
     src/subscr.c
     src/log.c
     src/replay.c
@@ -491,7 +492,7 @@ gen_doc("${DOXY_FILES}" ${SYSREPO_VERSION} ${SYSREPO_DESC} ${PROJECT_LOGO})
 
 # generate API/ABI report
 if ("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
-    lib_abi_check(sysrepo "${LIB_HEADERS}" ${SYSREPO_SOVERSION_FULL} 3b247459f7070f1175370ef5eb6972abd225eda4)
+    lib_abi_check(sysrepo "${LIB_HEADERS}" ${SYSREPO_SOVERSION_FULL} d5276ea67a657d8a39f0770a4e5b0993d53ddc5a)
 endif()
 
 # source files to be covered by the 'format' target and a test with 'format-check' target
