@@ -1,8 +1,1 @@
 Tests: install
-Depends: libsysrepo-cpp-dev,
-         libsysrepo-cpp5,
-         libsysrepo-dev,
-         libsysrepo5,
-         sysrepo,
-         sysrepo-config,
-         sysrepo-plugind

@@ -1,3 +1,4 @@
 #! /bin/bash
 
-# No-op - just tests that packages can be installed
+# compare installed version and changelog version
+dpkg-query -f '${Version}' -W sysrepo-tools | grep $(dpkg-parsechangelog -S version)
