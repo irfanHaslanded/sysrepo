@@ -22,3 +22,21 @@ reprotest:
     # faketime is used even in the control run, so turning off time
     # variations isn't sufficient.
     DEB_BUILD_OPTIONS: "nocheck"
+
+commit-history-check: &commit-history-check
+  stage: build
+  extends:
+    - .build-definition
+  when: always
+  variables:
+    GIT_DEPTH: 100
+    GRAPH_CI_DISABLE_DEBIAN_NON_NATIVE_GIT_TAG_ANCESTOR_CHECK: false
+  script:
+    - |
+      apt-get update -y > /dev/null 2>&1
+      apt-get install -y git git-buildpackage > /dev/null 2>&1
+      git fetch -q --tags
+      debian/commit-history-check
+  rules:
+    - if: $GRAPH_CI_DISABLE_DEBIAN_NON_NATIVE_GIT_ANCESTOR_CHECK !~ /^(1|yes|true)$/
+  interruptible: true
