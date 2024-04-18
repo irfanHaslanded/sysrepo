@@ -16,10 +16,10 @@ Subject: Allow runtime configurable shm dir
  5 files changed, 31 insertions(+), 12 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index c54a2d1..28e5780 100644
+index cbae633..a18385a 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -1018,6 +1018,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
+@@ -1058,6 +1058,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
      return err_info;
  }
  
@@ -40,7 +40,7 @@ index c54a2d1..28e5780 100644
  /**
   * @brief Get global SHM prefix prepended to all SHM files.
   *
-@@ -1051,7 +1065,7 @@ sr_path_main_shm(char **path)
+@@ -1091,7 +1105,7 @@ sr_path_main_shm(char **path)
          return err_info;
      }
  
@@ -49,7 +49,7 @@ index c54a2d1..28e5780 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1070,7 +1084,7 @@ sr_path_mod_shm(char **path)
+@@ -1110,7 +1124,7 @@ sr_path_mod_shm(char **path)
          return err_info;
      }
  
@@ -58,7 +58,7 @@ index c54a2d1..28e5780 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1089,7 +1103,7 @@ sr_path_ext_shm(char **path)
+@@ -1129,7 +1143,7 @@ sr_path_ext_shm(char **path)
          return err_info;
      }
  
@@ -67,24 +67,24 @@ index c54a2d1..28e5780 100644
          SR_ERRINFO_MEM(&err_info);
          *path = NULL;
      }
-@@ -1110,9 +1124,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
+@@ -1150,9 +1164,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
      }
  
      if (suffix2 > -1) {
--        ret = asprintf(path, "%s/%ssub_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
-+        ret = asprintf(path, "%s/%ssub_%s.%s.%08x", sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+-        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
++        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
      } else {
 -        ret = asprintf(path, "%s/%ssub_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
 +        ret = asprintf(path, "%s/%ssub_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
      }
  
      if (ret == -1) {
-@@ -1134,9 +1148,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
+@@ -1174,9 +1188,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
      }
  
      if (suffix2 > -1) {
--        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
-+        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08x", sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+-        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
++        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
      } else {
 -        ret = asprintf(path, "%s/%ssub_data_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
 +        ret = asprintf(path, "%s/%ssub_data_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
@@ -92,10 +92,10 @@ index c54a2d1..28e5780 100644
  
      if (ret == -1) {
 diff --git a/src/common.h b/src/common.h
-index df83c94..ed39d45 100644
+index 6cbd3d9..436a8c0 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1379,4 +1379,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
+@@ -1393,4 +1393,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
   * */
  void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
@@ -103,7 +103,7 @@ index df83c94..ed39d45 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 11237de..58f289a 100644
+index 011938e..f5c31cf 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -34,7 +34,7 @@

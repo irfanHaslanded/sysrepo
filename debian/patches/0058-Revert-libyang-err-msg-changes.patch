@@ -10,7 +10,7 @@ This reverts f04900891d17e3fd5a9634971c3a34a0c7c43b9f
  3 files changed, 9 insertions(+), 6 deletions(-)
 
 diff --git a/src/ly_wrap.c b/src/ly_wrap.c
-index abdd81b..f6d607a 100644
+index 002faeb..5fd7342 100644
 --- a/src/ly_wrap.c
 +++ b/src/ly_wrap.c
 @@ -48,6 +48,7 @@ sr_errinfo_new_ly(sr_error_info_t **err_info, const struct ly_ctx *ly_ctx, const

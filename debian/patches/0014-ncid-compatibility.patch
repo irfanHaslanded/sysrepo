@@ -8,10 +8,10 @@ Subject: ncid compatibility
  2 files changed, 27 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ee356b3..774c140 100644
+index 4ffebb6..8bfd1ea 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7201,3 +7201,27 @@ cleanup:
+@@ -7262,3 +7262,27 @@ cleanup:
      sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
      return sr_api_ret(session, err_info);
  }
@@ -40,10 +40,10 @@ index ee356b3..774c140 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index b055dd6..003b7cf 100644
+index 0dcaedc..e8e1a00 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1855,6 +1855,9 @@ void srplg_errinfo_free(sr_error_info_t **err_info);
+@@ -1867,6 +1867,9 @@ void srplg_errinfo_free(sr_error_info_t **err_info);
   */
  void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...) _FORMAT_PRINTF(3, 4);
  

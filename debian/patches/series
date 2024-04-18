@@ -54,5 +54,4 @@
 0056-Fix-delete-of-oper-leaf-list-entry-with-predicate.patch
 0057-do-not-inform-subscribers-of-moves-for-oper-list.patch
 0059-debug-serialize-edit-and-data-in-sr_apply_changes.patch
-0060-bugfix-shm_sub-event-type-finished-instead-of-none.patch
 0058-Revert-libyang-err-msg-changes.patch

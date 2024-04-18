@@ -19,10 +19,10 @@ provide a more convenient alternative, particularly in Rust applications
  5 files changed, 75 insertions(+), 9 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 820c3e6..8128c29 100644
+index 27d9b4c..17dee08 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3880,7 +3880,7 @@ store_value:
+@@ -3975,7 +3975,7 @@ store_value:
              break;
          case LY_TYPE_ENUM:
              if (opts & SR_VAL_LY2SR_UNDERLYING_VALUE) {
@@ -32,10 +32,10 @@ index 820c3e6..8128c29 100644
              } else {
                  sr_val->type = SR_ENUM_T;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 85c6e40..8f54001 100644
+index 112c55b..551ccb0 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2786,7 +2786,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2838,7 +2838,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      uint32_t i;
  
      SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
@@ -44,7 +44,7 @@ index 85c6e40..8f54001 100644
  
      if (!timeout_ms) {
          timeout_ms = SR_OPER_CB_TIMEOUT;
-@@ -2828,7 +2828,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2881,7 +2881,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      }
  
      for (i = 0; i < set->count; ++i) {

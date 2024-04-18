@@ -20,12 +20,12 @@ subsequently in the same edit.
 
 Closes: ENG-6050
 ---
- src/sysrepo.c          | 37 ++++++++++++++++++++++++----
- tests/test_oper_push.c | 66 +++++++++++++++++++++++++++++++++++++++++++++++---
- 2 files changed, 94 insertions(+), 9 deletions(-)
+ src/sysrepo.c          | 34 +++++++++++++++++++++++---
+ tests/test_oper_push.c | 65 +++++++++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 93 insertions(+), 6 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 06349c6..7c72aa3 100644
+index d60d446..908fc38 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -33,6 +33,7 @@
@@ -36,21 +36,17 @@ index 06349c6..7c72aa3 100644
  
  #include <libyang/hash_table.h>
  #include <libyang/libyang.h>
-@@ -3386,10 +3387,10 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
-     sr_error_info_t *err_info = NULL;
+@@ -3443,7 +3444,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
--    uint32_t temp_lo = 0;
--    int isolate = SR_EDIT_ISOLATE & opts;
+     uint32_t temp_lo = 0;
 -
-     sr_edit_options_t opts = in_opts;
-+    uint32_t temp_lo = 0;
 +    struct lyd_node *node = NULL;
 +    int path_len = 0;
+     sr_edit_options_t opts = in_opts;
  
      if (session && session->ds == SR_DS_OPERATIONAL) {
-         /* operational datastore does not support isolate flag */
-@@ -3410,11 +3411,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3465,11 +3467,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
          }
      }
  
@@ -82,7 +78,7 @@ index 06349c6..7c72aa3 100644
          operation = "purge";
      } else if (opts & SR_EDIT_STRICT) {
          operation = "delete";
-@@ -3426,6 +3445,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3481,6 +3501,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      /* add the operation into edit */
      err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
              NULL, opts & SR_EDIT_ISOLATE);
@@ -98,10 +94,10 @@ index 06349c6..7c72aa3 100644
  cleanup:
      if (session->dt[session->ds].edit && !session->dt[session->ds].edit->tree) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index 0d49a11..34b7625 100644
+index 1dd0899..3e1924d 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -1187,6 +1187,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+@@ -1255,6 +1255,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
          ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
          assert_int_equal(ret, SR_ERR_NOT_FOUND);
  
@@ -133,7 +129,7 @@ index 0d49a11..34b7625 100644
          sr_free_change_iter(iter);
          break;
      default:
-@@ -1403,12 +1428,17 @@ test_state_list(void **state)
+@@ -1471,12 +1496,17 @@ test_state_list(void **state)
      assert_string_equal(str1, str2);
      free(str1);
  
@@ -154,7 +150,7 @@ index 0d49a11..34b7625 100644
      sr_unsubscribe(subscr);
  }
  
-@@ -3830,6 +3860,15 @@ test_oper_set_del_leaflist(void **state)
+@@ -3898,6 +3928,15 @@ test_oper_set_del_leaflist(void **state)
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
  
@@ -170,7 +166,7 @@ index 0d49a11..34b7625 100644
      ret = sr_get_data(st->sess, xp_base, 0, 0, 0, &data);
      assert_int_equal(ret, SR_ERR_OK);
      sr_release_data(data);
-@@ -3838,6 +3877,26 @@ test_oper_set_del_leaflist(void **state)
+@@ -3906,6 +3945,26 @@ test_oper_set_del_leaflist(void **state)
      assert_int_equal(ret, SR_ERR_OK);
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
@@ -197,11 +193,3 @@ index 0d49a11..34b7625 100644
  }
  
  /* TEST */
-@@ -3916,7 +3975,6 @@ int
- main(void)
- {
-     const struct CMUnitTest tests[] = {
--        cmocka_unit_test_teardown(test_oper_set_del_new, clear_up),
-         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
-         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
-         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),

@@ -8,10 +8,10 @@ Subject: unlock session held ly_ctx locks on sr_session_stop
  2 files changed, 15 insertions(+), 2 deletions(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index 50231fb..ef62b36 100644
+index db06a61..6fe2f00 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
-@@ -203,6 +203,7 @@ struct sr_session_ctx_s {
+@@ -209,6 +209,7 @@ struct sr_session_ctx_s {
          } *first;                   /**< First stored notification buffer node. */
          struct sr_sess_notif_buf_node *last;    /**< Last stored notification buffer node. */
      } notif_buf;                    /**< Notification buffering attributes. */
@@ -20,7 +20,7 @@ index 50231fb..ef62b36 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e8728c4..615288f 100644
+index 65b05c5..3e7e0a6 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -441,7 +441,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)

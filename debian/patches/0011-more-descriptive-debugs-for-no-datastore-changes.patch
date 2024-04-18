@@ -13,10 +13,10 @@ Also reduce it to debug as it can be noisy at INFO level.
  1 file changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 8ea6cda..2cb639e 100644
+index b0c1063..99f3a3f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3693,7 +3693,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3749,7 +3749,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      }
  
      if (!mod_info->diff) {
@@ -25,7 +25,7 @@ index 8ea6cda..2cb639e 100644
          goto store;
      }
  
-@@ -3757,7 +3757,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3813,7 +3813,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
  
      if (!mod_info->diff) {
          /* diff can disappear after validation */
@@ -34,7 +34,7 @@ index 8ea6cda..2cb639e 100644
          goto store;
      }
  
-@@ -3779,7 +3779,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3835,7 +3835,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      }
  
      if (!mod_info->diff) {
@@ -43,7 +43,7 @@ index 8ea6cda..2cb639e 100644
          goto store;
      }
  
-@@ -3899,6 +3899,7 @@ cleanup:
+@@ -3955,6 +3955,7 @@ cleanup:
          sr_errinfo_merge(&err_info, cb_err_info);
          sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
      }
