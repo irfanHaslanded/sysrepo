@@ -37,6 +37,7 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_get_items@Base 2.2.161
  sr_get_lock@Base 2.2.161
  sr_get_module_ds_access@Base 2.2.161
+ sr_get_module_ds_default@Base 2.2.165
  sr_get_module_info@Base 2.2.161
  sr_get_module_replay_support@Base 2.2.161
  sr_get_node@Base 2.2.161
