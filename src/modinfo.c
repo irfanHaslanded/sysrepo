@@ -606,6 +606,11 @@ sr_modinfo_edit_merge(struct sr_mod_info_s *mod_info, const struct lyd_node *edi
         if (change) {
             /* there is a diff for this module */
             mod->state |= MOD_INFO_CHANGED;
+
+            /* merge the whole stored edit and set 'none' operation (for filters using non-changed nodes to work) */
+            if (create_diff && (err_info = sr_edit_mod_diff_edit_merge(&mod_info->diff, mod->ly_mod, mod_info->data))) {
+                goto cleanup;
+            }
         }
     }
 
@@ -1921,6 +1926,11 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
 
     /* last-modified */
     for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+        if ((ds == SR_DS_RUNNING) && !shm_mod->plugins[ds]) {
+            /* runnig disabled */
+            continue;
+        }
+
         if ((err_info = sr_modinfo_module_srmon_datastore(conn, shm_mod, ds, sr_mod))) {
             return err_info;
         }
@@ -2107,7 +2117,7 @@ sr_modinfo_module_srmon_connections(struct lyd_node *sr_state)
         }
 
         /* pid */
-        sprintf(buf, "%" PRIu32, pids[i]);
+        sprintf(buf, "%d", (int)pids[i]);
         if ((err_info = sr_lyd_new_term(sr_conn, NULL, "pid", buf))) {
             goto cleanup;
         }
@@ -2273,6 +2283,8 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
     sr_error_info_t *err_info = NULL;
     sr_conn_ctx_t *conn = mod_info->conn;
     struct lyd_node *mod_data = NULL;
+    const char **xpaths;
+    uint32_t xpath_count;
     int modified;
 
     assert(!mod_info->data_cached);
@@ -2317,9 +2329,19 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
     if (!run_cached_data_cur) {
         /* no cached data or unusable */
 
+        if ((mod_info->ds == SR_DS_OPERATIONAL) && (mod_info->ds2 == SR_DS_RUNNING)) {
+            /* we need the whole runnign DS to avoid not getting parents of oper pull subscriptions and so considering
+             * them incorrectly as non-existent */
+            xpaths = NULL;
+            xpath_count = 0;
+        } else {
+            xpaths = mod->xpaths;
+            xpath_count = mod->xpath_count;
+        }
+
         /* get current DS data (ds2 is running when getting operational data) */
-        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, mod->xpaths,
-                mod->xpath_count, &mod_info->data))) {
+        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, xpaths, xpath_count,
+                &mod_info->data))) {
             return err_info;
         }
 
@@ -2375,6 +2397,7 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
     sr_error_info_t *err_info = NULL;
     sr_mod_t *shm_mod;
     const struct sr_ds_handle_s *ds_handle[SR_DS_READ_COUNT] = {0};
+    sr_datastore_t ds;
     struct sr_mod_info_mod_s *mod = NULL;
     uint32_t i;
     int new = 0;
@@ -2408,16 +2431,14 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
     /* find main DS handle */
     if ((mod_info->ds == SR_DS_RUNNING) && !shm_mod->plugins[mod_info->ds]) {
         /* 'running' is disabled, we will be using the 'startup' plugin */
-        if ((err_info = sr_ds_handle_find(mod_info->conn->mod_shm.addr + shm_mod->plugins[SR_DS_STARTUP], mod_info->conn,
-                &ds_handle[SR_DS_STARTUP]))) {
-            return err_info;
-        }
+        ds = SR_DS_STARTUP;
     } else {
-        if ((err_info = sr_ds_handle_find(mod_info->conn->mod_shm.addr + shm_mod->plugins[mod_info->ds], mod_info->conn,
-                &ds_handle[mod_info->ds]))) {
-            return err_info;
-        }
+        ds = mod_info->ds;
     }
+    if ((err_info = sr_ds_handle_find(mod_info->conn->mod_shm.addr + shm_mod->plugins[ds], mod_info->conn, &ds_handle[ds]))) {
+        return err_info;
+    }
+
     switch (mod_info->ds) {
     case SR_DS_STARTUP:
     case SR_DS_FACTORY_DEFAULT:
@@ -2432,9 +2453,14 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
         break;
     case SR_DS_CANDIDATE:
     case SR_DS_OPERATIONAL:
-        /* get running plugin as well */
-        if ((err_info = sr_ds_handle_find(mod_info->conn->mod_shm.addr + shm_mod->plugins[SR_DS_RUNNING],
-                mod_info->conn, &ds_handle[SR_DS_RUNNING]))) {
+        /* get running plugin as well (if not disabled) */
+        if (!shm_mod->plugins[SR_DS_RUNNING]) {
+            ds = SR_DS_STARTUP;
+        } else {
+            ds = SR_DS_RUNNING;
+        }
+        if ((err_info = sr_ds_handle_find(mod_info->conn->mod_shm.addr + shm_mod->plugins[ds], mod_info->conn,
+                &ds_handle[ds]))) {
             return err_info;
         }
         break;
@@ -2520,7 +2546,7 @@ sr_modinfo_qsort_cmp(const void *ptr1, const void *ptr2)
  * @brief Load data for modules in mod info.
  *
  * @param[in] mod_info Mod info to use.
- * @param[in] cache Whether it makes sense to use cached data, if available.
+ * @param[in] read_only Whether we will be only reading the data or modifying it as well, affects cache.
  * @param[in] orig_name Event originator name.
  * @param[in] orig_data Event originator data.
  * @param[in] timeout_ms Operational callback timeout in milliseconds.
@@ -2528,7 +2554,7 @@ sr_modinfo_qsort_cmp(const void *ptr1, const void *ptr2)
  * @return err_info, NULL on success.
  */
 static sr_error_info_t *
-sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int cache, const char *orig_name, const void *orig_data,
+sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *orig_name, const void *orig_data,
         uint32_t timeout_ms, sr_get_oper_flag_t get_oper_opts)
 {
     sr_error_info_t *err_info = NULL;
@@ -2546,7 +2572,7 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int cache, const char *orig
     }
 
     /* cache may be useful only for some datastores */
-    if (!mod_info->data_cached && cache && mod_info->mod_count && (conn->opts & SR_CONN_CACHE_RUNNING) &&
+    if (!mod_info->data_cached && mod_info->mod_count && (conn->opts & SR_CONN_CACHE_RUNNING) &&
             !(get_oper_opts & SR_OPER_NO_RUN_CACHED) &&
             ((mod_info->ds == SR_DS_RUNNING) || (mod_info->ds == SR_DS_CANDIDATE) || (mod_info->ds2 == SR_DS_RUNNING))) {
 
@@ -2557,12 +2583,31 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int cache, const char *orig
         run_data_cache_cur = 1;
 
         if (mod_info->ds == SR_DS_RUNNING) {
-            /* we can use the cache directly only if we are working with the running datastore (as the main datastore) */
-            mod_info->data_cached = 1;
-            mod_info->data = conn->run_cache_data;
-            for (i = 0; i < mod_info->mod_count; ++i) {
-                mod = &mod_info->mods[i];
-                mod->state |= MOD_INFO_DATA;
+            if (read_only) {
+                /* we can use the cache directly only if we are working with the running datastore (as the main datastore)
+                 * and not modifying the data */
+                mod_info->data_cached = 1;
+                mod_info->data = conn->run_cache_data;
+
+                for (i = 0; i < mod_info->mod_count; ++i) {
+                    mod = &mod_info->mods[i];
+                    assert(!(mod->state & MOD_INFO_CHANGED));
+                    mod->state |= MOD_INFO_DATA;
+                }
+            } else {
+                /* duplicate data of all the modules, they will be modified */
+                for (i = 0; i < mod_info->mod_count; ++i) {
+                    mod = &mod_info->mods[i];
+                    if (mod->state & MOD_INFO_DATA) {
+                        continue;
+                    }
+
+                    if ((err_info = sr_lyd_get_module_data(&conn->run_cache_data, mod->ly_mod, 0, 1, &mod_info->data))) {
+                        goto cleanup;
+                    }
+
+                    mod->state |= MOD_INFO_DATA;
+                }
             }
             goto cleanup;
         }
@@ -2682,7 +2727,7 @@ sr_modinfo_consolidate(struct sr_mod_info_s *mod_info, sr_lock_mode_t mod_lock, 
 
     if (!(mi_opts & SR_MI_DATA_NO)) {
         /* load all modules data */
-        if ((err_info = sr_modinfo_data_load(mod_info, mi_opts & SR_MI_DATA_CACHE, orig_name, orig_data, timeout_ms,
+        if ((err_info = sr_modinfo_data_load(mod_info, mi_opts & SR_MI_DATA_RO, orig_name, orig_data, timeout_ms,
                 get_oper_opts))) {
             goto cleanup;
         }
@@ -3381,8 +3426,22 @@ sr_modinfo_data_store(struct sr_mod_info_s *mod_info)
                 goto cleanup;
             }
 
-            /* update the cache ID because data were modified, ignored if data_version callback is used instead */
-            mod->shm_mod->run_cache_id++;
+            if (mod_info->ds == SR_DS_RUNNING) {
+                /* update the cache ID because data were modified, ignored if data_version callback is used instead */
+                mod->shm_mod->run_cache_id++;
+
+                if (mod_info->conn->opts & SR_CONN_CACHE_RUNNING) {
+                    /* store the changed data in the cache */
+                    if ((err_info = sr_conn_run_cache_update_mod(mod_info->conn, mod->ly_mod, mod->shm_mod->run_cache_id,
+                            mod_data))) {
+                        goto cleanup;
+                    }
+
+                    /* mod data spent */
+                    mod_data = NULL;
+                    mod->state &= ~MOD_INFO_DATA;
+                }
+            }
 
             /* connect them back */
             if (mod_diff) {

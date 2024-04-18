@@ -898,63 +898,33 @@ sr_lydmods_print(struct lyd_node **sr_mods)
 }
 
 /**
- * @brief Set startup and factory-default datastore data for implemented internal modules.
+ * @brief Get module DS for an internal module.
  *
- * @param[in] ly_ctx Context with the internal modules.
- * @return err_info, NULL on success.
+ * @param[in] name Mdoule name.
+ * @return Module DS structure for the module.
  */
-static sr_error_info_t *
-sr_lydmods_create_data(const struct ly_ctx *ly_ctx)
+static sr_module_ds_t
+sr_lydmods_int_mod_ds(const char *name)
 {
-    sr_error_info_t *err_info = NULL;
-    const struct lys_module *ly_mod;
-    struct lyd_node *data = NULL, *mod_data = NULL, *mod_diff = NULL;
-    uint32_t idx = 0;
+    const char *int_mod_str = " "SR_INT_MOD_DISABLED_RUNNING " ";
+    char *needle;
+    int run_disabled = 0;
 
-    if (!strlen(SR_INT_MOD_DATA)) {
-        /* no data to set */
-        goto cleanup;
+    if (!strcmp(int_mod_str, "*")) {
+        /* all internal module running disabled */
+        run_disabled = 1;
+    } else {
+        if (asprintf(&needle, " %s ", name) == -1) {
+            return sr_module_ds_default;
+        }
+        if (strstr(int_mod_str, needle)) {
+            /* running disabled */
+            run_disabled = 1;
+        }
+        free(needle);
     }
 
-    /* parse and validate the data */
-    if ((err_info = sr_lyd_parse_data(ly_ctx, SR_INT_MOD_DATA, NULL, SR_INT_MOD_DATA_FORMAT, 0, LYD_VALIDATE_NO_STATE,
-            &data))) {
-        goto cleanup;
-    }
-
-    while ((ly_mod = ly_ctx_get_module_iter(ly_ctx, &idx))) {
-        if (!ly_mod->implemented) {
-            continue;
-        }
-
-        /* get the data for this module */
-        lyd_free_siblings(mod_data);
-        mod_data = sr_module_data_unlink(&data, ly_mod);
-        if (!mod_data) {
-            continue;
-        }
-
-        /* generate a diff */
-        lyd_free_siblings(mod_diff);
-        if ((err_info = sr_lyd_diff_siblings(NULL, mod_data, LYD_DIFF_DEFAULTS, &mod_diff))) {
-            goto cleanup;
-        }
-        assert(mod_diff);
-
-        /* store the data using the internal JSON plugin */
-        if ((err_info = srpds_json.store_cb(ly_mod, SR_DS_STARTUP, mod_diff, mod_data, NULL))) {
-            goto cleanup;
-        }
-        if ((err_info = srpds_json.store_cb(ly_mod, SR_DS_FACTORY_DEFAULT, mod_diff, mod_data, NULL))) {
-            goto cleanup;
-        }
-    }
-
-cleanup:
-    lyd_free_siblings(mod_data);
-    lyd_free_siblings(mod_diff);
-    lyd_free_siblings(data);
-    return err_info;
+    return run_disabled ? sr_module_ds_disabled_run : sr_module_ds_default;
 }
 
 /**
@@ -972,16 +942,17 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
 {
     sr_error_info_t *err_info = NULL;
     struct lys_module *ly_mod;
-    struct lyd_node *sr_mods = NULL;
+    struct lyd_node *sr_mods = NULL, *init_data = NULL;
     sr_int_install_mod_t *new_mods = NULL;
     uint32_t i, new_mod_count = 0;
+    struct sr_data_update_s data_info = {0};
     const char *mod_origin;
 
 #define SR_INSTALL_INT_MOD(ctx, yang_mod, dep, new_mods, new_mod_count) \
     if ((err_info = sr_lys_parse(ctx, yang_mod, NULL, LYS_IN_YANG, NULL, &ly_mod))) { \
         goto cleanup; \
     } \
-    if ((err_info = sr_lydmods_add_module_with_imps_r(sr_mods, ly_mod, sr_default_module_ds, NULL, \
+    if ((err_info = sr_lydmods_add_module_with_imps_r(sr_mods, ly_mod, sr_lydmods_int_mod_ds(ly_mod->name), NULL, \
             strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &(new_mods), &(new_mod_count)))) { \
         goto cleanup; \
     } \
@@ -1008,7 +979,7 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
             continue;
         }
 
-        if ((err_info = sr_lydmods_add_module_with_imps_r(sr_mods, ly_mod, sr_default_module_ds, NULL,
+        if ((err_info = sr_lydmods_add_module_with_imps_r(sr_mods, ly_mod, sr_lydmods_int_mod_ds(ly_mod->name), NULL,
                 strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &new_mods, &new_mod_count))) {
             goto cleanup;
         }
@@ -1041,13 +1012,39 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
         goto cleanup;
     }
 
-    /* finish SR internal module data by adding dependencies */
-    if ((err_info = sr_lydmods_add_deps_all(ly_ctx, sr_mods))) {
+    if (strlen(SR_INT_MOD_DATA)) {
+        /* parse and validate the initial data, if any */
+        if ((err_info = sr_lyd_parse_data(ly_ctx, SR_INT_MOD_DATA, NULL, SR_INT_MOD_DATA_FORMAT, 0, LYD_VALIDATE_NO_STATE,
+                &init_data))) {
+            goto cleanup;
+        }
+    } else {
+        /* use implicit data */
+        if ((err_info = sr_lyd_new_implicit_all(&init_data, ly_ctx, LYD_IMPLICIT_NO_STATE))) {
+            goto cleanup;
+        }
+    }
+    if ((err_info = sr_lyd_dup(init_data, NULL, LYD_DUP_RECURSIVE, 1, &data_info.new.start))) {
         goto cleanup;
     }
+    if ((err_info = sr_lyd_dup(init_data, NULL, LYD_DUP_RECURSIVE, 1, &data_info.new.run))) {
+        goto cleanup;
+    }
+    data_info.new.fdflt = init_data;
+    init_data = NULL;
 
     /* finish installing all the modules */
     if ((err_info = sr_lycc_add_modules(conn, new_mods, new_mod_count))) {
+        goto cleanup;
+    }
+
+    /* store initial or implicit data */
+    if ((err_info = sr_lycc_store_data_if_differ(conn, ly_ctx, sr_mods, &data_info))) {
+        goto cleanup;
+    }
+
+    /* finish SR internal module data by adding dependencies */
+    if ((err_info = sr_lydmods_add_deps_all(ly_ctx, sr_mods))) {
         goto cleanup;
     }
 
@@ -1056,13 +1053,10 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
         goto cleanup;
     }
 
-    /* set the startup and factory-default data, if any */
-    if ((err_info = sr_lydmods_create_data(ly_ctx))) {
-        goto cleanup;
-    }
-
 cleanup:
     free(new_mods);
+    lyd_free_tree(init_data);
+    sr_lycc_update_data_clear(&data_info);
     if (err_info) {
         lyd_free_all(sr_mods);
     } else {

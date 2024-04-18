@@ -173,7 +173,8 @@ extern char sysrepo_factory_default_yang[];
 extern const struct srplg_ds_s *sr_internal_ds_plugins[];
 extern const struct srplg_ntf_s *sr_internal_ntf_plugins[];
 
-extern const sr_module_ds_t sr_default_module_ds;
+extern const sr_module_ds_t sr_module_ds_default;
+extern const sr_module_ds_t sr_module_ds_disabled_run;
 
 /** static initializer of the shared memory structure */
 #define SR_SHM_INITIALIZER {.fd = -1, .size = 0, .addr = NULL}
@@ -195,7 +196,8 @@ typedef struct {
 
     /* additional members */
     const struct lys_module *ly_mod;
-    int installed;
+    int installed[SR_DS_READ_COUNT];
+    int yangs_stored;
 } sr_int_install_mod_t;
 
 /**
@@ -886,6 +888,18 @@ void sr_conn_oper_cache_del(sr_conn_ctx_t *conn, uint32_t sub_id);
  * @return err_info, NULL on success.
  */
 sr_error_info_t *sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_info, sr_lock_mode_t has_lock);
+
+/**
+ * @brief Update connection cached running data of a particular module with specific data.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] ly_mod Module to update.
+ * @param[in] mod_cache_id Module @p mod_data cache ID.
+ * @param[in] mod_data Current module data to store in the cache, are spent.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_conn_run_cache_update_mod(sr_conn_ctx_t *conn, const struct lys_module *ly_mod,
+        uint32_t mod_cache_id, struct lyd_node *mod_data);
 
 /**
  * @brief Flush all cached running data of a connection.

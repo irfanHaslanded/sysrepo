@@ -307,14 +307,19 @@ cleanup:
 static void
 sr_shmsub_recover(sr_sub_shm_t *sub_shm)
 {
+    sr_sub_event_t ev = ATOMIC_LOAD_RELAXED(sub_shm->event);
+
     if (sub_shm->orig_cid && !sr_conn_is_alive(sub_shm->orig_cid)) {
         SR_LOG_WRN("EV ORIGIN: SHM event \"%s\" of CID %" PRIu32 " ID %" PRIu32 " recovered.",
-                sr_ev2str(ATOMIC_LOAD_RELAXED(sub_shm->event)), sub_shm->orig_cid,
+                sr_ev2str(ev), sub_shm->orig_cid,
                 (uint32_t)ATOMIC_LOAD_RELAXED(sub_shm->request_id));
 
         /* clear the event */
         ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
         sub_shm->orig_cid = 0;
+    } else if (ev && (ev != SR_SUB_EV_NOTIF)) {
+        /* if there is an event except SR_SUB_EV_NOTIF, orig_cid must always exist */
+        assert(sub_shm->orig_cid);
     }
 }
 
@@ -341,8 +346,8 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
         return err_info;
     }
 
-    if (sub_shm->orig_cid || (ATOMIC_LOAD_RELAXED(sub_shm->event) && (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event))) {
-        /* instead of wating, try to recover the event immediately */
+    if (ATOMIC_LOAD_RELAXED(sub_shm->event) && (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event)) {
+        /* instead of waiting, try to recover the event immediately */
         sr_shmsub_recover(sub_shm);
     }
 
@@ -356,7 +361,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
     /* wait until there is no event and there are no readers (just like write lock) */
     sr_timeouttime_get(&timeout_abs, SR_SUBSHM_LOCK_TIMEOUT);
     ret = 0;
-    while (!ret && (sub_shm->orig_cid || sub_shm->lock.readers[0] || (ATOMIC_LOAD_RELAXED(sub_shm->event) &&
+    while (!ret && (sub_shm->lock.readers[0] || (ATOMIC_LOAD_RELAXED(sub_shm->event) &&
             (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event)))) {
         /* COND WAIT */
         ret = sr_cond_clockwait(&sub_shm->lock.cond, &sub_shm->lock.mutex, COMPAT_CLOCK_ID, &timeout_abs);
@@ -407,8 +412,8 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
     }
 
 event_handled:
-    /* we have write lock and the expected event */
-    assert(!sub_shm->orig_cid);
+    /* we have write lock and the expected event, remove any left over orig_cid */
+    sub_shm->orig_cid = 0;
     return NULL;
 }
 
@@ -422,6 +427,10 @@ event_handled:
  * @param[in] request_id Current request ID of the event in @p sub_shm.
  * @param[in] expected_ev Expected event. Can be:
  *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
+ *              ::SR_SUB_EV_FINISHED - same as SR_SUB_EV_NONE except this is used by
+ *                                     change_sub done and abort events, and rpc abort events.
+ *                                     The purpose is to keep a separation between listeners finishing
+ *                                     and the notifier clearing the event and making shm ready for the next event.
  *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
  *                                    success (never error) event is cleared,
  *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
@@ -445,7 +454,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t 
     uint32_t last_request_id, i, err_count;
     int ret, write_lock = 0;
 
-    assert((expected_ev == SR_SUB_EV_NONE) || (expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR));
+    assert((expected_ev == SR_SUB_EV_NONE) || SR_IS_NOTIFY_EVENT(expected_ev));
     assert(shm_data_sub->fd > -1);
 
     *lock_lost = 0;
@@ -574,8 +583,10 @@ event_handled:
             return err_info;
         }
     } else {
-        /* we expect no event */
-        if (sub_shm->event != SR_SUB_EV_NONE) {
+        /* we expect a finished or none event */
+        if (ATOMIC_LOAD_RELAXED(sub_shm->event) == expected_ev) {
+            ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
+        } else {
             sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unexpected sub SHM event \"%s\" (expected \"%s\").",
                     sr_ev2str(last_event), sr_ev2str(expected_ev));
             return err_info;
@@ -593,6 +604,10 @@ event_handled:
  * @param[in] sub_shm Subscription SHM.
  * @param[in] expected_ev  Expected event. Can be:
  *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
+ *              ::SR_SUB_EV_FINISHED - same as SR_SUB_EV_NONE except this is used by
+ *                                     change_sub done and abort events, and rpc abort events.
+ *                                     The purpose is to keep a separation between listeners finishing
+ *                                     and the notifier clearing the event and making shm ready for the next event.
  *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
  *                                    success (never error) event is cleared,
  *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
@@ -632,6 +647,10 @@ sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t expected_ev, int 
  * @param[in] notify_count Size of the array.
  * @param[in] expected_ev  Expected event. Can be:
  *              ::SR_SUB_EV_NONE - just wait until the event is processed, SHM will not be accessed,
+ *              ::SR_SUB_EV_FINISHED - same as SR_SUB_EV_NONE except this is used by
+ *                                     change_sub done and abort events, and rpc abort events.
+ *                                     The purpose is to keep a separation between listeners finishing
+ *                                     and the notifier clearing the event and making shm ready for the next event.
  *              ::SR_SUB_EV_SUCCESS - an answer (success/error) is expected but SHM will not be accessed, so
  *                                    success (never error) event is cleared,
  *              ::SR_SUB_EV_ERROR - an answer is expected and SHM will be further accessed so do not clear any events.
@@ -1791,7 +1810,7 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
 
         /* wait until the events are processed */
         if ((err_info = sr_shmsub_notify_many_wait_wr((struct sr_shmsub_many_info_s *)notify_subs, sizeof *notify_subs,
-                notify_count, SR_SUB_EV_NONE, 1, cid, timeout_ms))) {
+                notify_count, SR_SUB_EV_FINISHED, 1, cid, timeout_ms))) {
             goto cleanup;
         }
 
@@ -2008,7 +2027,7 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char 
 
         /* wait until the events are processed */
         if ((err_info = sr_shmsub_notify_many_wait_wr((struct sr_shmsub_many_info_s *)notify_subs, sizeof *notify_subs,
-                notify_count, SR_SUB_EV_NONE, 1, cid, timeout_ms))) {
+                notify_count, SR_SUB_EV_FINISHED, 1, cid, timeout_ms))) {
             goto cleanup;
         }
 
@@ -2282,10 +2301,14 @@ sr_shmsub_rpc_internal_call_callback(sr_conn_ctx_t *conn, const struct lyd_node 
     /* MODULES UNLOCK */
     sr_shmmod_modinfo_unlock(&mod_info);
 
-    /* keep the data for both DS */
-    lyd_dup_siblings(mod_info.data, NULL, LYD_DUP_RECURSIVE, &data[0]);
-    data[1] = mod_info.data;
-    mod_info.data = NULL;
+    if (mod_info.data) {
+        /* keep the data for both DS */
+        if ((err_info = sr_lyd_dup(mod_info.data, NULL, LYD_DUP_RECURSIVE, 1, &data[0]))) {
+            goto cleanup;
+        }
+        data[1] = mod_info.data;
+        mod_info.data = NULL;
+    }
 
     for (ds = SR_DS_STARTUP; ds <= SR_DS_RUNNING; ++ds) {
         /* re-init mod_info manually */
@@ -2348,10 +2371,10 @@ cleanup:
         sr_errinfo_merge(&err_info, cb_err_info);
     }
     if (err_info) {
-        SR_LOG_WRN("EV ORIGIN: Internal \"%s\" \"%s\" priority %" PRIu32 " failed (%s).", SR_RPC_FACTORY_RESET_PATH,
+        SR_LOG_WRN("EV ORIGIN: Internal \"%s\" \"%s\" priority %d failed (%s).", SR_RPC_FACTORY_RESET_PATH,
                 sr_ev2str(SR_SUB_EV_RPC), SR_RPC_FACTORY_RESET_INT_PRIO, sr_strerror(err_info->err[0].err_code));
     } else {
-        SR_LOG_INF("EV ORIGIN: Internal \"%s\" \"%s\" priority %" PRIu32 " succeeded.", SR_RPC_FACTORY_RESET_PATH,
+        SR_LOG_INF("EV ORIGIN: Internal \"%s\" \"%s\" priority %d succeeded.", SR_RPC_FACTORY_RESET_PATH,
                 sr_ev2str(SR_SUB_EV_RPC), SR_RPC_FACTORY_RESET_INT_PRIO);
     }
     return err_info;
@@ -2791,7 +2814,7 @@ clear_shm:
         }
 
         /* wait until the event is processed */
-        if ((err_info = sr_shmsub_notify_wait_wr((sr_sub_shm_t *)multi_sub_shm, SR_SUB_EV_NONE, 1, conn->cid,
+        if ((err_info = sr_shmsub_notify_wait_wr((sr_sub_shm_t *)multi_sub_shm, SR_SUB_EV_FINISHED, 1, conn->cid,
                 &shm_data_sub, timeout_ms, &lock_lost, &cb_err_info))) {
             if (lock_lost) {
                 goto cleanup;
@@ -3041,6 +3064,10 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
             break;
         case SR_SUB_EV_DONE:
         case SR_SUB_EV_ABORT:
+            /* notifier waits for these events to clear them and make shm ready for next notification */
+            assert(!err_code);
+            ATOMIC_STORE_RELAXED(multi_sub_shm->event, SR_SUB_EV_FINISHED);
+            break;
         case SR_SUB_EV_NOTIF:
             /* notifier does not wait for these events */
             assert(!err_code);

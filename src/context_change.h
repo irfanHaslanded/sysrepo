@@ -4,8 +4,8 @@
  * @brief header for sysrepo context change routines
  *
  * @copyright
- * Copyright (c) 2021 - 2023 Deutsche Telekom AG.
- * Copyright (c) 2021 - 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2021 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2021 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ struct sr_data_update_s {
     struct sr_data_update_set_s {
         struct lyd_node *start;
         struct lyd_node *run;
-        int run_disabled;
         struct lyd_node *oper;
         struct lyd_node *fdflt;
     } old;
@@ -95,7 +94,7 @@ sr_error_info_t *sr_lycc_add_modules(sr_conn_ctx_t *conn, sr_int_install_mod_t *
  * @param[in] new_mod_count Count of @p new_mods.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lycc_add_modules_revert(sr_conn_ctx_t *conn, const sr_int_install_mod_t *new_mods,
+sr_error_info_t *sr_lycc_add_modules_revert(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_mods,
         uint32_t new_mod_count);
 
 /**
@@ -166,12 +165,14 @@ sr_error_info_t *sr_lycc_set_replay_support(sr_conn_ctx_t *conn, const struct ly
  *
  * @param[in] conn Connection to use.
  * @param[in] new_ctx New context.
- * @param[in] mod_data Optional new module initial data.
+ * @param[in] init_data Optional initial data for the new modules, are spent.
+ * @param[in] new_mods Optional new modules with DS plugins to use for loading initial data if @p mod_data is not set.
+ * @param[in] new_mod_count Count of @p new_mods.
  * @param[in,out] data_info Old (current) data in @p conn context and new data in @p new_ctx.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lycc_update_data(sr_conn_ctx_t *conn, const struct ly_ctx *new_ctx, const struct lyd_node *mod_data,
-        struct sr_data_update_s *data_info);
+sr_error_info_t *sr_lycc_update_data(sr_conn_ctx_t *conn, const struct ly_ctx *new_ctx, struct lyd_node *init_data,
+        sr_int_install_mod_t *new_mods, uint32_t new_mod_count, struct sr_data_update_s *data_info);
 
 /**
  * @brief Store updated SR data (destructively) for each module only if they differ from the current data.

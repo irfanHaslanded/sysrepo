@@ -22,7 +22,9 @@
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
-#include <dlfcn.h>
+#ifdef SR_HAVE_DLOPEN
+# include <dlfcn.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -74,9 +76,21 @@ const struct srplg_ntf_s *sr_internal_ntf_plugins[] = {
 /**
  * @brief Default module DS plugins.
  */
-const sr_module_ds_t sr_default_module_ds = {{
+const sr_module_ds_t sr_module_ds_default = {{
         "JSON DS file", /**< startup */
         "JSON DS file", /**< running */
+        "JSON DS file", /**< candidate */
+        "JSON DS file", /**< operational */
+        "JSON DS file", /**< factory-default */
+        "JSON notif"    /**< notification */
+    }};
+
+/**
+ * @brief Default module DS plugins with 'running' DS disbaled.
+ */
+const sr_module_ds_t sr_module_ds_disabled_run = {{
+        "JSON DS file", /**< startup */
+        NULL,           /**< running */
         "JSON DS file", /**< candidate */
         "JSON DS file", /**< operational */
         "JSON DS file", /**< factory-default */
@@ -161,25 +175,30 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
 {
     sr_error_info_t *err_info = NULL;
     DIR *dir = NULL;
+    uint32_t i;
+
+#ifdef SR_HAVE_DLOPEN
     struct dirent *file;
     size_t len;
     const char *plugins_dir;
     char *path = NULL;
     void *dlhandle = NULL, *mem;
-    uint32_t *ver, i;
+    uint32_t *ver;
     const struct srplg_ds_s *srpds;
+#endif
 
     *ds_handles = NULL;
     *ds_handle_count = 0;
 
     /* add internal plugins */
     *ds_handles = calloc(sr_ds_plugin_int_count(), sizeof **ds_handles);
-    SR_CHECK_MEM_GOTO(!*ds_handles, err_info, next_file);
+    SR_CHECK_MEM_GOTO(!*ds_handles, err_info, cleanup);
     for (i = 0; i < sr_ds_plugin_int_count(); ++i) {
         (*ds_handles)[i].plugin = sr_internal_ds_plugins[i];
         ++(*ds_handle_count);
     }
 
+#ifdef SR_HAVE_DLOPEN
     /* get plugins dir from environment variable, or use default one */
     plugins_dir = getenv("SR_PLUGINS_PATH");
     if (!plugins_dir) {
@@ -264,6 +283,7 @@ next_file:
             goto cleanup;
         }
     }
+#endif
 
 cleanup:
     if (dir) {
@@ -275,6 +295,7 @@ cleanup:
 void
 sr_ds_handle_free(struct sr_ds_handle_s *ds_handles, uint32_t ds_handle_count)
 {
+#ifdef SR_HAVE_DLOPEN
     uint32_t i;
 
     for (i = 0; i < ds_handle_count; ++i) {
@@ -282,7 +303,9 @@ sr_ds_handle_free(struct sr_ds_handle_s *ds_handles, uint32_t ds_handle_count)
             dlclose(ds_handles[i].dl_handle);
         }
     }
+#endif
 
+    (void)ds_handle_count;
     free(ds_handles);
 }
 
@@ -297,6 +320,10 @@ sr_ds_handle_find(const char *ds_plugin_name, sr_conn_ctx_t *conn, const struct 
 {
     sr_error_info_t *err_info = NULL;
     uint32_t i;
+
+    if (ds_handle) {
+        *ds_handle = NULL;
+    }
 
     if (!ds_plugin_name) {
         sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Datastore plugin without a name.");
@@ -322,25 +349,30 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
 {
     sr_error_info_t *err_info = NULL;
     DIR *dir = NULL;
+    uint32_t i;
+
+#ifdef SR_HAVE_DLOPEN
     struct dirent *file;
     size_t len;
     const char *plugins_dir;
     char *path = NULL;
     void *dlhandle = NULL, *mem;
-    uint32_t *ver, i;
+    uint32_t *ver;
     const struct srplg_ntf_s *srpntf;
+#endif
 
     *ntf_handles = NULL;
     *ntf_handle_count = 0;
 
     /* add internal plugins */
     *ntf_handles = calloc(sr_ntf_plugin_int_count(), sizeof **ntf_handles);
-    SR_CHECK_MEM_GOTO(!*ntf_handles, err_info, next_file);
+    SR_CHECK_MEM_GOTO(!*ntf_handles, err_info, cleanup);
     for (i = 0; i < sr_ntf_plugin_int_count(); ++i) {
         (*ntf_handles)[i].plugin = sr_internal_ntf_plugins[i];
         ++(*ntf_handle_count);
     }
 
+#ifdef SR_HAVE_DLOPEN
     /* get plugins dir from environment variable, or use default one */
     plugins_dir = getenv("SR_PLUGINS_PATH");
     if (!plugins_dir) {
@@ -422,6 +454,7 @@ next_file:
             goto cleanup;
         }
     }
+#endif
 
 cleanup:
     if (dir) {
@@ -433,6 +466,7 @@ cleanup:
 void
 sr_ntf_handle_free(struct sr_ntf_handle_s *ntf_handles, uint32_t ntf_handle_count)
 {
+#ifdef SR_HAVE_DLOPEN
     uint32_t i;
 
     for (i = 0; i < ntf_handle_count; ++i) {
@@ -440,7 +474,9 @@ sr_ntf_handle_free(struct sr_ntf_handle_s *ntf_handles, uint32_t ntf_handle_coun
             dlclose(ntf_handles[i].dl_handle);
         }
     }
+#endif
 
+    (void)ntf_handle_count;
     free(ntf_handles);
 }
 
@@ -455,6 +491,10 @@ sr_ntf_handle_find(const char *ntf_plugin_name, sr_conn_ctx_t *conn, const struc
 {
     sr_error_info_t *err_info = NULL;
     uint32_t i;
+
+    if (ntf_handle) {
+        *ntf_handle = NULL;
+    }
 
     if (!ntf_plugin_name) {
         sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Notification plugin without a name.");
@@ -1068,7 +1108,7 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
     }
 
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
     } else {
         ret = asprintf(path, "%s/%ssub_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
     }
@@ -1092,7 +1132,7 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
     }
 
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08x", SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
     } else {
         ret = asprintf(path, "%s/%ssub_data_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
     }
@@ -1498,10 +1538,10 @@ sr_ext_hole_find(sr_ext_shm_t *ext_shm, uint32_t off, uint32_t min_size)
 
     for (hole = sr_ext_hole_next(NULL, ext_shm); hole; hole = sr_ext_hole_next(hole, ext_shm)) {
         if (off) {
-            if (((char *)hole - (char *)ext_shm == off) && (hole->size >= min_size)) {
+            if (((char *)hole - (char *)ext_shm == (int)off) && (hole->size >= min_size)) {
                 return hole;
             }
-            if ((char *)hole - (char *)ext_shm > off) {
+            if ((char *)hole - (char *)ext_shm > (int)off) {
                 /* foo large offset, it cannot be found anymore */
                 break;
             }
@@ -1548,7 +1588,7 @@ sr_ext_hole_add(sr_ext_shm_t *ext_shm, uint32_t off, uint32_t size)
     }
 
     for (next = sr_ext_hole_next(NULL, ext_shm); next; next = sr_ext_hole_next(next, ext_shm)) {
-        if ((char *)next - (char *)ext_shm > off) {
+        if ((char *)next - (char *)ext_shm > (int)off) {
             /* found the next hole */
             break;
         }
@@ -1560,7 +1600,7 @@ sr_ext_hole_add(sr_ext_shm_t *ext_shm, uint32_t off, uint32_t size)
         /* connecting with prev */
         con_prev = 1;
     }
-    if (next && (off + size == (char *)next - (char *)ext_shm)) {
+    if (next && ((int)(off + size) == (char *)next - (char *)ext_shm)) {
         /* connecting with next */
         con_next = 1;
     }
@@ -2870,7 +2910,7 @@ sr_conn_ext_data_update(sr_conn_ctx_t *conn)
     if ((err_info = sr_modinfo_add(ly_mod, NULL, 0, 1, &mi))) {
         goto cleanup;
     }
-    if ((err_info = sr_modinfo_consolidate(&mi, SR_LOCK_READ, SR_MI_DATA_CACHE | SR_MI_PERM_READ, 0, NULL, NULL,
+    if ((err_info = sr_modinfo_consolidate(&mi, SR_LOCK_READ, SR_MI_DATA_RO | SR_MI_PERM_READ, 0, NULL, NULL,
             SR_OPER_CB_TIMEOUT, 0, 0))) {
         goto cleanup;
     }
@@ -3046,6 +3086,7 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
     struct sr_mod_info_mod_s *mod;
     struct sr_run_cache_s *cmod;
     struct lyd_node *mod_data;
+    sr_datastore_t cache_ds;
     uint32_t i, j, cur_id;
     void *mem;
 
@@ -3053,6 +3094,13 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
 
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
+
+        if (!mod->shm_mod->plugins[SR_DS_RUNNING]) {
+            /* disabled running, use startup */
+            cache_ds = SR_DS_STARTUP;
+        } else {
+            cache_ds = SR_DS_RUNNING;
+        }
 
         /* find the cache mod */
         cmod = NULL;
@@ -3090,9 +3138,9 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
         }
 
         /* check whether the data are current */
-        if (mod->ds_handle[SR_DS_RUNNING]->plugin->data_version_cb) {
-            if ((err_info = mod->ds_handle[SR_DS_RUNNING]->plugin->data_version_cb(mod->ly_mod, SR_DS_RUNNING,
-                    mod->ds_handle[SR_DS_RUNNING]->plg_data, &cur_id))) {
+        if (mod->ds_handle[cache_ds]->plugin->data_version_cb) {
+            if ((err_info = mod->ds_handle[cache_ds]->plugin->data_version_cb(mod->ly_mod, cache_ds,
+                    mod->ds_handle[cache_ds]->plg_data, &cur_id))) {
                 goto cleanup;
             }
         } else {
@@ -3123,8 +3171,8 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
         lyd_free_siblings(mod_data);
 
         /* replace with loaded current data */
-        if ((err_info = mod->ds_handle[SR_DS_RUNNING]->plugin->load_cb(mod->ly_mod, SR_DS_RUNNING, NULL, 0,
-                mod->ds_handle[SR_DS_RUNNING]->plg_data, &mod_data))) {
+        if ((err_info = mod->ds_handle[cache_ds]->plugin->load_cb(mod->ly_mod, cache_ds, NULL, 0,
+                mod->ds_handle[cache_ds]->plg_data, &mod_data))) {
             goto cleanup;
         }
         if (mod_data) {
@@ -3149,6 +3197,51 @@ cleanup:
             sr_errinfo_merge(&err_info, tmp_err);
         }
     }
+    return err_info;
+}
+
+sr_error_info_t *
+sr_conn_run_cache_update_mod(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, uint32_t mod_cache_id,
+        struct lyd_node *mod_data)
+{
+    sr_error_info_t *err_info = NULL;
+    struct sr_run_cache_s *cmod = NULL;
+    struct lyd_node *old_data;
+    uint32_t i;
+
+    /* CACHE WRITE LOCK */
+    if ((err_info = sr_rwlock(&conn->run_cache_lock, SR_CONN_RUN_CACHE_LOCK_TIMEOUT, SR_LOCK_WRITE_URGE,
+            conn->cid, __func__, NULL, NULL))) {
+        return err_info;
+    }
+
+    /* find the cache mod, it must have been cached for this operation, if not before */
+    for (i = 0; i < conn->run_cache_mod_count; ++i) {
+        if (ly_mod == conn->run_cache_mods[i].mod) {
+            cmod = &conn->run_cache_mods[i];
+            break;
+        }
+    }
+    assert(cmod);
+
+    /* the data are expected to be just modified, cannot yet be cached */
+    assert(cmod->id != mod_cache_id);
+
+    /* remove old data */
+    old_data = sr_module_data_unlink(&conn->run_cache_data, cmod->mod);
+    lyd_free_siblings(old_data);
+
+    /* replace with current data */
+    if (mod_data) {
+        lyd_insert_sibling(conn->run_cache_data, mod_data, &conn->run_cache_data);
+    }
+
+    /* update the cached data ID */
+    cmod->id = mod_cache_id;
+
+    /* CACHE WRITE UNLOCK */
+    sr_rwunlock(&conn->run_cache_lock, SR_CONN_RUN_CACHE_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
+
     return err_info;
 }
 
@@ -3769,6 +3862,8 @@ sr_ev2str(sr_sub_event_t ev)
         return "success";
     case SR_SUB_EV_ERROR:
         return "error";
+    case SR_SUB_EV_FINISHED:
+        return "finished";
     case SR_SUB_EV_UPDATE:
         return "update";
     case SR_SUB_EV_CHANGE:
@@ -5169,11 +5264,15 @@ struct lyd_node *
 sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
 {
     struct lyd_node *next, *node, *mod_data = NULL;
+    const struct lys_module *cur_mod;
 
     assert(data && ly_mod);
 
     LY_LIST_FOR_SAFE(*data, next, node) {
-        if (lyd_owner_module(node) == ly_mod) {
+        cur_mod = lyd_owner_module(node);
+
+        if (((cur_mod->ctx == ly_mod->ctx) && (cur_mod == ly_mod)) ||
+                ((cur_mod->ctx != ly_mod->ctx) && !strcmp(cur_mod->name, ly_mod->name))) {
             /* properly unlink this node */
             if (node == *data) {
                 *data = next;
