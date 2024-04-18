@@ -1,3 +1,10 @@
+sysrepo (2.2.173-1) unstable; urgency=medium
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.2.173
+  * Update symbols file for v2.2.173
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Fri, 19 Apr 2024 08:32:54 +0000
+
 sysrepo (2.2.161-2) unstable; urgency=medium
 
   [ IrfanMohammad ]
