@@ -94,10 +94,10 @@ index d7e65b8..e5cdd5f 100644
 +        sr_error_t err_code, const char *msg_format, ...) __attribute__ ((format (printf, 4, 5)));
  #endif
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 424e591..3f99f26 100644
+index 1cdde17..7645a9a 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2725,7 +2725,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
+@@ -2777,7 +2777,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
          sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "More subtrees match \"%s\".", path);
          goto cleanup;
      } else if (!set->count) {

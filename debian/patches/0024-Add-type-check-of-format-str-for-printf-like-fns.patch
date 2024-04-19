@@ -24,10 +24,10 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 4e24f5d..8ff4650 100644
+index 65c7ec4..6f9750b 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -88,7 +88,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
+@@ -84,7 +84,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
  # generate only version header, it is needed for docs
  configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
  
@@ -58,10 +58,10 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index c5374ae..23464bf 100644
+index f178d2f..298ddd0 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1520,20 +1520,20 @@ cleanup:
+@@ -1525,20 +1525,20 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -86,7 +86,7 @@ index c5374ae..23464bf 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1552,7 +1552,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1557,7 +1557,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
              continue;
          }
  
@@ -96,7 +96,7 @@ index c5374ae..23464bf 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1560,7 +1561,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1565,7 +1566,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
      if (!i && (cid = rwlock->writer)) {
@@ -106,7 +106,7 @@ index c5374ae..23464bf 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1944,8 +1946,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -1954,8 +1956,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          shm_lock = &shm_mod->data_lock_info[ds];
  
          /* data-lock */
@@ -116,7 +116,7 @@ index c5374ae..23464bf 100644
  
          if (err_info) {
              return err_info;
-@@ -1991,8 +1992,7 @@ ds_unlock:
+@@ -2001,8 +2002,7 @@ ds_unlock:
  
      /* change-sub-lock */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -127,7 +127,7 @@ index c5374ae..23464bf 100644
          }
      }
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 4bd0e7c..11237de 100644
+index 941424d..011938e 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -129,7 +129,7 @@ sr_error_info_t *
@@ -140,10 +140,10 @@ index 4bd0e7c..11237de 100644
      if (srlyb_shm_prefix_cached) {
          *prefix = srlyb_shm_prefix_cached;
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index dee88a3..b382e58 100644
+index 90e385f..a6dbad5 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -3064,9 +3064,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+@@ -3091,9 +3091,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -156,7 +156,7 @@ index dee88a3..b382e58 100644
      return NULL;
  }
  
-@@ -3530,8 +3530,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
+@@ -3557,8 +3557,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -167,7 +167,7 @@ index dee88a3..b382e58 100644
      return NULL;
  }
  
-@@ -4421,10 +4421,10 @@ process_event:
+@@ -4448,10 +4448,10 @@ process_event:
          if (sub_info.event == SR_SUB_EV_RPC) {
              if (ret == SR_ERR_CALLBACK_SHELVE) {
                  /* processing was shelved, so interupt the whole RPC processing in order to get correct final output */

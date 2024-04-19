@@ -706,7 +706,7 @@ sr_edit_create_userord_predicate(const struct lyd_node *llist)
     /* create list predicate consisting of all the keys */
     pred_len = 0;
     pred = NULL;
-    for (key = lyd_child(llist); key && (key->schema->flags & LYS_KEY); key = key->next) {
+    for (key = lyd_child(llist); key && key->schema && (key->schema->flags & LYS_KEY); key = key->next) {
         key_len = 1 + strlen(key->schema->name) + 2 + strlen(lyd_get_value(key)) + 2;
         pred = sr_realloc(pred, pred_len + key_len + 1);
         if (!pred) {
@@ -1074,19 +1074,13 @@ sr_edit_find_match(const struct lyd_node *data_sibling, const struct lyd_node *e
 {
     sr_error_info_t *err_info = NULL;
     const struct lysc_node *schema = NULL;
-    const struct lys_module *mod = NULL;
     struct lyd_meta *m1, *m2;
     uint32_t inst_pos, pos;
     int found = 0;
 
     if (!edit_node->schema) {
-        /* opaque node, find target module first */
-        mod = lyd_node_module(edit_node);
-        if (mod) {
-            /* find target schema node */
-            schema = lys_find_child(edit_node->parent ? edit_node->parent->schema : NULL, mod,
-                    ((struct lyd_node_opaq *)edit_node)->name.name, 0, 0, 0);
-        }
+        /* opaque node, find the schema node first */
+        schema = lyd_node_schema(edit_node);
         if (schema) {
             /* try to find a data instance of the schema node */
             err_info = sr_lyd_find_sibling_val(data_sibling, schema, NULL, match_p);
@@ -1189,58 +1183,63 @@ sr_edit_find(const struct lyd_node *data_sibling, const struct lyd_node *edit_no
         }
 
         if (match) {
-            switch (match->schema->nodetype) {
-            case LYS_CONTAINER:
-                val_equal = 1;
-                break;
-            case LYS_LEAF:
-            case LYS_ANYXML:
-            case LYS_ANYDATA:
-                if (lyd_compare_single(match, edit_node, 0) == LY_ENOT) {
-                    /* check whether the value is different (dflt flag may or may not differ) */
-                    val_equal = 0;
-                } else {
-                    /* canonical values are the same */
+            if (!match->schema) {
+                /* does not really matter but an opaque node should never match any value because the value is likely invalid */
+                val_equal = 0;
+            } else {
+                switch (match->schema->nodetype) {
+                case LYS_CONTAINER:
                     val_equal = 1;
-                }
-                break;
-            case LYS_LIST:
-            case LYS_LEAFLIST:
-                if (dflt_ll_skip && (match->flags & LYD_DEFAULT) && !(edit_node->flags & LYD_DEFAULT)) {
-                    /* default leaf-list is not really considered to exist in data if there is an explicit instance in the edit */
-                    assert(match->schema->nodetype == LYS_LEAFLIST);
-                    match = NULL;
-                } else if (lysc_is_userordered(match->schema)) {
-                    /* check if even the order matches for user-ordered (leaf-)lists */
-                    anchor_node = NULL;
-                    if (userord_anchor) {
-                        /* find the anchor node if set */
-                        if ((err_info = sr_edit_find_userord_predicate(data_sibling, match, userord_anchor, &anchor_node))) {
-                            return err_info;
-                        }
-                    } else if (flags & EDIT_APPLY_REPLACE_R) {
-                        /* take the order from the edit */
-                        anchor_node = (struct lyd_node *)sr_edit_find_previous_instance(edit_node);
-                        if (anchor_node) {
-                            insert = INSERT_AFTER;
-                        } else {
-                            insert = INSERT_FIRST;
-                        }
-                    }
-
-                    /* check for move */
-                    if (sr_edit_userord_is_moved(match, insert, anchor_node)) {
+                    break;
+                case LYS_LEAF:
+                case LYS_ANYXML:
+                case LYS_ANYDATA:
+                    if (lyd_compare_single(match, edit_node, 0) == LY_ENOT) {
+                        /* check whether the value is different (dflt flag may or may not differ) */
                         val_equal = 0;
+                    } else {
+                        /* canonical values are the same */
+                        val_equal = 1;
+                    }
+                    break;
+                case LYS_LIST:
+                case LYS_LEAFLIST:
+                    if (dflt_ll_skip && (match->flags & LYD_DEFAULT) && !(edit_node->flags & LYD_DEFAULT)) {
+                        /* default leaf-list is not really considered to exist in data if there is an explicit instance in the edit */
+                        assert(match->schema->nodetype == LYS_LEAFLIST);
+                        match = NULL;
+                    } else if (lysc_is_userordered(match->schema)) {
+                        /* check if even the order matches for user-ordered (leaf-)lists */
+                        anchor_node = NULL;
+                        if (userord_anchor) {
+                            /* find the anchor node if set */
+                            if ((err_info = sr_edit_find_userord_predicate(data_sibling, match, userord_anchor, &anchor_node))) {
+                                return err_info;
+                            }
+                        } else if (flags & EDIT_APPLY_REPLACE_R) {
+                            /* take the order from the edit */
+                            anchor_node = (struct lyd_node *)sr_edit_find_previous_instance(edit_node);
+                            if (anchor_node) {
+                                insert = INSERT_AFTER;
+                            } else {
+                                insert = INSERT_FIRST;
+                            }
+                        }
+
+                        /* check for move */
+                        if (sr_edit_userord_is_moved(match, insert, anchor_node)) {
+                            val_equal = 0;
+                        } else {
+                            val_equal = 1;
+                        }
                     } else {
                         val_equal = 1;
                     }
-                } else {
-                    val_equal = 1;
+                    break;
+                default:
+                    SR_ERRINFO_INT(&err_info);
+                    return err_info;
                 }
-                break;
-            default:
-                SR_ERRINFO_INT(&err_info);
-                return err_info;
             }
         }
     }
@@ -2892,6 +2891,81 @@ cleanup:
 }
 
 /**
+ * @brief Merge sysrepo edit subtrees, recursively. Optionally, sysrepo diff is being also created/updated.
+ *
+ * @param[in,out] trg_root First top-level sibling of the target diff tree.
+ * @param[in] trg_parent Target diff tree node parent.
+ * @param[in] src_node Source edit tree node.
+ * @return err_info, NULL on success.
+ */
+static sr_error_info_t *
+sr_edit_diff_edit_merge_r(struct lyd_node **trg_root, struct lyd_node *trg_parent, const struct lyd_node *src_node)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *trg_node = NULL, *trg_sibling, *child_src;
+
+    /* find an equal node in the current data */
+    trg_sibling = trg_parent ? lyd_child(trg_parent) : *trg_root;
+    if ((err_info = sr_edit_find_match(trg_sibling, src_node, &trg_node))) {
+        goto cleanup;
+    }
+
+    if (trg_node) {
+        /* merge descendants, recursively */
+        LY_LIST_FOR(lyd_child_no_keys(src_node), child_src) {
+            if ((err_info = sr_edit_diff_edit_merge_r(trg_root, trg_node, child_src))) {
+                goto cleanup;
+            }
+        }
+    } else {
+        /* node not found, merge it */
+        if ((err_info = sr_lyd_dup(src_node, NULL, LYD_DUP_RECURSIVE | LYD_DUP_NO_META, 0, &trg_node))) {
+            goto cleanup;
+        }
+
+        /* set 'none' operation */
+        if ((err_info = sr_diff_set_oper(trg_node, "none"))) {
+            goto cleanup;
+        }
+
+        /* insert */
+        if (trg_parent) {
+            err_info = sr_lyd_insert_child(trg_parent, trg_node);
+        } else {
+            err_info = sr_lyd_insert_sibling(*trg_root, trg_node, trg_root);
+        }
+        if (err_info) {
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    return err_info;
+}
+
+sr_error_info_t *
+sr_edit_mod_diff_edit_merge(struct lyd_node **diff, const struct lys_module *ly_mod, const struct lyd_node *edit)
+{
+    sr_error_info_t *err_info = NULL;
+    const struct lyd_node *root;
+
+    LY_LIST_FOR(edit, root) {
+        if (lyd_owner_module(root) != ly_mod) {
+            /* skip data nodes from different modules */
+            continue;
+        }
+
+        /* merge relevant nodes from the edit datatree */
+        if ((err_info = sr_edit_diff_edit_merge_r(diff, NULL, edit))) {
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    return err_info;
+}
+
+/**
  * @brief Check whether a descendant operation should replace a parent operation (is superior to).
  * Also, check whether the operation is even allowed.
  *
@@ -3520,7 +3594,7 @@ sr_edit_add_dup_inst_list_pos(struct lyd_node *parent, const char *xpath)
         if (lysc_is_dup_inst_list(parent->schema)) {
             /* store the instance position */
             if (pos) {
-                sprintf(buf, "%d", pos);
+                sprintf(buf, "%" PRIu32, pos);
             } else {
                 strcpy(buf, "");
             }
@@ -3736,12 +3810,16 @@ sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, s
             /* skip the node */
             ++(*idx);
 
-            /* in case of lists we want to also skip all their keys */
+            /* in case of lists we want to also skip all their keys (but because of the XPath, there may be none selected) */
             if ((*node)->schema->nodetype == LYS_LIST) {
-                key = set->dnodes[*idx];
-                while ((*idx < set->count) && lysc_is_key(key->schema) && (lyd_parent(key) == *node)) {
-                    ++(*idx);
+                while (*idx < set->count) {
                     key = set->dnodes[*idx];
+
+                    if (lysc_is_key(key->schema) && (lyd_parent(key) == *node)) {
+                        ++(*idx);
+                    } else {
+                        break;
+                    }
                 }
             }
             continue;

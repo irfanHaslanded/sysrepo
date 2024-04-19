@@ -10,18 +10,18 @@ Subject: implement sr_install_module_perm
  4 files changed, 125 insertions(+), 8 deletions(-)
 
 diff --git a/src/lyd_mods.c b/src/lyd_mods.c
-index fb48207..d57ab30 100644
+index de0a554..2bc4d33 100644
 --- a/src/lyd_mods.c
 +++ b/src/lyd_mods.c
-@@ -975,7 +975,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
-     struct lyd_node *sr_mods = NULL;
+@@ -946,7 +946,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
      sr_int_install_mod_t *new_mods = NULL;
      uint32_t i, new_mod_count = 0;
+     struct sr_data_update_s data_info = {0};
 -    const char *mod_origin;
  
  #define SR_INSTALL_INT_MOD(ctx, yang_mod, dep, new_mods, new_mod_count) \
      if ((err_info = sr_lys_parse(ctx, yang_mod, NULL, LYS_IN_YANG, NULL, &ly_mod))) { \
-@@ -985,7 +984,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+@@ -956,7 +955,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
              strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &(new_mods), &(new_mod_count)))) { \
          goto cleanup; \
      } \
@@ -29,7 +29,7 @@ index fb48207..d57ab30 100644
  
      ly_mod = ly_ctx_get_module_implemented(ly_ctx, "sysrepo");
      SR_CHECK_INT_GOTO(!ly_mod, err_info, cleanup);
-@@ -1012,9 +1010,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
+@@ -983,9 +981,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
                  strlen(SR_GROUP) ? SR_GROUP : NULL, sr_module_default_mode(ly_mod), &new_mods, &new_mod_count))) {
              goto cleanup;
          }
@@ -39,7 +39,7 @@ index fb48207..d57ab30 100644
      }
  
      /* install ietf-yang-library */
-@@ -1160,11 +1155,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
+@@ -1154,11 +1149,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
                  (*new_mods)[i].owner, (*new_mods)[i].group, (*new_mods)[i].perm, new_mods, new_mod_count))) {
              goto cleanup;
          }
@@ -52,7 +52,7 @@ index fb48207..d57ab30 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 615288f..7bf4df4 100644
+index 3e7e0a6..d8b93b9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@
@@ -114,7 +114,7 @@ index 615288f..7bf4df4 100644
          goto cleanup;
      }
  
-@@ -7323,3 +7358,36 @@ cleanup:
+@@ -7384,3 +7419,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  
@@ -152,10 +152,10 @@ index 615288f..7bf4df4 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 3a0a1e5..6531697 100644
+index e166098..3895df5 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -538,6 +538,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
+@@ -550,6 +550,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
  int sr_install_modules2(sr_conn_ctx_t *conn, const sr_install_mod_t *modules, uint32_t module_count,
          const char *search_dirs, const char *data, const char *data_path, LYD_FORMAT format);
  

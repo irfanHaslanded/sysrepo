@@ -10,10 +10,10 @@ nodes of type LY_TYPE_ENUM to SR_INT32_T, rather than SR_ENUM_T.
  2 files changed, 11 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 0b54e00..820c3e6 100644
+index 590db14..27d9b4c 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3879,9 +3879,14 @@ store_value:
+@@ -3974,9 +3974,14 @@ store_value:
              sr_val->data.string_val = NULL;
              break;
          case LY_TYPE_ENUM:
@@ -32,10 +32,10 @@ index 0b54e00..820c3e6 100644
          case LY_TYPE_IDENT:
              sr_val->type = SR_IDENTITYREF_T;
 diff --git a/src/common.h b/src/common.h
-index 642689c..51e5b96 100644
+index 9ced7fb..f652008 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1348,6 +1348,9 @@ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_
+@@ -1362,6 +1362,9 @@ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_
  
  typedef enum sr_val_ly2sr_opts_e {
      SR_VAL_LY2SR_DEFAULT = 0,             /**< Standard behaviour */

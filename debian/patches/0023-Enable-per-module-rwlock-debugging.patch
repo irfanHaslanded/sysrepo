@@ -12,10 +12,10 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index cf38524..2fa107a 100644
+index 325af14..5f10021 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -88,7 +88,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
+@@ -90,7 +90,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
      char buf[512] = "";
      cursor = snprintf(buf, sizeof(buf), "%s CID wr %" PRIu32 " upgr %" PRIu32 " rd", msg, rwlock->writer, rwlock->upgr);
      for (i = 0; SR_IS_READER_VALID(rwlock, i); i++) {
@@ -27,7 +27,7 @@ index cf38524..2fa107a 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5594,7 +5597,7 @@ sr_is_priviliged(void)
+@@ -5693,7 +5696,7 @@ sr_is_priviliged(void)
  }
  
  void
@@ -37,10 +37,10 @@ index cf38524..2fa107a 100644
      if (enable) {
          /* Set the MSB to enable debug logs */
 diff --git a/src/common.h b/src/common.h
-index a2b3548..ed3f273 100644
+index e5bbd4e..d76af70 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1372,4 +1372,9 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -1386,4 +1386,9 @@ typedef enum sr_val_ly2sr_opts_e {
   */
  sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
  
@@ -51,10 +51,10 @@ index a2b3548..ed3f273 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/executables/sysrepoctl.c b/src/executables/sysrepoctl.c
-index faa26f1..15a3b74 100644
+index b968055..ee05f0c 100644
 --- a/src/executables/sysrepoctl.c
 +++ b/src/executables/sysrepoctl.c
-@@ -136,6 +136,16 @@ help_print(void)
+@@ -138,6 +138,16 @@ help_print(void)
              "  -v, --verbosity <level>\n"
              "                       Change verbosity to a level (none, error, warning, info, debug) or\n"
              "                       number (0, 1, 2, 3, 4). Accepted by all op.\n"
@@ -71,7 +71,7 @@ index faa26f1..15a3b74 100644
              "\n");
  }
  
-@@ -632,6 +642,9 @@ main(int argc, char **argv)
+@@ -639,6 +649,9 @@ main(int argc, char **argv)
      const char *file_path = NULL, *search_dirs = NULL, **module_names = NULL, *data_path = NULL;
      char *ptr;
      int r, rc = EXIT_FAILURE, opt, operation = 0, force = 0;
@@ -81,7 +81,7 @@ index faa26f1..15a3b74 100644
      struct option options[] = {
          {"help",            no_argument,       NULL, 'h'},
          {"version",         no_argument,       NULL, 'V'},
-@@ -654,6 +667,8 @@ main(int argc, char **argv)
+@@ -661,6 +674,8 @@ main(int argc, char **argv)
          {"init-data",       required_argument, NULL, 'I'},
          {"force",           no_argument,       NULL, 'f'},
          {"verbosity",       required_argument, NULL, 'v'},
@@ -90,7 +90,7 @@ index faa26f1..15a3b74 100644
          {NULL,              0,                 NULL, 0},
      };
  
-@@ -664,7 +679,7 @@ main(int argc, char **argv)
+@@ -671,7 +686,7 @@ main(int argc, char **argv)
  
      /* process options */
      opterr = 0;
@@ -99,7 +99,7 @@ index faa26f1..15a3b74 100644
          switch (opt) {
          case 'h':
              /* help */
-@@ -893,6 +908,23 @@ main(int argc, char **argv)
+@@ -900,6 +915,23 @@ main(int argc, char **argv)
                  goto cleanup;
              }
              break;
@@ -123,7 +123,7 @@ index faa26f1..15a3b74 100644
          default:
              error_print(0, "Invalid option or missing argument: -%c", optopt);
              goto cleanup;
-@@ -972,6 +1004,12 @@ main(int argc, char **argv)
+@@ -979,6 +1011,12 @@ main(int argc, char **argv)
              goto cleanup;
          }
          break;
@@ -137,10 +137,10 @@ index faa26f1..15a3b74 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 373ffca..424e591 100644
+index 6213946..1cdde17 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7249,3 +7249,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7310,3 +7310,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }
@@ -177,10 +177,10 @@ index 373ffca..424e591 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index f62260a..3a0a1e5 100644
+index d76aea9..e166098 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1862,6 +1862,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
+@@ -1874,6 +1874,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
  uint64_t sr_session_get_event_nc_id(sr_session_ctx_t *session);
  void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
  

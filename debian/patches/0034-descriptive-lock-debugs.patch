@@ -18,10 +18,10 @@ Add tests for reader lock failures
  create mode 100644 tests/test_lock_log.c
 
 diff --git a/src/common.c b/src/common.c
-index bfc4e9e..832f35d 100644
+index 87a25e7..e16b37e 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -60,10 +60,13 @@
+@@ -62,10 +62,13 @@
  static int sr_is_priviliged(void);
  
  #define SR_RWLOCK_ID(rwlock_ptr) (~(1u<<31) & (rwlock_ptr)->id)
@@ -37,7 +37,7 @@ index bfc4e9e..832f35d 100644
  static int
  sr_log_rwlock_enabled(sr_rwlock_t *rwlock)
  {
-@@ -79,10 +82,9 @@ sr_log_rwlock_enabled(sr_rwlock_t *rwlock)
+@@ -81,10 +84,9 @@ sr_log_rwlock_enabled(sr_rwlock_t *rwlock)
      return (sr_log_rwlock_is_enabled = (getenv("SR_LOG_RWLOCK") != NULL));
  }
  
@@ -51,7 +51,7 @@ index bfc4e9e..832f35d 100644
  {
      size_t i, cursor = 0;
      char buf[512] = "";
-@@ -94,7 +96,7 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
+@@ -96,7 +98,7 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
          }
      }
  
@@ -60,7 +60,7 @@ index bfc4e9e..832f35d 100644
  }
  
  /**
-@@ -2202,9 +2204,14 @@ sr_get_log_file(void)
+@@ -2242,9 +2244,14 @@ sr_get_log_file(void)
      static FILE *logfile = NULL;
      int logfd = -1;
      struct stat fstats;
@@ -76,7 +76,7 @@ index bfc4e9e..832f35d 100644
          logfd = sr_open(logpath, O_WRONLY | O_CREAT | O_APPEND, SR_SHM_PERM);
          if (logfd < 0) {
              SR_LOG_WRN("%s Unable to open logpath for writing errno %d", __func__, errno);
-@@ -2234,6 +2241,7 @@ sr_rwlock_create_debug_info(uint32_t id, const char *desc)
+@@ -2274,6 +2281,7 @@ sr_rwlock_create_debug_info(uint32_t id, const char *desc)
      extern char * __progname;
      struct timespec ts = {0};
      clock_gettime(CLOCK_REALTIME, &ts);
@@ -84,7 +84,7 @@ index bfc4e9e..832f35d 100644
      logfile = sr_get_log_file();
      if (!logfile) {
          return;
-@@ -2292,7 +2300,7 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
+@@ -2332,7 +2340,7 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
      if (i == SR_RWLOCK_READ_LIMIT) {
          sr_errinfo_new(&err_info, SR_ERR_TIME_OUT, "reader limit reached for lock %" PRIu32
                      " cid %" PRIu32, SR_RWLOCK_ID(rwlock), cid);
@@ -93,7 +93,7 @@ index bfc4e9e..832f35d 100644
          goto cleanup;
      }
  
-@@ -2305,7 +2313,7 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
+@@ -2345,7 +2353,7 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
          if (rwlock->read_count[i] == UINT8_MAX) {
              sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Recursive reader limit reached for lock %" PRIu32
                      " cid %" PRIu32, SR_RWLOCK_ID(rwlock), cid);
@@ -102,7 +102,7 @@ index bfc4e9e..832f35d 100644
              goto cleanup;
          }
          ++rwlock->read_count[i];
-@@ -2380,6 +2388,7 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
+@@ -2420,6 +2428,7 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
      for (i = 0; SR_IS_READER_VALID(rwlock, i) && (rwlock->readers[i] != cid); ++i) {}
      if ((i == SR_RWLOCK_READ_LIMIT) || (rwlock->readers[i] != cid)) {
          /* CID not found */
@@ -110,7 +110,7 @@ index bfc4e9e..832f35d 100644
          SR_ERRINFO_INT(&err_info);
          goto cleanup;
      }
-@@ -2475,6 +2484,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2515,6 +2524,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          sr_rwlock_recover(rwlock, func, cb, cb_data);
          SR_CHECK_INT_RET(ret, err_info);
      } else if (ret) {
@@ -118,7 +118,7 @@ index bfc4e9e..832f35d 100644
          SR_ERRINFO_LOCK(&err_info, func, ret);
          return err_info;
      }
-@@ -2627,7 +2637,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2667,7 +2677,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          }
      }
      if (err_info) {
@@ -127,7 +127,7 @@ index bfc4e9e..832f35d 100644
      } else {
          SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locked");
      }
-@@ -2638,6 +2648,7 @@ error_cond_unlock:
+@@ -2678,6 +2688,7 @@ error_cond_unlock:
          /* MUTEX UNLOCK */
          pthread_mutex_unlock(&rwlock->mutex);
      }
@@ -135,7 +135,7 @@ index bfc4e9e..832f35d 100644
  
      SR_ERRINFO_COND(&err_info, func, ret);
      return err_info;
-@@ -2683,6 +2694,7 @@ sr_rwlock_mutex_lock(sr_rwlock_t *rwlock, uint32_t timeout_ms, const char *func,
+@@ -2723,6 +2734,7 @@ sr_rwlock_mutex_lock(sr_rwlock_t *rwlock, uint32_t timeout_ms, const char *func,
          sr_rwlock_recover(rwlock, func, cb, cb_data);
          SR_CHECK_INT_RET(ret, err_info);
      } else if (ret) {
@@ -143,7 +143,7 @@ index bfc4e9e..832f35d 100644
          SR_ERRINFO_LOCK(&err_info, func, ret);
          return err_info;
      }
-@@ -2734,6 +2746,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2774,6 +2786,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              }
          }
          if (ret) {
@@ -151,7 +151,7 @@ index bfc4e9e..832f35d 100644
              SR_ERRINFO_COND(&err_info, func, ret);
              goto cleanup_unlock;
          }
-@@ -2801,6 +2814,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2841,6 +2854,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              }
              rwlock->upgr = cid;
  
@@ -159,7 +159,7 @@ index bfc4e9e..832f35d 100644
              SR_ERRINFO_COND(&err_info, func, ret);
              goto cleanup_unlock;
          }
-@@ -2906,6 +2920,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2946,6 +2960,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              /* recover the lock, no CB needed since when we are unlocking, the state is expected to be valid and cleared */
              sr_rwlock_recover(rwlock, func, NULL, NULL);
          } else if (ret) {
@@ -167,7 +167,7 @@ index bfc4e9e..832f35d 100644
              SR_ERRINFO_LOCK(&err_info, func, ret);
              sr_errinfo_free(&err_info);
          }
-@@ -3079,7 +3094,7 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
+@@ -3119,7 +3134,7 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
      cache->path = strdup(path);
      SR_CHECK_MEM_GOTO(!cache->path, err_info, cleanup);
      rc = asprintf(&lock_descr, "oper_poll_cache %s", path);
@@ -177,7 +177,7 @@ index bfc4e9e..832f35d 100644
      }
      if ((err_info = sr_rwlock_init(&cache->data_lock, 0, SR_RWLOCK_NEW_ID(conn), lock_descr))) {
 diff --git a/src/common.h b/src/common.h
-index ed3f273..df83c94 100644
+index d76af70..6cbd3d9 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -69,6 +69,8 @@ struct srplg_ntf_s;
@@ -190,7 +190,7 @@ index ed3f273..df83c94 100644
  #define SR_SHM_MEM_ALIGN 8
  
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 567a064..e6fef68 100644
+index 9fef134..a54bf16 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,8 @@
@@ -266,7 +266,7 @@ index 567a064..e6fef68 100644
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index b370b42..9d73dd6 100644
+index 7002026..6f33917 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@
@@ -280,7 +280,7 @@ index b370b42..9d73dd6 100644
  /**
   * @brief Generic structure for parallel notifications.
   */
-@@ -395,6 +399,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -400,6 +404,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
                      "Waiting for subscription of \"%s\" failed, previous event \"%s\" ID %" PRIu32 " was not processed.",
                      shm_name, sr_ev2str(last_event), last_request_id);
          } else {
@@ -288,7 +288,7 @@ index b370b42..9d73dd6 100644
              /* other error */
              SR_ERRINFO_COND(&err_info, __func__, ret);
          }
-@@ -487,6 +492,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -496,6 +501,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              }
          } else {
              /* other error */
@@ -297,7 +297,7 @@ index b370b42..9d73dd6 100644
          }
  
 diff --git a/src/subscr.c b/src/subscr.c
-index ce15e86..07cfb35 100644
+index cd8062b..9f1b549 100644
 --- a/src/subscr.c
 +++ b/src/subscr.c
 @@ -1423,8 +1423,10 @@ sr_rpc_sub_del(sr_subscription_ctx_t *subscr, uint32_t idx1, uint32_t idx2, sr_l

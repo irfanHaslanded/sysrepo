@@ -45,7 +45,7 @@ sr_error_info_t *
 sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock, const char *func)
 {
     sr_error_info_t *err_info = NULL;
-    size_t shm_file_size;
+    size_t shm_file_size = 0;
 
     if (ext_lock) {
         /* EXT LOCK */
@@ -132,7 +132,7 @@ sr_shmext_conn_remap_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lo
     sr_error_info_t *err_info = NULL;
     sr_ext_hole_t *iter, *last = NULL;
     uint32_t last_size;
-    size_t shm_file_size;
+    size_t shm_file_size = 0;
 
     /* make ext SHM smaller if there is a memory hole at its end */
     if (((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) && ext_lock) {
@@ -140,7 +140,7 @@ sr_shmext_conn_remap_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lo
             last = iter;
         }
 
-        if (last && (((char *)last - conn->ext_shm.addr) + last->size == (signed)conn->ext_shm.size)) {
+        if (last && ((uint32_t)((char *)last - conn->ext_shm.addr) + last->size == conn->ext_shm.size)) {
             if ((err_info = sr_file_get_size(conn->ext_shm.fd, &shm_file_size))) {
                 goto cleanup_unlock;
             }
@@ -453,8 +453,8 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
     /* print it */
     printed = 0;
     for (i = 0; i < item_count; ++i) {
-        printed += sr_sprintf(&msg, &msg_len, printed, "%06jd-%06jd [%6zu]: %s\n",
-                (intmax_t)items[i].start, (intmax_t)(items[i].start + items[i].size), items[i].size, items[i].name);
+        printed += sr_sprintf(&msg, &msg_len, printed, "%06" PRIu64 "-%06" PRIu64 " [%6" PRIu64 "]: %s\n",
+                (uint64_t)items[i].start, (uint64_t)(items[i].start + items[i].size), (uint64_t)items[i].size, items[i].name);
     }
 
     /* print all the information about SHM */
@@ -479,7 +479,7 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
 
         /* check alignment */
         assert(items[i].size == SR_SHM_SIZE(items[i].size));
-        assert((unsigned)items[i].start == SR_SHM_SIZE(items[i].start));
+        assert(items[i].start == SR_SHM_SIZE(items[i].start));
 
         /* free name */
         free(items[i].name);
@@ -1270,6 +1270,7 @@ sr_shmext_oper_poll_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
     uint32_t evpipe_num;
 
     assert(has_locks == SR_LOCK_WRITE);
+    (void)has_locks;
 
     shm_subs = (sr_mod_oper_poll_sub_t *)(conn->ext_shm.addr + shm_mod->oper_poll_subs);
     if (recovery) {

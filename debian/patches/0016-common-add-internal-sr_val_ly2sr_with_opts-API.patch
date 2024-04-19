@@ -10,10 +10,10 @@ libyang data into a sysrepo value.
  2 files changed, 20 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index b0d6e2a..0b54e00 100644
+index b09f3ae..590db14 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3825,6 +3825,12 @@ sr_ev2api(sr_sub_event_t ev)
+@@ -3920,6 +3920,12 @@ sr_ev2api(sr_sub_event_t ev)
  
  sr_error_info_t *
  sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)
@@ -27,10 +27,10 @@ index b0d6e2a..0b54e00 100644
      sr_error_info_t *err_info = NULL;
      char *ptr, *origin;
 diff --git a/src/common.h b/src/common.h
-index ff5d23a..642689c 100644
+index b01bf87..9ced7fb 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1346,4 +1346,18 @@ sr_error_info_t *sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_
+@@ -1360,4 +1360,18 @@ sr_error_info_t *sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_
   */
  sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name);
  
