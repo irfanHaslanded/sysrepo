@@ -9,11 +9,11 @@ Subject: rwlock with retry for better visibility
  3 files changed, 84 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 1e932ca..7f3b7aa 100644
+index 05485c1..1b50d7e 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -139,6 +139,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
-         "JSON notif"    /**< notification */
+@@ -147,6 +147,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
+         SR_DEFAULT_NOTIFICATION_DS /**< notification */
      }};
  
 +int
@@ -53,7 +53,7 @@ index 1e932ca..7f3b7aa 100644
  sr_error_info_t *
  sr_ptr_add(pthread_mutex_t *ptr_lock, void ***ptrs, uint32_t *ptr_count, void *add_ptr)
  {
-@@ -2510,7 +2544,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2518,7 +2552,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
      }
      if (!has_mutex) {
          /* MUTEX LOCK */
@@ -62,7 +62,7 @@ index 1e932ca..7f3b7aa 100644
      }
  
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locking");
-@@ -2538,7 +2572,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2546,7 +2580,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[0] || rwlock->writer)) {
              /* COND WAIT */
@@ -75,7 +75,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2576,7 +2614,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2584,7 +2622,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              }
  
              /* COND WAIT */
@@ -88,7 +88,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2614,7 +2656,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2622,7 +2664,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->upgr || rwlock->writer)) {
              /* COND WAIT */
@@ -101,7 +101,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2651,7 +2697,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2659,7 +2705,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->writer)) {
              /* COND WAIT */
@@ -114,7 +114,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2777,7 +2827,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2785,7 +2835,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          ret = 0;
          while (!ret && (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer)) {
              /* COND WAIT */
@@ -127,7 +127,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -2839,7 +2893,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2847,7 +2901,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              }
  
              /* COND WAIT */
@@ -140,7 +140,7 @@ index 1e932ca..7f3b7aa 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -2952,7 +3010,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2960,7 +3018,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          sr_timeouttime_get(&timeout_ts, timeout_ms);
  
          /* MUTEX LOCK */

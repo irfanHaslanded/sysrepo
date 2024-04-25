@@ -30,10 +30,10 @@ cherry-picked from libyang1 patch
  3 files changed, 41 insertions(+), 41 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 0fc44fc..65b05c5 100644
+index 8934522..29ad5ff 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5641,7 +5641,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
+@@ -5597,7 +5597,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
      } else if (node->schema->nodetype == LYS_LEAFLIST) {
          /* do not include the value predicate */
          free(sr_val->xpath);
@@ -43,7 +43,7 @@ index 0fc44fc..65b05c5 100644
      }
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 3c8b728..69000ea 100644
+index e72f7ff..3b0df8a 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -3626,7 +3626,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
@@ -303,7 +303,7 @@ index 3c8b728..69000ea 100644
          sr_free_val(old_val);
          sr_free_val(new_val);
 diff --git a/tests/test_copy_config.c b/tests/test_copy_config.c
-index 519f5f0..fb513a2 100644
+index be1fa9f..f30a063 100644
 --- a/tests/test_copy_config.c
 +++ b/tests/test_copy_config.c
 @@ -1011,10 +1011,10 @@ module_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
@@ -352,7 +352,7 @@ index 519f5f0..fb513a2 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -1656,7 +1656,7 @@ module_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
+@@ -1659,7 +1659,7 @@ module_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
          assert_int_equal(op, SR_OP_MOVED);
          assert_null(old_val);
          assert_non_null(new_val);

@@ -9,10 +9,10 @@ also disable test for urge lock
  2 files changed, 12 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index a18385a..55adead 100644
+index 355c0bc..317c745 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -2523,7 +2523,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2531,7 +2531,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
      int ret = 0, r, wr_urged;
  
      assert(mode && timeout_abs && cid);
@@ -23,7 +23,7 @@ index a18385a..55adead 100644
      if (!has_mutex) {
          /* MUTEX LOCK */
          ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
-@@ -2764,6 +2766,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2772,6 +2774,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      struct timespec timeout_abs;
      int ret, wr_urged;
  
@@ -33,7 +33,7 @@ index a18385a..55adead 100644
      assert(mode && cid);
      assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocking");
-@@ -2951,6 +2956,9 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2959,6 +2964,9 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      int ret = 0;
  
      assert(mode && cid);
@@ -44,7 +44,7 @@ index a18385a..55adead 100644
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 042a484..d68f951 100644
+index 375f4b9..9267127 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -7284,11 +7284,12 @@ main(void)

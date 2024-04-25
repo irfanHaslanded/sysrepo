@@ -24,7 +24,7 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 65c7ec4..6f9750b 100644
+index 7181de4..c33f6c4 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -84,7 +84,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
@@ -58,10 +58,10 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index f178d2f..298ddd0 100644
+index 2358122..dcff9dc 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1525,20 +1525,20 @@ cleanup:
+@@ -1601,20 +1601,20 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -86,7 +86,7 @@ index f178d2f..298ddd0 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1557,7 +1557,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1633,7 +1633,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
              continue;
          }
  
@@ -96,7 +96,7 @@ index f178d2f..298ddd0 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1565,7 +1566,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1641,7 +1642,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
      if (!i && (cid = rwlock->writer)) {
@@ -106,7 +106,7 @@ index f178d2f..298ddd0 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1954,8 +1956,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -2030,8 +2032,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          shm_lock = &shm_mod->data_lock_info[ds];
  
          /* data-lock */
@@ -116,7 +116,7 @@ index f178d2f..298ddd0 100644
  
          if (err_info) {
              return err_info;
-@@ -2001,8 +2002,7 @@ ds_unlock:
+@@ -2077,8 +2078,7 @@ ds_unlock:
  
      /* change-sub-lock */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -127,7 +127,7 @@ index f178d2f..298ddd0 100644
          }
      }
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 941424d..011938e 100644
+index 28c65d0..05725ac 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -129,7 +129,7 @@ sr_error_info_t *

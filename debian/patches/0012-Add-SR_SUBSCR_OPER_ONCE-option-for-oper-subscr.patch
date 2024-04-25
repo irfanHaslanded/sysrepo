@@ -26,10 +26,10 @@ a "one shot" fashion where it is more performant to do so.
  4 files changed, 250 insertions(+), 4 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 3c1e550..f178d2f 100644
+index f8290a9..2358122 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1163,10 +1163,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1239,10 +1239,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              /* nested data */
@@ -42,7 +42,7 @@ index 3c1e550..f178d2f 100644
                      goto cleanup_opergetsub_ext_unlock;
                  }
  
-@@ -1175,6 +1175,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1251,6 +1251,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      lyd_free_all(oper_data);
                      goto cleanup_opergetsub_ext_unlock;
                  }
@@ -64,10 +64,10 @@ index 3c1e550..f178d2f 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 99f3a3f..4ffebb6 100644
+index 29edc9a..b35d946 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7024,7 +7024,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -6980,7 +6980,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */

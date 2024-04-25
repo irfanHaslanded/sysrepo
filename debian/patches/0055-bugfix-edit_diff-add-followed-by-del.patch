@@ -14,7 +14,7 @@ Closes: ENG-5756
  3 files changed, 51 insertions(+), 14 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index bc4810b..1e0edc6 100644
+index d54cd99..7f13571 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -3079,7 +3079,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
@@ -72,10 +72,10 @@ index bc4810b..1e0edc6 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index c3d1c0e..d60d446 100644
+index f82f92f..6710681 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3437,16 +3437,18 @@ cleanup:
+@@ -3393,16 +3393,18 @@ cleanup:
  }
  
  API int
@@ -99,7 +99,7 @@ index c3d1c0e..d60d446 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index effc26b..1dd0899 100644
+index 5e4a279..3ce0acd 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -159,11 +159,14 @@ clear_up(void **state)

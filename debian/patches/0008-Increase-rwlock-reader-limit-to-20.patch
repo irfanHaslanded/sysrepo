@@ -7,10 +7,10 @@ Subject: Increase rwlock reader limit to 20
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index 35d3d80..b65e74b 100644
+index 0312458..945c4a2 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
-@@ -49,7 +49,7 @@ typedef enum {
+@@ -50,7 +50,7 @@ typedef enum {
  } sr_lock_mode_t;
  
  /** maximum number of system-wide concurrent connection owners of a read lock */

@@ -14,7 +14,7 @@ Closes: ENG-5693
  2 files changed, 11 insertions(+), 18 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 6650a94..bc4810b 100644
+index d19820b..d54cd99 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -3452,24 +3452,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
@@ -53,7 +53,7 @@ index 6650a94..bc4810b 100644
  
              if (*match) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index 6d30319..effc26b 100644
+index eb86dd8..5e4a279 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -1443,7 +1443,7 @@ test_state_list(void **state)

@@ -44,10 +44,10 @@ cherry-picked from 0068-Cache-sr_mod_oper_sub_t-shm-during-pull-callback.patch
  6 files changed, 98 insertions(+), 65 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 298ddd0..4859e2c 100644
+index dcff9dc..c278fe6 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -895,7 +895,7 @@ cleanup:
+@@ -971,7 +971,7 @@ cleanup:
   */
  static sr_error_info_t *
  sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const char **request_xpaths,
@@ -56,7 +56,7 @@ index 298ddd0..4859e2c 100644
          uint32_t idx1, const struct lyd_node *parent, uint32_t timeout_ms, sr_conn_ctx_t *conn,
          struct lyd_node **oper_data)
  {
-@@ -940,7 +940,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
+@@ -1016,7 +1016,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
      request_xpath = (req_xpath_count == 1) ? request_xpaths[0] : NULL;
  
      /* get data from client */
@@ -65,7 +65,7 @@ index 298ddd0..4859e2c 100644
              idx1, timeout_ms, conn, oper_data, &cb_err_info))) {
          sr_errinfo_merge(&err_info, cb_err_info);
          goto cleanup;
-@@ -1028,6 +1028,17 @@ cleanup:
+@@ -1104,6 +1104,17 @@ cleanup:
      return err_info;
  }
  
@@ -83,7 +83,7 @@ index 298ddd0..4859e2c 100644
  /**
   * @brief Update (replace or append) operational data for a specific module.
   *
-@@ -1054,6 +1065,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1130,6 +1141,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      int required, merged;
      struct ly_set *set = NULL;
      struct lyd_node *edit = NULL, *oper_data;
@@ -92,7 +92,7 @@ index 298ddd0..4859e2c 100644
  
      if (!(get_oper_opts & SR_OPER_NO_STORED)) {
          /* get stored operational edit */
-@@ -1090,31 +1103,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1166,31 +1179,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
@@ -151,7 +151,7 @@ index 298ddd0..4859e2c 100644
                      request_xpaths[req_xpath_count] = mod->xpaths[j];
                      ++req_xpath_count;
                  }
-@@ -1128,13 +1162,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1204,13 +1238,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* remove any present data */
          if (!(xpath_subs[0].opts & SR_SUBSCR_OPER_MERGE) && (err_info = sr_lyd_xpath_complement(data, sub_xpath))) {
@@ -167,7 +167,7 @@ index 298ddd0..4859e2c 100644
              }
              if (merged) {
                  /* we have the data */
-@@ -1144,7 +1178,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1220,7 +1254,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* trim the last node to get the parent */
          if ((err_info = sr_xpath_trim_last_node(sub_xpath, &parent_xpath))) {
@@ -176,7 +176,7 @@ index 298ddd0..4859e2c 100644
          }
  
          if (parent_xpath) {
-@@ -1154,7 +1188,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1230,7 +1264,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              if ((err_info = sr_lyd_find_xpath(*data, parent_xpath, &set))) {
@@ -185,7 +185,7 @@ index 298ddd0..4859e2c 100644
              }
  
              if (!set->count) {
-@@ -1166,21 +1200,21 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1242,21 +1276,21 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              if (xpath_subs[0].opts & SR_SUBSCR_OPER_ONCE) {
                  /* get oper data from the client */
                  if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
@@ -212,7 +212,7 @@ index 298ddd0..4859e2c 100644
                      }
  
                      /* merge into one data tree */
-@@ -1200,13 +1234,13 @@ next_iter:
+@@ -1276,13 +1310,13 @@ next_iter:
          } else {
              /* top-level data */
              if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
@@ -229,7 +229,7 @@ index 298ddd0..4859e2c 100644
              }
          }
  
-@@ -1215,14 +1249,11 @@ next_iter:
+@@ -1291,14 +1325,11 @@ next_iter:
          req_xpath_count = 0;
      }
  
