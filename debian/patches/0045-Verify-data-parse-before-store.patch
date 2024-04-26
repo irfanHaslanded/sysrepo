@@ -12,7 +12,7 @@ Dump the failed datastore file to .failed file for debugging
  1 file changed, 83 insertions(+), 6 deletions(-)
 
 diff --git a/src/plugins/ds_json.c b/src/plugins/ds_json.c
-index d2e08a1..9fde920 100644
+index 15d48da..ccf653e 100644
 --- a/src/plugins/ds_json.c
 +++ b/src/plugins/ds_json.c
 @@ -45,16 +45,70 @@ static sr_error_info_t *srpds_json_load(const struct lys_module *mod, sr_datasto

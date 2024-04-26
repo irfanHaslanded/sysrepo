@@ -52,7 +52,7 @@ index de0a554..2bc4d33 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 3e7e0a6..d8b93b9 100644
+index 72bd028..343faec 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@
@@ -114,7 +114,7 @@ index 3e7e0a6..d8b93b9 100644
          goto cleanup;
      }
  
-@@ -7384,3 +7419,36 @@ cleanup:
+@@ -7340,3 +7375,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  
@@ -179,10 +179,10 @@ index e166098..3895df5 100644
   * @brief Remove an installed module from sysrepo.
   *
 diff --git a/tests/test_modules.c b/tests/test_modules.c
-index 331bd99..271338d 100644
+index 7769288..515324f 100644
 --- a/tests/test_modules.c
 +++ b/tests/test_modules.c
-@@ -1560,10 +1560,50 @@ test_running_disabled(void **state)
+@@ -1556,10 +1556,50 @@ test_running_disabled(void **state)
      assert_int_equal(ret, SR_ERR_OK);
  }
  

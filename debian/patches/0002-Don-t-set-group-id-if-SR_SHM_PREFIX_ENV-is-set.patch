@@ -12,10 +12,10 @@ change the group of data files in this case.
  2 files changed, 60 insertions(+), 11 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index e7f5d0e..b09f3ae 100644
+index 8f0b7bc..7367497 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -59,6 +59,8 @@
+@@ -61,6 +61,8 @@
  #include "shm_sub.h"
  #include "sysrepo.h"
  
@@ -24,7 +24,7 @@ index e7f5d0e..b09f3ae 100644
  /**
   * @brief Internal datastore plugin array.
   */
-@@ -766,7 +768,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
+@@ -774,7 +776,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
      }
  
      /* update group */
@@ -33,7 +33,7 @@ index e7f5d0e..b09f3ae 100644
          if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
              goto cleanup;
          }
-@@ -3463,7 +3465,7 @@ sr_open(const char *path, int flags, mode_t mode)
+@@ -3471,7 +3473,7 @@ sr_open(const char *path, int flags, mode_t mode)
          }
  
          /* set correct group if needed */
@@ -42,7 +42,7 @@ index e7f5d0e..b09f3ae 100644
              /* get GID */
              if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
                  sr_errinfo_free(&err_info);
-@@ -3490,13 +3492,16 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3498,13 +3500,16 @@ sr_mkpath(char *path, mode_t mode)
      int r;
      gid_t gid;
  
@@ -61,7 +61,7 @@ index e7f5d0e..b09f3ae 100644
          goto cleanup;
      }
  
-@@ -3514,7 +3519,8 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3522,7 +3527,8 @@ sr_mkpath(char *path, mode_t mode)
                  SR_ERRINFO_SYSERRNO(&err_info, "chmod");
                  goto cleanup;
              }
@@ -71,7 +71,7 @@ index e7f5d0e..b09f3ae 100644
                  SR_ERRINFO_SYSERRNO(&err_info, "chown");
                  goto cleanup;
              }
-@@ -3534,7 +3540,7 @@ sr_mkpath(char *path, mode_t mode)
+@@ -3542,7 +3548,7 @@ sr_mkpath(char *path, mode_t mode)
              SR_ERRINFO_SYSERRNO(&err_info, "chmod");
              goto cleanup;
          }
@@ -80,7 +80,7 @@ index e7f5d0e..b09f3ae 100644
              SR_ERRINFO_SYSERRNO(&err_info, "chown");
              goto cleanup;
          }
-@@ -5552,3 +5558,20 @@ cleanup:
+@@ -5560,3 +5566,20 @@ cleanup:
  
      return err_info;
  }
@@ -102,7 +102,7 @@ index e7f5d0e..b09f3ae 100644
 +    return is_priviliged;
 +}
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 839d4ed..941424d 100644
+index 68f5c8e..28c65d0 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
 @@ -38,6 +38,8 @@

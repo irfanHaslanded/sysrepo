@@ -60,8 +60,8 @@ endif()
 # minor version changes with added functionality (new tool, functionality of the tool or library, ...) and
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
-set(SYSREPO_MINOR_VERSION 2)
-set(SYSREPO_MICRO_VERSION 173)
+set(SYSREPO_MINOR_VERSION 3)
+set(SYSREPO_MICRO_VERSION 3)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
@@ -69,7 +69,7 @@ set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
 set(SYSREPO_MINOR_SOVERSION 24)
-set(SYSREPO_MICRO_SOVERSION 14)
+set(SYSREPO_MICRO_SOVERSION 18)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
@@ -125,6 +125,27 @@ else()
     set(INTERNAL_MODULE_DATA_FORMAT LYD_XML)
 endif()
 set(INTERNAL_MODULE_DISABLED_RUNNING "" CACHE STRING "List of internal sysrepo or libyang modules that will have their 'running' datastores disabled (always mirroring 'startup'), separated by space. Use '*' for all the modules.")
+
+# default datastore plugins
+set(DEFAULT_STARTUP_DS_PLG "JSON DS file" CACHE STRING "Default datastore plugin for storing startup data.")
+set(DEFAULT_RUNNING_DS_PLG "JSON DS file" CACHE STRING "Default datastore plugin for storing running data.")
+set(DEFAULT_CANDIDATE_DS_PLG "JSON DS file" CACHE STRING "Default datastore plugin for storing candidate data.")
+set(DEFAULT_OPERATIONAL_DS_PLG "JSON DS file" CACHE STRING "Default datastore plugin for storing operational data.")
+set(DEFAULT_FACTORY_DEFAULT_DS_PLG "JSON DS file" CACHE STRING "Default datastore plugin for storing factory default data.")
+set(DEFAULT_NOTIFICATION_DS_PLG "JSON notif" CACHE STRING "Default datastore plugin for storing notifications.")
+
+# MongoDB username, password, host and port for the client
+set(MONGO_AUTHSOURCE "admin" CACHE STRING "Database name associated with the user's credentials.")
+set(MONGO_USERNAME "" CACHE STRING "Username for MongoDB administrator client, all operations are done via this client in case MongoDB plugin is supported. If not provided, no authentication is done.")
+set(MONGO_PASSWORD "" CACHE STRING "Password for all MongoDB clients in case MongoDB plugin is supported.")
+set(MONGO_HOST "127.0.0.1" CACHE STRING "Host for the MongoDB client to connect to.")
+set(MONGO_PORT 27017 CACHE STRING "Port for the MongoDB client to connect to.")
+
+# Redis username, password, host and port for the client
+set(REDIS_USERNAME "" CACHE STRING "Username for Redis user, all operations are done via this client in case Redis plugin is supported. If not provided, no authentication is done.")
+set(REDIS_PASSWORD "" CACHE STRING "Password for Redis user in case Redis plugin is supported.")
+set(REDIS_HOST "127.0.0.1" CACHE STRING "Host for the Redis client to connect to.")
+set(REDIS_PORT 6379 CACHE STRING "Port for the Redis client to connect to.")
 
 # ietf-yang-library revision
 set(YANGLIB_REVISION "2019-01-04" CACHE STRING
@@ -289,6 +310,8 @@ set(FORMAT_SOURCES
     src/*.h
     src/executables/*.c
     src/executables/*.h*
+    src/plugins/*.c
+    src/plugins/*.h*
     src/utils/*
     tests/*.c
     tests/*.c)
@@ -370,12 +393,75 @@ if(NOT SR_HAVE_DLOPEN)
 endif()
 unset(CMAKE_REQUIRED_DEFINITIONS)
 
+# libmongoc - optional
+find_package(mongoc-1.0 1.24.0 CONFIG)
+if(TARGET mongo::mongoc_shared)
+    # datastore plugin added if libraries exist
+    list(APPEND LIB_SRC src/plugins/ds_mongo.c)
+    set(SR_ENABLED_DS_PLG_MONGO 1)
+    message(STATUS "Datastore plugin ds_mongo supported.")
+
+    # try running a command in MongoDB database (should not be possible) and check authentication
+    execute_process(COMMAND "mongosh" "--host" "${MONGO_HOST}" "--port" "${MONGO_PORT}" "--eval" "use sr_running" "--eval" "db.runCommand({usersInfo: 1})"
+            RESULT_VARIABLE MONGO_RETURN_CODE
+            ERROR_VARIABLE MONGO_STDERR
+            OUTPUT_QUIET)
+    if(${MONGO_RETURN_CODE} EQUAL "0")
+        message(WARNING "MongoDB authentication is NOT supported! Data stored by sysrepo in MongoDB will be accessible by anyone.")
+    else()
+        if("${MONGO_STDERR}" MATCHES "^MongoServerError: .*auth.*")
+            message(STATUS "MongoDB authentication is supported!")
+        else()
+            message(WARNING "MongoDB authentication cannot be checked - a request to MongoDB failed with: ${MONGO_STDERR}")
+        endif()
+    endif()
+else()
+    message(STATUS "Datastore plugin ds_mongo not supported.")
+endif()
+
+# libhiredis - optional
+find_package(LibHiredis 1.1.0)
+if(LIBHIREDIS_FOUND)
+    # datastore plugin added if libraries exist
+    list(APPEND LIB_SRC src/plugins/ds_redis.c)
+    set(SR_ENABLED_DS_PLG_REDIS 1)
+    message(STATUS "Datastore plugin ds_redis supported.")
+
+    # try running a command in Redis database and check authentication
+    execute_process(COMMAND "echo" "ACL WHOAMI"
+            COMMAND "redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT}"
+            OUTPUT_VARIABLE REDIS_STDOUT
+            ERROR_VARIABLE REDIS_STDERR)
+    if("${REDIS_STDOUT}" MATCHES "^NOAUTH.*")
+        message(STATUS "Redis authentication is supported!")
+    elseif("${REDIS_STDERR}" MATCHES "^Could not connect to Redis.*")
+        message(WARNING "Redis authentication cannot be checked - a request to Redis failed with: ${REDIS_STDERR}")
+    else()
+        message(WARNING "Redis authentication is NOT supported! Data stored by sysrepo in Redis will be accessible by anyone.")
+    endif()
+else()
+    message(STATUS "Datastore plugin ds_redis not supported.")
+endif()
+
 # sysrepo
 set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 add_library(srobj OBJECT ${LIB_SRC} ${compatsrc})
 set_target_properties(srobj PROPERTIES COMPILE_FLAGS "-fvisibility=hidden")
 add_library(sysrepo $<TARGET_OBJECTS:srobj>)
 set_target_properties(sysrepo PROPERTIES VERSION ${SYSREPO_SOVERSION_FULL} SOVERSION ${SYSREPO_SOVERSION})
+if(SR_ENABLED_DS_PLG_MONGO)
+    # cannot separately include and link mongoc library, thus add include to srobj and link with sysrepo
+    # to add include directories
+    get_target_property(BSON_INTERFACE_INCLUDE_DIR mongo::bson_shared INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(MONGOC_INTERFACE_INCLUDE_DIR mongo::mongoc_shared INTERFACE_INCLUDE_DIRECTORIES)
+    set_property(TARGET srobj APPEND PROPERTY INCLUDE_DIRECTORIES ${BSON_INTERFACE_INCLUDE_DIR} ${MONGOC_INTERFACE_INCLUDE_DIR})
+    target_link_libraries(sysrepo mongo::mongoc_shared)
+endif()
+if (SR_ENABLED_DS_PLG_REDIS)
+    # to add include directories
+    target_link_libraries(sysrepo ${LIBHIREDIS_LIBRARIES})
+    include_directories(${LIBHIREDIS_INCLUDE_DIRS})
+endif()
 
 if(ENABLE_SYSREPOCTL)
     # sysrepoctl tool
@@ -546,6 +632,29 @@ add_custom_target(sr_clean
     DEPENDS shm_clean
     COMMENT "Removing the whole persistent repository \"${REPO_PATH}\""
 )
+
+# flush all sysrepo related data from mongo
+if(SR_ENABLED_DS_PLG_MONGO)
+    add_custom_target(sr_mongo_clean
+        COMMAND "mongosh" "--host" "${MONGO_HOST}" "--port" "${MONGO_PORT}"
+                        "--eval" "use sr_startup" "--eval" "\"db.dropDatabase()\""
+                        "--eval" "use sr_running" "--eval" "\"db.dropDatabase()\""
+                        "--eval" "use sr_candidate" "--eval" "\"db.dropDatabase()\""
+                        "--eval" "use sr_operational" "--eval" "\"db.dropDatabase()\""
+                        "--eval" "use sr_factory-default" "--eval" "\"db.dropDatabase()\""
+                        "1>/dev/null"
+    )
+    add_dependencies(sr_clean sr_mongo_clean)
+endif()
+
+# flush all sysrepo related data from redis
+if(SR_ENABLED_DS_PLG_REDIS)
+    add_custom_target(sr_redis_clean
+        COMMAND "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "--scan" "--pattern" "\"sr:*\"" "|" "xargs" "-d" "\"\\n\"" "-I," "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "unlink" "\",\"" "1>/dev/null"
+        COMMAND "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "--raw" "ft._list" "|" "grep" "-x" "-G" "\"^sr:.*\"" "|" "xargs" "-n" "1" "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "ft.dropindex" "1>/dev/null"
+    )
+    add_dependencies(sr_clean sr_redis_clean)
+endif()
 
 # uninstall
 if(ENABLE_COMMON_TARGETS)

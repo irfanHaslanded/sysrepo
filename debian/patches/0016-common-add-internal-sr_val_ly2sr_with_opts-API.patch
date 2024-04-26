@@ -10,10 +10,10 @@ libyang data into a sysrepo value.
  2 files changed, 20 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index b09f3ae..590db14 100644
+index 7367497..c2f8456 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3920,6 +3920,12 @@ sr_ev2api(sr_sub_event_t ev)
+@@ -3928,6 +3928,12 @@ sr_ev2api(sr_sub_event_t ev)
  
  sr_error_info_t *
  sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)

@@ -1923,14 +1923,8 @@ sr_edit_created_subtree_apply_move(struct lyd_node *match_subtree)
                 sibling_before_val = sr_edit_create_userord_predicate(sibling_before);
             }
 
-            if (elem->schema->nodetype == LYS_LIST) {
-                if ((err_info = sr_lyd_new_meta(elem, NULL, "yang:key", sibling_before_val))) {
-                    return err_info;
-                }
-            } else {
-                if ((err_info = sr_lyd_new_meta(elem, NULL, "yang:value", sibling_before_val))) {
-                    return err_info;
-                }
+            if ((err_info = sr_lyd_new_meta(elem, NULL, sr_userord_anchor_meta_name(elem->schema), sibling_before_val))) {
+                return err_info;
             }
             free(sibling_before_val);
         }
@@ -2173,6 +2167,12 @@ sr_edit_apply_delete(struct lyd_node *data_match, const struct lyd_node *edit_no
 {
     sr_error_info_t *err_info = NULL;
 
+    if (data_match && !lysc_is_np_cont(data_match->schema) && (data_match->schema->nodetype & LYD_NODE_TERM) &&
+            (data_match->flags & LYD_DEFAULT)) {
+        /* default term nodes were not explicitly created */
+        data_match = NULL;
+    }
+
     if (!data_match) {
         sr_errinfo_new(&err_info, SR_ERR_NOT_FOUND, "Node \"%s\" to be deleted does not exist.", LYD_NAME(edit_node));
         return err_info;
@@ -2408,11 +2408,11 @@ reapply:
                 continue;
             }
 
-            if ((err_info = sr_edit_find(lyd_child_no_keys(edit_node), child, EDIT_DELETE, 0, NULL, 0, 0,
+            if ((err_info = sr_edit_find(lyd_child_no_keys(edit_node), child, EDIT_REMOVE, 0, NULL, 0, 0,
                     &edit_match, NULL))) {
                 goto cleanup;
             }
-            if (!edit_match && (err_info = sr_edit_apply_r(data_root, data_match, child, EDIT_DELETE, diff_parent,
+            if (!edit_match && (err_info = sr_edit_apply_r(data_root, data_match, child, EDIT_REMOVE, diff_parent,
                     diff_root, flags, change))) {
                 goto cleanup;
             }
@@ -3729,7 +3729,7 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
             goto error;
         }
         if (((*position == SR_MOVE_BEFORE) || (*position == SR_MOVE_AFTER)) && (err_info = sr_lyd_new_meta(node, NULL,
-                (node->schema->nodetype == LYS_LIST) ? "yang:key" : "yang:value", meta_val))) {
+                sr_userord_anchor_meta_name(node->schema), meta_val))) {
             goto error;
         }
     }

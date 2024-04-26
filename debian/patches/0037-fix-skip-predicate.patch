@@ -17,10 +17,10 @@ Add gnmi test yang modules to sysrepo for simpler debugging in future.
  create mode 100644 tests/files/gnmi-server-test.yang
 
 diff --git a/src/common.c b/src/common.c
-index e16b37e..cbae633 100644
+index fe94bc5..a8b17fc 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -4958,7 +4958,7 @@ sr_xpath_skip_predicate(const char *xpath)
+@@ -4966,7 +4966,7 @@ sr_xpath_skip_predicate(const char *xpath)
          } else if (!quot && ((xpath[0] == '\'') || (xpath[0] == '\"'))) {
              quot = xpath[0];
          }

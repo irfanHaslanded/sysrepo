@@ -8,10 +8,10 @@ Subject: ncid compatibility
  2 files changed, 27 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4ffebb6..8bfd1ea 100644
+index b35d946..551ac37 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7262,3 +7262,27 @@ cleanup:
+@@ -7218,3 +7218,27 @@ cleanup:
      sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
      return sr_api_ret(session, err_info);
  }

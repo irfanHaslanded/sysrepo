@@ -17,7 +17,11 @@ include_directories(${PROJECT_BINARY_DIR}/tests)
 
 # headers test for including compat.h
 add_test(NAME headers
-    COMMAND ${CMAKE_SOURCE_DIR}/compat/check_includes.sh ${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/src/executables/ ${CMAKE_SOURCE_DIR}/src/utils/)
+    COMMAND ${CMAKE_SOURCE_DIR}/compat/check_includes.sh
+        ${CMAKE_SOURCE_DIR}/src/
+        ${CMAKE_SOURCE_DIR}/src/executables/
+        ${CMAKE_SOURCE_DIR}/src/plugins/
+        ${CMAKE_SOURCE_DIR}/src/utils/)
 
 set(test_sources "tcommon.c")
 
@@ -53,7 +57,7 @@ if(ENABLE_TESTS)
     # lists of all the tests
     set(tests test_modules test_context_change test_validation test_edit test_candidate test_oper_pull test_oper_push
         test_lock test_apply_changes test_copy_config test_rpc_action test_notif test_get test_process
-        test_multi_connection test_nacm test_rotation test_sub_notif)
+        test_multi_connection test_nacm test_rotation test_sub_notif test_plugin)
 
     foreach(test_name IN LISTS tests)
         add_executable(${test_name} ${test_sources} ${test_name}.c)
@@ -62,10 +66,15 @@ if(ENABLE_TESTS)
     # set common attributes of all tests
     foreach(test_name IN LISTS tests)
         target_link_libraries(${test_name} ${CMOCKA_LIBRARIES} sysrepo)
+
+        # link srobj to get the number of DS plugins available
+        # this number can fluctuate depending on the presence of optional libraries
+        if(${test_name} STREQUAL "test_plugin")
+            target_link_libraries(${test_name} srobj)
+        endif()
         add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${test_name}>)
         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
             "MALLOC_CHECK_=3"
-            "CMOCKA_TEST_ABORT=1"
             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
             "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
         )
@@ -85,16 +94,22 @@ endif()
 # sr_perf benchmark binary
 if(ENABLE_PERF_TESTS)
     add_executable(sr_perf ${CMAKE_CURRENT_SOURCE_DIR}/perf.c)
-    target_link_libraries(sr_perf sysrepo)
 
-    add_test(NAME sr_perf_1000 COMMAND sr_perf 1000 10)
-    add_test(NAME sr_perf_100000 COMMAND sr_perf 100000 3)
+    # link srobj to get the number of DS plugins available
+    # this number can fluctuate depending on the presence of optional libraries
+    target_link_libraries(sr_perf sysrepo srobj)
+
+    add_test(NAME sr_perf_1000_10 COMMAND sr_perf 1000 10)
+
+    if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+        set_tests_properties(sr_perf_1000_10 PROPERTIES FIXTURES_REQUIRED tests_cleanup)
+    endif()
 endif()
 
 # valgrind tests
 if(ENABLE_VALGRIND_TESTS)
     foreach(test_name IN LISTS tests)
-        add_test(NAME ${test_name}_valgrind COMMAND valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
+        add_test(NAME ${test_name}_valgrind COMMAND valgrind --leak-check=full --show-leak-kinds=all --suppressions=${CMAKE_SOURCE_DIR}/tests/mongoc_init.supp --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
         set(test_name "${test_name}_valgrind")
         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"

@@ -12,10 +12,10 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 325af14..5f10021 100644
+index dfc1449..e2192b8 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -90,7 +90,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
+@@ -92,7 +92,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
      char buf[512] = "";
      cursor = snprintf(buf, sizeof(buf), "%s CID wr %" PRIu32 " upgr %" PRIu32 " rd", msg, rwlock->writer, rwlock->upgr);
      for (i = 0; SR_IS_READER_VALID(rwlock, i); i++) {
@@ -27,7 +27,7 @@ index 325af14..5f10021 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5693,7 +5696,7 @@ sr_is_priviliged(void)
+@@ -5701,7 +5704,7 @@ sr_is_priviliged(void)
  }
  
  void
@@ -137,10 +137,10 @@ index b968055..ee05f0c 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6213946..1cdde17 100644
+index ce99831..96e9f8f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7310,3 +7310,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7266,3 +7266,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }

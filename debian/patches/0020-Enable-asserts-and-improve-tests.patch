@@ -10,7 +10,7 @@ debugging of any issues.
  CMakeLists.txt                                 |   7 +-
  src/common.c                                   |   5 +-
  src/sysrepo.c                                  |   6 +-
- tests/CMakeLists.txt                           |  13 +-
+ tests/CMakeLists.txt                           |  12 +-
  tests/files/ex-interfaces.yang                 | 642 +++++++++++++++++
  tests/files/ex-protocols.yang                  |  62 ++
  tests/files/ex-yanggen-augments.yang           |  88 +++
@@ -31,7 +31,7 @@ debugging of any issues.
  tests/test_edit.c                              | 169 +++++
  tests/test_massive_scale.c                     | 417 +++++++++++
  tests/test_oper_edit.c                         | 233 +++++++
- 24 files changed, 4222 insertions(+), 13 deletions(-)
+ 24 files changed, 4222 insertions(+), 12 deletions(-)
  create mode 100644 tests/files/ex-interfaces.yang
  create mode 100644 tests/files/ex-protocols.yang
  create mode 100644 tests/files/ex-yanggen-augments.yang
@@ -52,7 +52,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index ac9a75a..65c7ec4 100644
+index b899c0d..7181de4 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -72,10 +72,10 @@ index ac9a75a..65c7ec4 100644
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
  elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
 diff --git a/src/common.c b/src/common.c
-index 17dee08..602febd 100644
+index e7f4586..c3065b4 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5577,9 +5577,10 @@ cleanup:
+@@ -5585,9 +5585,10 @@ cleanup:
   * This function caches the result of the environment variable check to improve performance.
   * @return 1 if the process has privileged access to default shared memory, 0 otherwise.
   * */
@@ -89,10 +89,10 @@ index 17dee08..602febd 100644
      if (is_priviliged < 0) {
          is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index a9b5e2a..95c3dd9 100644
+index 4a59ca6..60f5f02 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7275,7 +7275,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7231,7 +7231,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -101,7 +101,7 @@ index a9b5e2a..95c3dd9 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7285,8 +7285,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7241,8 +7241,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -112,7 +112,7 @@ index a9b5e2a..95c3dd9 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7300,6 +7301,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7256,6 +7257,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;
@@ -121,17 +121,16 @@ index a9b5e2a..95c3dd9 100644
          if ((ret = sr_set_module_ds_access(conn, module_name, i, owner, group, perm))) {
              return ret;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 2840f7c..7ba18b6 100644
+index ea45402..1a6e7da 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -50,10 +50,13 @@ if(ENABLE_TESTS)
-         add_test(NAME format WORKING_DIRECTORY ${CMAKE_BINARY_DIR} COMMAND cmake --build ${CMAKE_BINARY_DIR} --target format-check)
+@@ -55,9 +55,13 @@ if(ENABLE_TESTS)
      endif()
  
--    # lists of all the tests
+     # lists of all the tests
 -    set(tests test_modules test_context_change test_validation test_edit test_candidate test_oper_pull test_oper_push
 -        test_lock test_apply_changes test_copy_config test_rpc_action test_notif test_get test_process
--        test_multi_connection test_nacm test_rotation test_sub_notif)
+-        test_multi_connection test_nacm test_rotation test_sub_notif test_plugin)
 +    file(GLOB test_files "test_*.c")
 +
 +    foreach(test_file IN LISTS test_files)
@@ -142,12 +141,12 @@ index 2840f7c..7ba18b6 100644
  
      foreach(test_name IN LISTS tests)
          add_executable(${test_name} ${test_sources} ${test_name}.c)
-@@ -104,7 +107,7 @@ endif()
+@@ -119,7 +123,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)
--        add_test(NAME ${test_name}_valgrind COMMAND valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
-+        add_test(NAME ${test_name}_valgrind COMMAND valgrind --malloc-fill=0xED --free-fill=0xBF --leak-check=full --show-leak-kinds=all --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
+-        add_test(NAME ${test_name}_valgrind COMMAND valgrind --leak-check=full --show-leak-kinds=all --suppressions=${CMAKE_SOURCE_DIR}/tests/mongoc_init.supp --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
++        add_test(NAME ${test_name}_valgrind COMMAND valgrind --malloc-fill=0xED --free-fill=0xBF --leak-check=full --show-leak-kinds=all --suppressions=${CMAKE_SOURCE_DIR}/tests/mongoc_init.supp --error-exitcode=1 ${CMAKE_BINARY_DIR}/tests/${test_name})
          set(test_name "${test_name}_valgrind")
          set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
@@ -3652,7 +3651,7 @@ index 3ed76a7..b851388 100644
      ts.tv_nsec /= 1000;
      fprintf(stderr, "%03ld.%06ld [%ld][%ld][%s]%s: %s\n", ts.tv_sec, ts.tv_nsec,
 diff --git a/tests/test_edit.c b/tests/test_edit.c
-index 95c2ba6..bb9067b 100644
+index af487bf..5620ecc 100644
 --- a/tests/test_edit.c
 +++ b/tests/test_edit.c
 @@ -50,6 +50,8 @@ setup_f(void **state)
@@ -3673,7 +3672,7 @@ index 95c2ba6..bb9067b 100644
          NULL
      };
  
-@@ -1533,6 +1537,169 @@ test_unknown_ns(void **state)
+@@ -1540,6 +1544,169 @@ test_unknown_ns(void **state)
      sr_discard_changes(st->sess);
  }
  
@@ -3843,7 +3842,7 @@ index 95c2ba6..bb9067b 100644
  int
  main(void)
  {
-@@ -1557,6 +1724,8 @@ main(void)
+@@ -1564,6 +1731,8 @@ main(void)
          cmocka_unit_test(test_edit_forbid_node_types),
          cmocka_unit_test(test_anyxml),
          cmocka_unit_test(test_unknown_ns),

@@ -2377,7 +2377,11 @@ test_top_leaf(void **state)
     ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
     assert_int_equal(ret, 0);
     sr_release_data(data);
-    assert_null(str1);
+    assert_string_equal(str1,
+            "<cont xmlns=\"urn:test\" xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\" or:origin=\"or:intended\">\n"
+            "  <dflt-leaf or:origin=\"or:default\">default-value</dflt-leaf>\n"
+            "</cont>\n");
+    free(str1);
 
     /* discard the oper change */
     ret = sr_discard_oper_changes(st->conn, st->sess, "/test:test-leaf", 0);
@@ -2393,7 +2397,10 @@ test_top_leaf(void **state)
 
     str2 =
             "<test-leaf xmlns=\"urn:test\" xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\""
-            " or:origin=\"or:intended\">20</test-leaf>\n";
+            " or:origin=\"or:intended\">20</test-leaf>\n"
+            "<cont xmlns=\"urn:test\" xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\" or:origin=\"or:intended\">\n"
+            "  <dflt-leaf or:origin=\"or:default\">default-value</dflt-leaf>\n"
+            "</cont>\n";
     assert_string_equal(str1, str2);
     free(str1);
 
@@ -3322,6 +3329,7 @@ test_diff_merge_userord(void **state)
             "    <k>key3</k>\n"
             "    <v or:origin=\"or:unknown\">27</v>\n"
             "  </l2>\n"
+            "  <dflt-leaf or:origin=\"or:default\">default-value</dflt-leaf>\n"
             "</cont>\n";
     assert_string_equal(str1, str2);
     free(str1);
@@ -3355,6 +3363,7 @@ test_diff_merge_userord(void **state)
             "    <k>key3</k>\n"
             "    <v or:origin=\"or:unknown\">27</v>\n"
             "  </l2>\n"
+            "  <dflt-leaf or:origin=\"or:default\">default-value</dflt-leaf>\n"
             "</cont>\n";
     assert_string_equal(str1, str2);
     free(str1);
@@ -3417,6 +3426,7 @@ test_diff_merge_userord(void **state)
             "    <k>key1</k>\n"
             "    <v>25</v>\n"
             "  </l2>\n"
+            "  <dflt-leaf or:origin=\"or:default\">default-value</dflt-leaf>\n"
             "</cont>\n";
     assert_string_equal(str1, str2);
     free(str1);
@@ -3985,6 +3995,83 @@ test_change_filter(void **state)
     sr_unsubscribe(subscr);
 }
 
+static int
+oper_list_enabled_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
+{
+    struct state *st = (struct state *)private_data;
+    sr_change_oper_t op;
+    sr_change_iter_t *iter;
+    const struct lyd_node *node;
+    const char *prev_value;
+    int ret;
+
+    (void)sub_id;
+    (void)request_id;
+
+    assert_string_equal(module_name, "mixed-config");
+    assert_string_equal(xpath, "/mixed-config:test-state/ll");
+
+    switch (ATOMIC_LOAD_RELAXED(st->cb_called)) {
+    case 0:
+    case 1:
+        if (ATOMIC_LOAD_RELAXED(st->cb_called) % 2 == 0) {
+            assert_int_equal(event, SR_EV_ENABLED);
+        } else {
+            assert_int_equal(event, SR_EV_DONE);
+        }
+
+        /* get changes iter */
+        ret = sr_get_changes_iter(session, "/mixed-config:test-state/ll//.", &iter);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_string_equal(prev_value, "");
+        assert_string_equal(node->schema->name, "ll");
+
+        /* no more changes */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_NOT_FOUND);
+
+        sr_free_change_iter(iter);
+        break;
+    default:
+        fail();
+    }
+
+    ATOMIC_INC_RELAXED(st->cb_called);
+    return SR_ERR_OK;
+}
+
+static void
+test_oper_list_enabled(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+
+    /* switch to operational DS */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* set some operational data */
+    ret = sr_set_item_str(st->sess, "/mixed-config:test-state/ll[1]", "a1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* subscribe to operational data changes */
+    ATOMIC_STORE_RELAXED(st->cb_called, 0);
+    ret = sr_module_change_subscribe(st->sess, "mixed-config", "/mixed-config:test-state/ll",
+            oper_list_enabled_change_cb, st, 0, SR_SUBSCR_ENABLED, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+    ATOMIC_STORE_RELAXED(st->cb_called, 2);
+
+    sr_unsubscribe(subscr);
+}
+
 int
 main(void)
 {
@@ -4014,6 +4101,7 @@ main(void)
         cmocka_unit_test_teardown(test_change_cb, clear_up),
         cmocka_unit_test_teardown(test_oper_set_del_leaflist, clear_up),
         cmocka_unit_test_teardown(test_change_filter, clear_up),
+        cmocka_unit_test_teardown(test_oper_list_enabled, clear_up),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

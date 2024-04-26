@@ -125,10 +125,10 @@ index c6b20a9..5abdb3e 100644
      sr_disconnect(conn);
      return rc;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 512fcfa..2840f7c 100644
+index d2b3141..ea45402 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -83,6 +83,13 @@ if(ENABLE_TESTS)
+@@ -92,6 +92,13 @@ if(ENABLE_TESTS)
              set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
          endif()
      endforeach()
