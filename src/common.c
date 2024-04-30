@@ -5336,7 +5336,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
 }
 
 sr_error_info_t *
-sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit)
+sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit, int ignore_dead_cids)
 {
     sr_error_info_t *err_info = NULL;
     struct lyd_node *root, *elem;
@@ -5348,6 +5348,9 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
     /* load the operational data (edit) */
     if ((err_info = mod->ds_handle[SR_DS_OPERATIONAL]->plugin->load_cb(mod->ly_mod, SR_DS_OPERATIONAL, NULL, 0,
             mod->ds_handle[SR_DS_OPERATIONAL]->plg_data, edit))) {
+        return err_info;
+    }
+    if (ignore_dead_cids) {
         return err_info;
     }
 

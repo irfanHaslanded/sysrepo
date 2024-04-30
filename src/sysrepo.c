@@ -401,8 +401,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
         }
     }
 
-    /* free any stored operational data (API function) */
-    if ((rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
+    /* free any stored operational data (API function) if needed */
+    if (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect) &&
+            (rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
         return rc;
     }
 
@@ -7209,4 +7210,9 @@ cleanup:
     /* CONTEXT UNLOCK */
     sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
     return sr_api_ret(session, err_info);
+}
+
+API void
+sr_oper_data_no_discard_on_disconnect(sr_conn_ctx_t *conn) {
+    ATOMIC_STORE_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect, 1);
 }

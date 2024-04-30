@@ -25,7 +25,7 @@
 #include "common_types.h"
 #include "sysrepo_types.h"
 
-#define SR_SHM_VER 16   /**< Main, mod, and ext SHM version of their expected content structures. */
+#define SR_SHM_VER 17   /**< Main, mod, and ext SHM version of their expected content structures. */
 #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
 
 /**
@@ -187,6 +187,7 @@ typedef struct {
     ATOMIC_T new_sr_sid;        /**< SID for a new session. */
     ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+    ATOMIC_T oper_keep_on_disconnect;   /**< Do not discard pushed operational data on sr_disconnect */
 } sr_main_shm_t;
 
 /**

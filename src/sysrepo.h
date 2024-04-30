@@ -210,6 +210,11 @@ uid_t sr_get_su_uid(void);
 int sr_discard_oper_changes(sr_conn_ctx_t *conn, sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms);
 
 /**
+ * If the system is shutting down, discarding pushed operational data is unnecessary
+ * */
+void sr_oper_data_no_discard_on_disconnect(sr_conn_ctx_t *conn);
+
+/**
  * @brief Start a new session.
  *
  * @param[in] conn Connection to use.

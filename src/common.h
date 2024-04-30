@@ -1328,7 +1328,7 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
  * @param[out] edit Loaded edit to return.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit);
+sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit, int ignore_dead_cids);
 
 /**
  * @brief Learn CIDs and PIDs of all the live connections.

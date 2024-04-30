@@ -1131,9 +1131,11 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
     struct ly_set *set = NULL;
     struct lyd_node *edit = NULL, *oper_data;
 
+    int ignore_dead_cids = ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect);
+
     if (!(get_oper_opts & SR_OPER_NO_STORED)) {
         /* get stored operational edit */
-        if ((err_info = sr_module_file_oper_data_load(mod, &edit))) {
+        if ((err_info = sr_module_file_oper_data_load(mod, &edit, ignore_dead_cids))) {
             return err_info;
         }
     }
