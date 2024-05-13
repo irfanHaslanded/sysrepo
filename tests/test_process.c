@@ -158,6 +158,7 @@ setup(void)
         TESTS_SRC_DIR "/files/ops.yang",
         TESTS_SRC_DIR "/files/ietf-interfaces.yang",
         TESTS_SRC_DIR "/files/iana-if-type.yang",
+        TESTS_SRC_DIR "/files/test.yang",
         TESTS_SRC_DIR "/files/mod1.yang",
         NULL
     };
@@ -165,6 +166,7 @@ setup(void)
     const char *mod1_feats[] = {"f1", NULL};
     const char **features[] = {
         ops_ref_feats,
+        NULL,
         NULL,
         NULL,
         NULL,
@@ -186,6 +188,7 @@ teardown(void)
         "iana-if-type",
         "ops",
         "ops-ref",
+        "test",
         NULL
     };
 
@@ -1065,10 +1068,79 @@ test_sub(int rp, int wp)
     return 0;
 }
 
+static int
+test_create_subscr_and_die(int rp, int wp)
+{
+    int ret = 0, r;
+    sr_conn_ctx_t *conn = NULL;
+    sr_session_ctx_t *sess = NULL;
+    sr_subscription_ctx_t *subscr = NULL;
+    r = sr_connect(0, &conn);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_module_change_subscribe(sess, "test", "/test:l1", dummy_change_cb, NULL,
+              0, SR_SUBSCR_FILTER_ORIG | SR_SUBSCR_NO_THREAD, &subscr);
+    sr_assert_true(r == SR_ERR_OK);
+    r = sr_module_change_subscribe(sess, "test", "/test:l1", dummy_change_cb, NULL,
+              0, SR_SUBSCR_FILTER_ORIG | SR_SUBSCR_NO_THREAD, &subscr);
+    sr_assert_true(r == SR_ERR_OK);
+    TLOG_INF("subscriptions setup with no thread, so publisher will have to wait");
+    r = sr_set_item_str(sess, "/test:test-leaf", "1", NULL, 0);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_apply_changes(sess, 0);
+    sr_assert_true(r == SR_ERR_OK);
+    barrier(rp, wp);
+    sleep(1);
+    TLOG_INF("dirty exit");
+    return ret;
+}
+
+static int
+test_subscr_dirty_exit(int rp, int wp)
+{
+    int ret = 0, r;
+    sr_conn_ctx_t *conn = NULL;
+    sr_session_ctx_t *sess = NULL;
+    r = sr_connect(0, &conn);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    sr_assert_true(r == SR_ERR_OK);
+    sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    sr_assert_true(r == SR_ERR_OK);
+    TLOG_INF("wait for subscriptions to be setup");
+    barrier(rp, wp);
+
+    r = sr_set_item_str(sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
+    sr_assert_true(r == SR_ERR_OK);
+    r = sr_apply_changes(sess, 200);
+    sr_assert_true(r == SR_ERR_CALLBACK_FAILED);
+
+    sleep(10);
+    r = sr_set_item_str(sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
+    sr_assert_true(r == SR_ERR_OK);
+    r = sr_apply_changes(sess, 0);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_delete_item(sess, "/test:l1[k='interested_key']/v", 0);
+    sr_assert_true(r == SR_ERR_OK);
+
+    r = sr_apply_changes(sess, 0);
+    sr_assert_true(r == SR_ERR_OK);
+    exit(0);
+    return ret;
+}
+
+
 int
 main(void)
 {
     struct test tests[] = {
+        {"sub dirty exit", test_subscr_dirty_exit, test_create_subscr_and_die, setup, teardown},
         {"rpc sub", test_rpc_sub1, test_rpc_sub2, setup, teardown},
         {"rpc crash", test_rpc_crash1, test_rpc_crash2, setup, teardown},
         {"oper crash", test_oper_crash_set2, test_oper_crash_set1, setup, teardown},
