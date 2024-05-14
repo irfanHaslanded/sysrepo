@@ -292,7 +292,6 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
 
     if ((sr_stderr_ll < SR_LL_DBG) && (sr_syslog_ll < SR_LL_DBG) && !sr_lcb) {
         /* nothing to print */
-        return;
     }
 
     /* the structure itself */

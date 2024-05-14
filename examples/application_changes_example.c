@@ -305,7 +305,7 @@ main(int argc, char **argv)
     printf("Application will watch for \"%s\" changes in \"%s\" datastore.\n", xpath ? xpath : mod_name, ds2str(ds));
 
     /* turn logging on */
-    sr_log_stderr(SR_LL_WRN);
+    sr_log_stderr(SR_LL_DBG);
 
     /* connect to sysrepo */
     rc = sr_connect(0, &connection);
