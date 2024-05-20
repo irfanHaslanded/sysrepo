@@ -61,15 +61,15 @@ endif()
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
 set(SYSREPO_MINOR_VERSION 3)
-set(SYSREPO_MICRO_VERSION 3)
+set(SYSREPO_MICRO_VERSION 9)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
 # Major version is changed with every backward non-compatible API/ABI change, minor version changes
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
-set(SYSREPO_MINOR_SOVERSION 24)
-set(SYSREPO_MICRO_SOVERSION 18)
+set(SYSREPO_MINOR_SOVERSION 25)
+set(SYSREPO_MICRO_SOVERSION 3)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
@@ -79,7 +79,7 @@ set(LIBYANG_DEP_SOVERSION 3.0.0)
 set(LIBYANG_DEP_SOVERSION_MAJOR 3)
 
 # generate only version header, it is needed for docs
-configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
+configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/include/sysrepo/version.h" ESCAPE_QUOTES @ONLY)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
 
@@ -279,9 +279,12 @@ set(SYSREPOPLUGIND_SRC
     src/executables/sysrepo-plugind.c)
 
 # public headers to check API/ABI on
-set(LIB_HEADERS
+set(LIB_MAIN_HEADERS
     src/sysrepo.h
-    src/sysrepo_types.h
+    src/sysrepo_types.h)
+set(LIB_UTIL_HEADERS
+    src/plugins_datastore.h
+    src/plugins_notification.h
     src/utils/values.h
     src/utils/xpath.h
     src/utils/error_format.h
@@ -291,10 +294,11 @@ set(LIB_HEADERS
 # files to generate doxygen from
 set(DOXY_FILES
     doc/
-    ${LIB_HEADERS}
+    ${LIB_MAIN_HEADERS}
+    ${LIB_UTIL_HEADERS}
     src/plugins_datastore.h
     src/plugins_notification.h
-    ${PROJECT_BINARY_DIR}/version.h)
+    ${PROJECT_BINARY_DIR}/include/sysrepo/version.h)
 
 # project (doxygen) logo
 set(PROJECT_LOGO
@@ -523,7 +527,9 @@ endif()
 find_package(LibSystemd)
 if(LIBSYSTEMD_FOUND)
     set(SR_HAVE_SYSTEMD 1)
-    target_link_libraries(sysrepo-plugind ${LIBSYSTEMD_LIBRARIES})
+    if(ENABLE_SYSREPO_PLUGIND)
+        target_link_libraries(sysrepo-plugind ${LIBSYSTEMD_LIBRARIES})
+    endif()
     include_directories(${LIBSYSTEMD_INCLUDE_DIRS})
     message(STATUS "systemd system service unit path: ${SYSTEMD_UNIT_DIR}")
 else()
@@ -548,6 +554,10 @@ configure_file("${PROJECT_SOURCE_DIR}/sysrepo.pc.in" "${PROJECT_BINARY_DIR}/sysr
 configure_file("${PROJECT_SOURCE_DIR}/src/executables/bin_common.h.in" "${PROJECT_BINARY_DIR}/bin_common.h" ESCAPE_QUOTES @ONLY)
 configure_file("${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.service.in" "${PROJECT_BINARY_DIR}/sysrepo-plugind.service" @ONLY)
 
+# copy public headers
+file(COPY ${LIB_MAIN_HEADERS} DESTINATION "${PROJECT_BINARY_DIR}/include")
+file(COPY ${LIB_UTIL_HEADERS} DESTINATION "${PROJECT_BINARY_DIR}/include/sysrepo")
+
 # installation
 file(GLOB yangs "${PROJECT_SOURCE_DIR}/modules/*.yang")
 install(FILES ${yangs} DESTINATION ${YANG_MODULE_DIR})
@@ -555,13 +565,9 @@ file(GLOB sn_yangs "${PROJECT_SOURCE_DIR}/modules/subscribed_notifications/*.yan
 install(FILES ${sn_yangs} DESTINATION ${YANG_MODULE_DIR})
 
 install(TARGETS sysrepo DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES ${PROJECT_SOURCE_DIR}/src/sysrepo.h ${PROJECT_SOURCE_DIR}/src/sysrepo_types.h
+install(FILES ${PROJECT_BINARY_DIR}/include/sysrepo.h ${PROJECT_BINARY_DIR}/include/sysrepo_types.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES ${PROJECT_SOURCE_DIR}/src/plugins_datastore.h ${PROJECT_BINARY_DIR}/version.h
-            ${PROJECT_SOURCE_DIR}/src/utils/values.h ${PROJECT_SOURCE_DIR}/src/utils/xpath.h
-            ${PROJECT_SOURCE_DIR}/src/utils/error_format.h ${PROJECT_SOURCE_DIR}/src/utils/netconf_acm.h
-            ${PROJECT_SOURCE_DIR}/src/utils/subscribed_notifications.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sysrepo)
+install(DIRECTORY ${PROJECT_BINARY_DIR}/include/sysrepo DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES ${PROJECT_BINARY_DIR}/sysrepo.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 install(DIRECTORY DESTINATION ${REPO_PATH}
         DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_WRITE GROUP_EXECUTE WORLD_READ WORLD_WRITE WORLD_EXECUTE)
@@ -613,7 +619,7 @@ endif()
 
 # generate API/ABI report
 if("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
-    lib_abi_check(sysrepo "${LIB_HEADERS}" ${SYSREPO_SOVERSION_FULL} d5276ea67a657d8a39f0770a4e5b0993d53ddc5a)
+    lib_abi_check(sysrepo "${LIB_MAIN_HEADERS};${LIB_UTIL_HEADERS}" ${SYSREPO_SOVERSION_FULL} d5276ea67a657d8a39f0770a4e5b0993d53ddc5a)
 endif()
 
 # source files to be covered by the 'format' target and a test with 'format-check' target
