@@ -24,12 +24,12 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7181de4..c33f6c4 100644
+index cdaea89..c31125e 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -84,7 +84,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
  # generate only version header, it is needed for docs
- configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/version.h" ESCAPE_QUOTES @ONLY)
+ configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/include/sysrepo/version.h" ESCAPE_QUOTES @ONLY)
  
 -set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
 +set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -Wformat=2 -Werror -std=c11 -Wno-overlength-strings")
@@ -140,10 +140,10 @@ index 28c65d0..05725ac 100644
      if (srlyb_shm_prefix_cached) {
          *prefix = srlyb_shm_prefix_cached;
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 90e385f..a6dbad5 100644
+index c402341..1feb178 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -3091,9 +3091,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+@@ -3126,9 +3126,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -156,7 +156,7 @@ index 90e385f..a6dbad5 100644
      return NULL;
  }
  
-@@ -3557,8 +3557,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
+@@ -3592,8 +3592,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -167,7 +167,7 @@ index 90e385f..a6dbad5 100644
      return NULL;
  }
  
-@@ -4448,10 +4448,10 @@ process_event:
+@@ -4483,10 +4483,10 @@ process_event:
          if (sub_info.event == SR_SUB_EV_RPC) {
              if (ret == SR_ERR_CALLBACK_SHELVE) {
                  /* processing was shelved, so interupt the whole RPC processing in order to get correct final output */

@@ -16,7 +16,7 @@ be used to dump the sessions which hold any module ds locks.
  1 file changed, 2 insertions(+), 5 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 030867c..14de954 100644
+index 17608af..742e81f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -411,6 +411,8 @@ sr_disconnect(sr_conn_ctx_t *conn)

@@ -14,10 +14,10 @@ Closes: ENG-5756
  3 files changed, 51 insertions(+), 14 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index d54cd99..7f13571 100644
+index 9b9b482..46e6e02 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3079,7 +3079,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
+@@ -3093,7 +3093,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -26,7 +26,7 @@ index d54cd99..7f13571 100644
  {
      sr_error_info_t *err_info = NULL;
      const struct lysc_node *schema;
-@@ -3087,10 +3087,11 @@ sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char
+@@ -3101,10 +3101,11 @@ sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char
      union lyd_any_value any_val;
      enum edit_op cur_op;
      int own_oper;
@@ -39,7 +39,7 @@ index d54cd99..7f13571 100644
          goto cleanup;
      }
  
-@@ -3613,12 +3614,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3627,12 +3628,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
      const char *meta_val = NULL, *def_origin;
      char *rel_xpath = NULL;
      enum edit_op op;
@@ -55,7 +55,7 @@ index d54cd99..7f13571 100644
          opts |= LYD_NEW_PATH_OPAQ;
      }
  
-@@ -3631,10 +3633,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3645,10 +3647,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
          if (match) {
              /* node exists, nothing to create, just merge operations if possible */
              if ((err_info = sr_edit_add_merge_op(match, &session->dt[session->ds].edit->tree, value,
@@ -72,7 +72,7 @@ index d54cd99..7f13571 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index f82f92f..6710681 100644
+index ab41b48..a4a8afa 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3393,16 +3393,18 @@ cleanup:

@@ -10,7 +10,7 @@ Subject: implement sr_install_module_perm
  4 files changed, 125 insertions(+), 8 deletions(-)
 
 diff --git a/src/lyd_mods.c b/src/lyd_mods.c
-index de0a554..2bc4d33 100644
+index 9fe6762..bec16f2 100644
 --- a/src/lyd_mods.c
 +++ b/src/lyd_mods.c
 @@ -946,7 +946,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
@@ -52,7 +52,7 @@ index de0a554..2bc4d33 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 72bd028..343faec 100644
+index 07561f1..98bd65c 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@
@@ -114,7 +114,7 @@ index 72bd028..343faec 100644
          goto cleanup;
      }
  
-@@ -7340,3 +7375,36 @@ cleanup:
+@@ -7345,3 +7380,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  

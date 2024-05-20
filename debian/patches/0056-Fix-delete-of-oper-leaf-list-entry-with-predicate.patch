@@ -25,7 +25,7 @@ Closes: ENG-6050
  2 files changed, 93 insertions(+), 6 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6710681..08c070b 100644
+index a4a8afa..7b24537 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -33,6 +33,7 @@

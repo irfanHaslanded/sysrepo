@@ -52,7 +52,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b899c0d..7181de4 100644
+index 534ec98..cdaea89 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -89,10 +89,10 @@ index e7f4586..c3065b4 100644
      if (is_priviliged < 0) {
          is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4a59ca6..60f5f02 100644
+index b65f5b9..16092cc 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7231,7 +7231,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7236,7 +7236,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -101,7 +101,7 @@ index 4a59ca6..60f5f02 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7241,8 +7241,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7246,8 +7246,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -112,7 +112,7 @@ index 4a59ca6..60f5f02 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7256,6 +7257,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7261,6 +7262,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;
