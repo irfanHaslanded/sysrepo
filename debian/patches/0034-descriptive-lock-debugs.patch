@@ -190,7 +190,7 @@ index d76af70..6cbd3d9 100644
  #define SR_SHM_MEM_ALIGN 8
  
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 9fef134..a54bf16 100644
+index 11e329b..0d221bf 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,8 @@
@@ -266,7 +266,7 @@ index 9fef134..a54bf16 100644
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 7002026..6f33917 100644
+index b77ab77..ae90fdb 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@

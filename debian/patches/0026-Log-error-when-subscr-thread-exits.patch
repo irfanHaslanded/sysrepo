@@ -7,10 +7,10 @@ Subject: Log error when subscr thread exits
  1 file changed, 2 insertions(+)
 
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index a6dbad5..c8acfbb 100644
+index 1feb178..df18a2a 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -4853,6 +4853,8 @@ sr_shmsub_listen_thread(void *arg)
+@@ -4888,6 +4888,8 @@ sr_shmsub_listen_thread(void *arg)
               * another event is generated, our event pipe will not get notified */
              continue;
          } else if (ret) {

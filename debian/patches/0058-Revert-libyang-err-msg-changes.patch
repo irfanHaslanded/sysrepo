@@ -64,7 +64,7 @@ index 90681df..38a7327 100644
      /* correct the instance-identifier */
      input[0].data.string_val = "/ops-ref:l2";
 diff --git a/tests/test_rpc_action.c b/tests/test_rpc_action.c
-index b546212..ce97433 100644
+index c7f0d28..ea91e9a 100644
 --- a/tests/test_rpc_action.c
 +++ b/tests/test_rpc_action.c
 @@ -358,7 +358,7 @@ test_rpc(void **state)

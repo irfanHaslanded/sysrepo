@@ -172,6 +172,8 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_xpath_recover@Base 2.2.161
  srplg_errinfo_free@Base 2.2.161
  srplg_errinfo_push_error_data@Base 2.2.161
+ srplg_errinfo_set_netconf_error@Base 2.3.6
+ srplg_errinfo_set_netconf_error2@Base 2.3.6
  srplg_log@Base 2.2.161
  srplg_log_errinfo@Base 2.2.161
  srsn_filter_subtree2xpath@Base 2.2.161

@@ -32,7 +32,7 @@ index 99899c0..e7f4586 100644
              } else {
                  sr_val->type = SR_ENUM_T;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5f39aea..78b0680 100644
+index 2d59195..d080d34 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -2794,7 +2794,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
@@ -102,22 +102,22 @@ index 55f5d1e..64442c8 100644
      }
      leaf options {
 diff --git a/tests/test_get.c b/tests/test_get.c
-index c3b6838..bd54d77 100644
+index 41ba998..c03d7ee 100644
 --- a/tests/test_get.c
 +++ b/tests/test_get.c
-@@ -47,6 +47,8 @@ setup(void **state)
-         TESTS_SRC_DIR "/files/simple.yang",
+@@ -49,6 +49,8 @@ setup(void **state)
          TESTS_SRC_DIR "/files/simple-aug.yang",
          TESTS_SRC_DIR "/files/defaults.yang",
+         TESTS_SRC_DIR "/files/mod.yang",
 +        TESTS_SRC_DIR "/files/referenced-data.yang",
 +        TESTS_SRC_DIR "/files/test-module.yang",
          NULL
      };
  
-@@ -82,17 +84,74 @@ teardown(void **state)
-         "simple-aug",
+@@ -85,17 +87,74 @@ teardown(void **state)
          "simple",
          "defaults",
+         "mod",
 +        "test-module",
 +        "referenced-data",
          NULL
@@ -190,11 +190,11 @@ index c3b6838..bd54d77 100644
  /* TEST */
  static void
  test_invalid(void **state)
-@@ -641,6 +700,7 @@ main(void)
-         cmocka_unit_test(test_union),
-         cmocka_unit_test(test_key),
-         cmocka_unit_test(test_factory_default),
+@@ -708,6 +767,7 @@ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
 +        cmocka_unit_test(test_get_enum),
-     };
- 
-     setenv("CMOCKA_TEST_ABORT", "1", 1);
+         cmocka_unit_test(test_invalid),
+         cmocka_unit_test(test_cached_datastore),
+         cmocka_unit_test(test_cached_thread),

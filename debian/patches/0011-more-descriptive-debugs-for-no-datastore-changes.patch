@@ -13,7 +13,7 @@ Also reduce it to debug as it can be noisy at INFO level.
  1 file changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 14de954..29edc9a 100644
+index 742e81f..4ba8cfd 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3705,7 +3705,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio

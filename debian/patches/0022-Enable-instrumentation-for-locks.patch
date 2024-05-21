@@ -366,7 +366,7 @@ index 945c4a2..a370c7a 100644
  
  /**
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 2c84871..0e86ac2 100644
+index 824c760..5c5a675 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,19 @@
@@ -853,7 +853,7 @@ index da9e7df..7906276 100644
  /**
   * @brief Load modules stored in mod SHM into a context.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index e3961e2..90e385f 100644
+index 8f00177..c402341 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -900,7 +900,7 @@ index d64ddb0..04a55a1 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 60f5f02..ce99831 100644
+index 16092cc..a40c752 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);

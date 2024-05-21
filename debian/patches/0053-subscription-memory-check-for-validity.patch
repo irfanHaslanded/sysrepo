@@ -42,7 +42,7 @@ index bca0b72..044dcaa 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 220b8ec..f82f92f 100644
+index 81affad..ab41b48 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -4964,6 +4964,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
@@ -119,7 +119,7 @@ index 220b8ec..f82f92f 100644
  
      conn = session->conn;
  
-@@ -6574,7 +6598,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+@@ -6579,7 +6603,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
              (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
              (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
              (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
@@ -128,7 +128,7 @@ index 220b8ec..f82f92f 100644
      conn = session->conn;
  
      /* CONTEXT LOCK */
-@@ -7072,8 +7096,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7077,8 +7101,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      uint32_t prio = 0;
      uint32_t xpath_id = 0;
  
@@ -139,7 +139,7 @@ index 220b8ec..f82f92f 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -7194,7 +7218,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7199,7 +7223,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_mod_t *shm_mod;
      struct modsub_operpoll_s *oper_poll_subs;
  

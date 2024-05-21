@@ -33,7 +33,7 @@ cherry-picked from 0067-Locking-improvements-for-subscriptions.patch
  5 files changed, 113 insertions(+), 44 deletions(-)
 
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 0e86ac2..6ba38bd 100644
+index 5c5a675..85e0209 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -511,14 +511,17 @@ error:
@@ -233,7 +233,7 @@ index 9d5f2b1..710287e 100644
  /**
   * @brief Delete a change subscription from a subscription structure.
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6987455..fe6042b 100644
+index 32dc941..c77bfd4 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -5015,7 +5015,6 @@ cleanup:

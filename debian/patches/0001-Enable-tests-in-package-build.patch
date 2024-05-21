@@ -8,7 +8,7 @@ Subject: Enable tests in package build
  2 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index d0e3c47..b899c0d 100644
+index 8fa6144..534ec98 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -86,7 +86,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
