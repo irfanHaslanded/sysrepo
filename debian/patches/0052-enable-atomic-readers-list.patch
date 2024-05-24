@@ -603,7 +603,7 @@ index 38021a9..e822069 100644
  #define SR_RWLOCK_RESERVED_ID_MAX 100
  
 diff --git a/src/common_types.h b/src/common_types.h
-index d073b2d..bca0b72 100644
+index d363bfb..4faad2e 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -52,6 +52,21 @@ typedef enum {
@@ -642,7 +642,7 @@ index d073b2d..bca0b72 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index f34ea3f..dd44994 100644
+index 8d6fd83..de1d4c5 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1657,7 +1657,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
@@ -694,7 +694,7 @@ index f34ea3f..dd44994 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 8dbb4b6..06b1c59 100644
+index 5eb60c6..2b9d619 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -366,7 +366,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

@@ -15,7 +15,7 @@ So, ignoring any moves until libyang implements "system" ordering.
  1 file changed, 5 insertions(+)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 46e6e02..b2b2330 100644
+index 57c1d87..03c75dd 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -3843,6 +3843,11 @@ sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, s

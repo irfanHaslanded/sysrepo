@@ -31,7 +31,7 @@ subscriptions.
  4 files changed, 224 insertions(+), 14 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 5537e40..f34ea3f 100644
+index d02a672..8d6fd83 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -886,6 +886,22 @@ sr_xpath_oper_data_text_atoms_required(const char *request_atom, const char *sub
@@ -144,7 +144,7 @@ index 5537e40..f34ea3f 100644
      /* module subscriptions */
      if ((err_info = sr_modinfo_module_srmon_module_subs(conn, shm_mod, sr_mod))) {
          return err_info;
-@@ -2304,6 +2342,36 @@ cleanup:
+@@ -2323,6 +2361,36 @@ cleanup:
      return err_info;
  }
  
@@ -181,7 +181,7 @@ index 5537e40..f34ea3f 100644
  /**
   * @brief Load module data of the sysrepo-monitoring module. They are actually generated.
   *
-@@ -2323,7 +2391,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2342,7 +2410,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      const struct lys_module *ly_mod;
      sr_mod_shm_t *mod_shm;
      uint32_t i, j;
@@ -194,7 +194,7 @@ index 5537e40..f34ea3f 100644
  
      mod_shm = SR_CONN_MOD_SHM(mod_info->conn);
      ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, "sysrepo-monitoring");
-@@ -2334,39 +2406,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2353,39 +2425,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
          goto cleanup;
      }
  
@@ -259,7 +259,7 @@ index 5537e40..f34ea3f 100644
                      goto cleanup;
                  }
              }
-@@ -2374,19 +2463,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2393,19 +2482,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      }
  
      /* connections */
@@ -285,10 +285,10 @@ index 5537e40..f34ea3f 100644
      lyd_free_siblings(mod_data);
      return err_info;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 98bd65c..b4090b2 100644
+index 2d92eac..7b76c6f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7413,3 +7413,81 @@ cleanup:
+@@ -7427,3 +7427,81 @@ cleanup:
      }
  }
  

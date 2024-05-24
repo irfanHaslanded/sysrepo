@@ -221,7 +221,7 @@ sr_edit_find_cid(struct lyd_node *edit, sr_cid_t *cid, int *meta_own)
                 if (cid) {
                     *cid = cid_meta->value.uint32;
                 }
-                if (meta_own && (parent == edit) && cid_meta) {
+                if (meta_own && (parent == edit)) {
                     *meta_own = 1;
                 }
                 break;
@@ -2935,7 +2935,7 @@ sr_edit_diff_edit_merge_r(struct lyd_node **trg_root, struct lyd_node *trg_paren
         }
 
         /* leaf(-list) with 'none' operation expects 'orig-default' metadata, store the same as the node */
-        if (trg_node->schema->nodetype & LYD_NODE_TERM) {
+        if (trg_node->schema && (trg_node->schema->nodetype & LYD_NODE_TERM)) {
             if ((err_info = sr_lyd_new_meta(trg_node, NULL, "yang:orig-default",
                     (trg_node->flags & LYD_DEFAULT) ? "true" : "false"))) {
                 goto cleanup;
