@@ -190,7 +190,7 @@ index d76af70..6cbd3d9 100644
  #define SR_SHM_MEM_ALIGN 8
  
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 11e329b..0d221bf 100644
+index 073c50a..fe68e20 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,8 @@
@@ -202,7 +202,7 @@ index 11e329b..0d221bf 100644
  static int
  sr_shmext_log_enabled(void)
  {
-@@ -519,15 +521,30 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
+@@ -522,15 +524,30 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
      off_t xpath_off;
      sr_mod_change_sub_t *shm_sub;
      uint32_t i;
@@ -234,7 +234,7 @@ index 11e329b..0d221bf 100644
  
      if (sub_opts & SR_SUBSCR_UPDATE) {
          /* check that there is not already an update subscription with the same priority */
-@@ -877,13 +894,29 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -880,13 +897,29 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      uint32_t i, j;
      int xpath_found = 0;
  
@@ -266,7 +266,7 @@ index 11e329b..0d221bf 100644
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index b77ab77..ae90fdb 100644
+index 5380ca0..29b2be0 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@

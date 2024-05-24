@@ -7,7 +7,7 @@ Subject: Increase rwlock reader limit to 20
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index 0312458..945c4a2 100644
+index 81cf31a..f7f35d7 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -50,7 +50,7 @@ typedef enum {

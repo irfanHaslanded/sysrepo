@@ -162,7 +162,7 @@ index 656c3aa..38021a9 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index ae90fdb..8dbb4b6 100644
+index 29b2be0..5eb60c6 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -344,6 +344,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

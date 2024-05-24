@@ -24,10 +24,10 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  6 files changed, 21 insertions(+), 37 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index cdaea89..c31125e 100644
+index 2dfb29c..23cc986 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -84,7 +84,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
+@@ -76,7 +76,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
  # generate only version header, it is needed for docs
  configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/include/sysrepo/version.h" ESCAPE_QUOTES @ONLY)
  
@@ -58,7 +58,7 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 2358122..dcff9dc 100644
+index 18e6b61..08d9e28 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1601,20 +1601,20 @@ cleanup:
@@ -140,10 +140,10 @@ index 28c65d0..05725ac 100644
      if (srlyb_shm_prefix_cached) {
          *prefix = srlyb_shm_prefix_cached;
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index c402341..1feb178 100644
+index 7b02b07..7624d1a 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -3126,9 +3126,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
+@@ -3129,9 +3129,9 @@ sr_shmsub_multi_listen_write_event(sr_multi_sub_shm_t *multi_sub_shm, uint32_t v
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -156,7 +156,7 @@ index c402341..1feb178 100644
      return NULL;
  }
  
-@@ -3592,8 +3592,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
+@@ -3595,8 +3595,8 @@ sr_shmsub_listen_write_event(sr_sub_shm_t *sub_shm, sr_error_t err_code, sr_shm_
          memcpy(shm_data_sub->addr, data, data_len);
      }
  
@@ -167,7 +167,7 @@ index c402341..1feb178 100644
      return NULL;
  }
  
-@@ -4483,10 +4483,10 @@ process_event:
+@@ -4501,10 +4501,10 @@ process_event:
          if (sub_info.event == SR_SUB_EV_RPC) {
              if (ret == SR_ERR_CALLBACK_SHELVE) {
                  /* processing was shelved, so interupt the whole RPC processing in order to get correct final output */

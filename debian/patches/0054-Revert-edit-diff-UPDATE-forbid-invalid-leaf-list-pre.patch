@@ -14,7 +14,7 @@ Closes: ENG-5693
  2 files changed, 11 insertions(+), 18 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index c7e12e4..9b9b482 100644
+index 8f884cf..6b9bcb9 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -3466,24 +3466,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons

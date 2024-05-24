@@ -14,7 +14,7 @@ Closes: ENG-5756
  3 files changed, 51 insertions(+), 14 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 9b9b482..46e6e02 100644
+index 6b9bcb9..57c1d87 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -3093,7 +3093,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
@@ -72,7 +72,7 @@ index 9b9b482..46e6e02 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ab41b48..a4a8afa 100644
+index 766b4b2..dddbb5d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3393,16 +3393,18 @@ cleanup:
