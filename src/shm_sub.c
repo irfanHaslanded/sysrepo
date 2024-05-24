@@ -2972,7 +2972,7 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
     }
 
     /* notify all subscribers using event pipe */
-    for (i = 0; i < notif_sub_count; ) {
+    for (i = 0; i < notif_sub_count; i++) {
         if (ATOMIC_LOAD_RELAXED(notif_subs[i].suspended)) {
             /* skip suspended subscribers */
             continue;
@@ -2981,8 +2981,6 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
         if ((err_info = sr_shmsub_notify_evpipe(notif_subs[i].evpipe_num))) {
             goto cleanup_ext_sub_unlock;
         }
-
-        ++i;
     }
 
     /* EXT READ UNLOCK */
@@ -3067,6 +3065,11 @@ sr_shmsub_change_listen_is_new_event(sr_multi_sub_shm_t *multi_sub_shm, struct m
 
     /* subscription options and event */
     if (!sr_shmsub_change_listen_event_is_valid(event, sub->opts)) {
+        return 0;
+    }
+
+    /* do not process events for suspended subscriptions */
+    if (ATOMIC_LOAD_RELAXED(sub->suspended)) {
         return 0;
     }
 
@@ -3324,7 +3327,7 @@ sr_shmsub_change_listen_check_update_edit(sr_session_ctx_t *ev_sess, const char 
             sr_session_set_error_message(ev_sess, "Updated edit with data from another module \"%s\".",
                     lyd_owner_module(iter)->name);
             free(path);
-            sr_log_msg(0, SR_LL_ERR, ev_sess->err_info->err[0].message);
+            sr_log_msg(0, SR_LL_ERR, ev_sess->ev_err_info->err[0].message);
 
             /* set error code */
             *err_code = SR_ERR_INVAL_ARG;
@@ -3655,6 +3658,11 @@ sr_shmsub_oper_get_listen_process_module_events(struct modsub_operget_s *oper_ge
         oper_get_sub = &oper_get_subs->subs[i];
         sub_shm = (sr_sub_shm_t *)oper_get_sub->sub_shm.addr;
 
+        /* do not process events for suspended subscriptions */
+        if (ATOMIC_LOAD_RELAXED(oper_get_sub->suspended)) {
+            continue;
+        }
+
         /* no new event */
         if ((ATOMIC_LOAD_RELAXED(sub_shm->event) != SR_SUB_EV_OPER) ||
                 (ATOMIC_LOAD_RELAXED(sub_shm->request_id) == ATOMIC_LOAD_RELAXED(oper_get_sub->request_id))) {
@@ -3945,6 +3953,11 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
 
     for (i = 0; i < oper_poll_subs->sub_count; ++i) {
         oper_poll_sub = &oper_poll_subs->subs[i];
+
+        /* do not process events for suspended subscriptions */
+        if (ATOMIC_LOAD_RELAXED(oper_poll_sub->suspended)) {
+            continue;
+        }
 
         /* find the oper cache entry */
         cache = NULL;
@@ -4289,6 +4302,11 @@ sr_shmsub_rpc_listen_is_new_event(sr_multi_sub_shm_t *multi_sub_shm, struct opsu
 
     /* priority */
     if (priority != sub->priority) {
+        return 0;
+    }
+
+    /* do not process events for suspended subscriptions */
+    if (ATOMIC_LOAD_RELAXED(sub->suspended)) {
         return 0;
     }
 
@@ -4643,12 +4661,19 @@ sr_shmsub_notif_listen_process_module_events(struct modsub_notif_s *notif_subs, 
     sr_rwunlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
 
     /* process event */
-    SR_LOG_INF("EV LISTEN: \"%s\" \"notif\" ID %" PRIu32 " processing.", notif_subs->module_name, request_id);
-
     valid_subscr_count = 0;
     for (i = 0; i < notif_subs->sub_count; ++i) {
         sub = &notif_subs->subs[i];
-        memset(&denied, 0, sizeof denied);
+
+        if (ATOMIC_LOAD_RELAXED(sub->suspended)) {
+            /* do not process events for suspended subscriptions */
+            continue;
+        }
+
+        if (!valid_subscr_count) {
+            /* Print a message only the first time we get here */
+            SR_LOG_INF("EV LISTEN: \"%s\" \"notif\" ID %" PRIu32 " processing.", notif_subs->module_name, request_id);
+        }
 
         if (sr_time_cmp(&sub->listen_since_mono, &notif_ts_mono) > 0) {
             /* generated before this subscription has been made */
@@ -4657,6 +4682,7 @@ sr_shmsub_notif_listen_process_module_events(struct modsub_notif_s *notif_subs, 
             continue;
         }
 
+        memset(&denied, 0, sizeof denied);
         if (sub->sess->nacm_user && !strcmp(orig_notif->schema->module->name, "ietf-yang-push") &&
                 !strcmp(LYD_NAME(orig_notif), "push-change-update")) {
             if (i == notif_subs->sub_count) {
