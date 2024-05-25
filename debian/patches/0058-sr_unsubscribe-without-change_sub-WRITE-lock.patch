@@ -1,0 +1,1008 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Thu, 9 May 2024 17:01:37 +0000
+Subject: sr_unsubscribe without change_sub WRITE lock
+
+Support scrapping (safely) subscriptions in the ext SHM when WRITE
+lock for change_sub is not available.
+
+Background:
+change_sub READ lock is held for the entire duration of a
+`sr_changes_notify_store` operation.
+
+Depending on the module, this can take a really long time, if a new
+change is underway. A process that needs to stop (for process restart or
+because the system needs to reboot) can suffer really long delays.
+
+The situation is further worsened if notify is waiting for a process
+that has recently crashed, or subscribers of multiple priorities exist.
+
+Unsubscribing in a timely manner is also important so that the processes
+can release their resources in destructors and not cause memory bugs.
+
+Solution:
+Although we cannot remove the subscription from ext SHM without a WRITE
+change_sub lock, we can atomically mark the subscription as SCRAPPED.
+
+Subsequent change_sub add to the same module and datastore will detect
+this and clean up all `SCRAPPED` subs as it posseses WRITE lock.
+
+From the perspective of publishers, a SCRAPPED subscription is the same
+as a suspended subscription and are not notified of events.
+
+Races:
+
+1. If SCRAP happens while a publisher is waiting for it, the only way
+to notify the publisher is by processing the event, as the publisher
+does not track the xpath_ids it is waiting for and find scraps.
+
+2. SCRAP after subscriber_count is determined by publisher,
+but before event is notified.
+
+If `sr_changes_notify_store` ongoing:
+
+   a. before `subscriber_count` is determined => No action needed.
+
+   b. before `evpipe` is notified => Correct subscriber_count to
+   wait for, and skip waiting if there is no subscription notified.
+
+   c. after `evpipe` is notified => Process the event.
+
+Else => No action needed.
+
+Since unsubscribe holds subscription context WRITE lock, event
+processing cannot happen by the subscription handler thread during the
+SCRAP. Once the call to SCRAP returns, we can be assured that the
+subscription context can be freed up and the callback is never invoked
+again.
+
+Closes: ENG-6692
+---
+ src/common.h                  |   3 +
+ src/shm_ext.c                 |  80 ++++++++++-
+ src/shm_ext.h                 |  10 ++
+ src/shm_sub.c                 |  68 +++++++---
+ src/subscr.c                  |  46 +++++--
+ src/sysrepo.c                 |  15 ++-
+ tests/test_subscr_filtering.c | 307 ++++++++++++++++++++++++++++++++++++------
+ 7 files changed, 453 insertions(+), 76 deletions(-)
+
+diff --git a/src/common.h b/src/common.h
+index e822069..b3a39fb 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -113,6 +113,9 @@ struct srplg_ntf_s;
+ /** timeout step when waiting for a DS lock (ms) */
+ #define SR_DS_LOCK_TIMEOUT_STEP 50
+ 
++/** timeout for unsubscribe locking change_sub; intentionally kept short so unsubscribe is fast */
++#define SR_SHMEXT_UNSUB_LOCK_TIMEOUT 50
++
+ /** timeout for locking SHM module/RPC subscriptions; maxmum time full event processing may take (ms) */
+ #define SR_SHMEXT_SUB_LOCK_TIMEOUT 15000
+ 
+diff --git a/src/shm_ext.c b/src/shm_ext.c
+index fe68e20..c58bb84 100644
+--- a/src/shm_ext.c
++++ b/src/shm_ext.c
+@@ -41,6 +41,12 @@
+ #include "shm_sub.h"
+ #include "subscr.h"
+ 
++#define SR_SHMEXT_SUB_SCRAP(sub) ATOMIC_STORE_RELAXED((sub).suspended, 2)
++#define SR_SHMEXT_IS_SUB_SCRAPPED(sub) (ATOMIC_LOAD_RELAXED((sub).suspended) == 2)
++
++static sr_error_info_t *sr_shmext_change_sub_remove_scrapped(sr_conn_ctx_t *conn, sr_mod_t *shm_mod,
++        sr_datastore_t ds, sr_lock_mode_t *has_lock);
++
+ FILE * sr_get_log_file(void);
+ 
+ static int
+@@ -530,6 +536,9 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
+     /* kept for possible future use */
+     assert(*has_lock == SR_LOCK_WRITE);
+ 
++    /* free any scrapped subscriptions which are left behind in the ext SHM */
++    sr_shmext_change_sub_remove_scrapped(conn, shm_mod, ds, has_lock);
++
+     *xpath_id = ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_xpath_id);
+ 
+     if (logfile) {
+@@ -802,6 +811,42 @@ cleanup_chsub_unlock:
+     return err_info;
+ }
+ 
++/**
++ * @brief cleanup any scrapped subscriptions because unsubscribe could not get a WRITE lock for change_sub.
++ * */
++static sr_error_info_t *
++sr_shmext_change_sub_remove_scrapped(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t ds,
++        sr_lock_mode_t *has_lock)
++{
++    sr_error_info_t *err_info = NULL;
++    uint32_t i;
++    sr_mod_change_sub_t *shm_sub;
++    assert(*has_lock == SR_LOCK_WRITE);
++
++    /* EXT READ LOCK */
++    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
++        return err_info;
++    }
++
++    for (i = 0; i < shm_mod->change_sub[ds].sub_count; ++i) {
++        shm_sub = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
++        if (SR_SHMEXT_IS_SUB_SCRAPPED(shm_sub[i])) {
++            /* subscription was deleted in a hurry, recover it */
++            SR_LOG_DBG("Freeing scrapped change_sub with xpath_id %u", shm_sub[i].xpath_id);
++
++            if ((err_info = sr_shmext_change_sub_free(conn, shm_mod, ds, i))) {
++                goto cleanup_unlock;
++            }
++        }
++    }
++
++cleanup_unlock:
++    /* EXT READ UNLOCK */
++    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
++    return err_info;
++}
++
++
+ sr_error_info_t *
+ sr_shmext_change_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t ds, uint32_t del_idx, int del_evpipe,
+         sr_lock_mode_t has_locks, int recovery)
+@@ -2230,7 +2275,7 @@ sr_shmext_change_sub_check(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_
+ restart_loop:
+     subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
+     for (i = 0; i < shm_mod->change_sub[ds].sub_count; ++i) {
+-        if (!sr_conn_is_alive(subs[i].cid)) {
++        if (!sr_conn_is_alive(subs[i].cid) || SR_SHMEXT_IS_SUB_SCRAPPED(subs[i])) {
+             /* need to upgrade to WRITE lock */
+             if (has_locks != SR_LOCK_WRITE) {
+                 /* EXT UNLOCK */
+@@ -2659,6 +2704,39 @@ cleanup:
+     return err_info;
+ }
+ 
++sr_error_info_t *
++sr_shmext_change_sub_scrap(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t ds, uint32_t sub_id)
++{
++    sr_error_info_t *err_info = NULL;
++    sr_mod_change_sub_t *shm_subs;
++    uint32_t i;
++
++    /* EXT READ LOCK */
++    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
++        return err_info;
++    }
++
++    shm_subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
++
++    for (i = 0; i < shm_mod->change_sub[ds].sub_count; ++i) {
++        if (shm_subs[i].sub_id == sub_id) {
++            break;
++        }
++    }
++    SR_CHECK_INT_GOTO(i == shm_mod->change_sub[ds].sub_count, err_info, cleanup_unlock);
++
++    /* set the scrap flag in the ext SHM for this subscription */
++    SR_SHMEXT_SUB_SCRAP(shm_subs[i]);
++    SR_LOG_INF("Scrapped change_sub CID %u xpath_id %u",
++                conn->cid, shm_subs[i].xpath_id);
++
++cleanup_unlock:
++    /* EXT READ UNLOCK */
++    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 0, __func__);
++
++    return err_info;
++}
++
+ sr_error_info_t *
+ sr_shmext_change_sub_suspended(sr_conn_ctx_t *conn, const char *mod_name, sr_datastore_t ds, uint32_t sub_id,
+         int set_suspended, int *get_suspended)
+diff --git a/src/shm_ext.h b/src/shm_ext.h
+index 9221a81..fdfea24 100644
+--- a/src/shm_ext.h
++++ b/src/shm_ext.h
+@@ -316,6 +316,16 @@ sr_error_info_t *sr_shmext_check_sub_all(sr_conn_ctx_t *conn, const struct ly_ct
+ sr_error_info_t *sr_shmext_change_sub_suspended(sr_conn_ctx_t *conn, const char *mod_name, sr_datastore_t ds,
+         uint32_t sub_id, int set_suspended, int *get_suspended);
+ 
++/**
++ * @brief Same as above but with shm_mod and marks the subscription as scrapped instead of suspend
++ * Key difference is that scrapped can never be woken up.
++ * When owning process could not wait long enough to fully unsubscribe, it marks the subscription as scrapped.
++ *
++ * Subsequent add to the same module and datastore will check for scrapped subscriptions and remove them.
++ */
++sr_error_info_t *sr_shmext_change_sub_scrap(sr_conn_ctx_t *conn, sr_mod_t *shm_mod,
++        sr_datastore_t ds, uint32_t sub_id);
++
+ /**
+  * @brief Get or set operational get subscription suspended state (flag).
+  *
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index 2b9d619..17bdc28 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -1106,7 +1106,11 @@ sr_shmsub_get_relevant_indices(struct sr_mod_info_s *mod_info, struct sr_mod_inf
+ 
+     shm_sub = (sr_mod_change_sub_t *)(conn->ext_shm.addr + mod->shm_mod->change_sub[ds].subs);
+ 
+-    for (i = 0; i < count; i++) {
++    for (i = 0; i < count; i++, shm_sub++) {
++        if (ATOMIC_LOAD_RELAXED(shm_sub->suspended)) {
++            /* we can skip suspended subscriptions */
++            continue;
++        }
+         if (shm_sub->xpath && (shm_sub->opts & SR_SUBSCR_PRODUCER_FILTERING)) {
+             if (sr_shmsub_change_filter_is_valid(conn->ext_shm.addr + shm_sub->xpath, mod_info->diff)) {
+                 arr[i] = shm_sub->xpath_id;
+@@ -1116,7 +1120,6 @@ sr_shmsub_get_relevant_indices(struct sr_mod_info_s *mod_info, struct sr_mod_inf
+             arr[i] = shm_sub->xpath_id;
+             xpath_count++;
+         }
+-        shm_sub++;
+     }
+ 
+     /* EXT READ UNLOCK */
+@@ -1416,12 +1419,13 @@ cleanup:
+  */
+ static sr_error_info_t *
+ sr_shmsub_change_notify_evpipe(struct sr_mod_info_s *mod_info, struct sr_mod_info_mod_s *mod, sr_datastore_t ds, sr_sub_event_t ev,
+-        uint32_t priority)
++        uint32_t priority, uint32_t *notified_count)
+ {
+     sr_error_info_t *err_info = NULL;
+     sr_mod_change_sub_t *shm_sub;
+     uint32_t i;
+     sr_conn_ctx_t *conn = mod_info->conn;
++    *notified_count = 0;
+ 
+     /* EXT READ LOCK */
+     if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
+@@ -1448,6 +1452,7 @@ sr_shmsub_change_notify_evpipe(struct sr_mod_info_s *mod_info, struct sr_mod_inf
+                 if ((err_info = sr_shmsub_notify_evpipe(shm_sub[i].evpipe_num))) {
+                     goto cleanup;
+                 }
++                (*notified_count)++;
+             }
+         }
+     }
+@@ -1581,10 +1586,16 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
+ 
+             /* notify using event pipe and wait until all the subscribers have processed the event */
+             if ((err_info = sr_shmsub_change_notify_evpipe(mod_info, mod, mod_info->ds, SR_SUB_EV_UPDATE,
+-                    cur_priority))) {
++                    cur_priority, &multi_sub_shm->subscriber_count))) {
+                 goto cleanup_wrunlock;
+             }
+ 
++            if (!multi_sub_shm->subscriber_count) {
++                /* the one expected subscriber was scrapped and was not notified */
++                multi_sub_shm->event = SR_SUB_EV_NONE;
++                goto notify_next_subscr;
++            }
++
+             /* wait until the event is processed */
+             if ((err_info = sr_shmsub_notify_wait_wr((sr_sub_shm_t *)multi_sub_shm, SR_SUB_EV_ERROR, 0, cid,
+                     &shm_data_sub, timeout_ms, &lock_lost, cb_err_info))) {
+@@ -1625,7 +1636,7 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
+                     goto cleanup_wrunlock;
+                 }
+             }
+-
++notify_next_subscr:
+             /* find out what is the next priority and how many subscribers have it */
+             if ((err_info = sr_shmsub_change_notify_next_subscription(mod_info, mod, mod_info->ds, SR_SUB_EV_UPDATE,
+                     cur_priority, &cur_priority, &subscriber_count, NULL))) {
+@@ -1774,6 +1785,7 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+     char *diff_lyb = NULL;
+     int opts, pending_events;
+     sr_cid_t cid;
++    sr_multi_sub_shm_t *multi_sub_shm = NULL;
+ 
+     cid = mod_info->conn->cid;
+ 
+@@ -1850,8 +1862,6 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+                 /* the subscription(s) was recovered just now so there are not any */
+                 continue;
+             }
+-            nsub->pending_event = 1;
+-            pending_events = 1;
+ 
+             /* open sub SHM and map it */
+             if ((err_info = sr_shmsub_open_map(nsub->mod->ly_mod->name, sr_ds2str(mod_info->ds), -1, &nsub->shm_sub))) {
+@@ -1875,7 +1885,8 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+             if (!nsub->mod->request_id) {
+                 nsub->mod->request_id = ++nsub->sub_shm->request_id;
+             }
+-            if ((err_info = sr_shmsub_multi_notify_write_event((sr_multi_sub_shm_t *)nsub->shm_sub.addr, cid,
++            multi_sub_shm = (sr_multi_sub_shm_t *)nsub->shm_sub.addr;
++            if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, cid,
+                     nsub->mod->request_id, nsub->cur_priority, SR_SUB_EV_CHANGE, orig_name, orig_data, subscriber_count,
+                     &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name,
+                     nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
+@@ -1884,9 +1895,18 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+ 
+             /* notify the subscribers using an event pipe */
+             if ((err_info = sr_shmsub_change_notify_evpipe(mod_info, nsub->mod, mod_info->ds, SR_SUB_EV_CHANGE,
+-                    nsub->cur_priority))) {
++                    nsub->cur_priority, &multi_sub_shm->subscriber_count))) {
+                 goto cleanup;
+             }
++
++            if (multi_sub_shm->subscriber_count) {
++                nsub->pending_event = 1;
++                pending_events = 1;
++            } else {
++                /* no one was notified of it, so don't wait on it and clear it */
++                assert(!nsub->pending_event);
++                multi_sub_shm->event = SR_SUB_EV_NONE;
++            }
+         }
+         if (!pending_events) {
+             /* all module events generated and processed, next module priority, if any */
+@@ -1963,6 +1983,7 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+     char *diff_lyb = NULL;
+     int opts, pending_events;
+     sr_cid_t cid;
++    sr_multi_sub_shm_t *multi_sub_shm = NULL;
+ 
+     cid = mod_info->conn->cid;
+ 
+@@ -2025,8 +2046,6 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+             if (!subscriber_count) {
+                 continue;
+             }
+-            nsub->pending_event = 1;
+-            pending_events = 1;
+ 
+             /* open sub SHM and map it */
+             if ((err_info = sr_shmsub_open_map(nsub->mod->ly_mod->name, sr_ds2str(mod_info->ds), -1, &nsub->shm_sub))) {
+@@ -2050,7 +2069,9 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+             if (!nsub->mod->request_id) {
+                 nsub->mod->request_id = ++nsub->sub_shm->request_id;
+             }
+-            if ((err_info = sr_shmsub_multi_notify_write_event((sr_multi_sub_shm_t *)nsub->shm_sub.addr, cid,
++
++            multi_sub_shm = (sr_multi_sub_shm_t *)nsub->shm_sub.addr;
++            if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, cid,
+                     nsub->mod->request_id, nsub->cur_priority, SR_SUB_EV_DONE, orig_name, orig_data, subscriber_count,
+                     &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
+                 goto cleanup;
+@@ -2058,9 +2079,18 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+ 
+             /* notify the subscribers using an event pipe */
+             if ((err_info = sr_shmsub_change_notify_evpipe(mod_info, nsub->mod, mod_info->ds, SR_SUB_EV_DONE,
+-                    nsub->cur_priority))) {
++                    nsub->cur_priority, &multi_sub_shm->subscriber_count))) {
+                 goto cleanup;
+             }
++
++            if (multi_sub_shm->subscriber_count) {
++                nsub->pending_event = 1;
++                pending_events = 1;
++            } else {
++                /* no one was notified of it, so don't wait on it and clear it */
++                assert(!nsub->pending_event);
++                multi_sub_shm->event = SR_SUB_EV_NONE;
++            }
+         }
+         if (!pending_events) {
+             /* all module events generated and processed, next module priority, if any */
+@@ -2247,8 +2277,6 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+             if (!subscriber_count) {
+                 continue;
+             }
+-            nsub->pending_event = 1;
+-            pending_events = 1;
+ 
+             /* open sub SHM and map it */
+             if ((err_info = sr_shmsub_open_map(nsub->mod->ly_mod->name, sr_ds2str(mod_info->ds), -1, &nsub->shm_sub))) {
+@@ -2278,9 +2306,17 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+ 
+             /* notify the subscribers using an event pipe */
+             if ((err_info = sr_shmsub_change_notify_evpipe(mod_info, nsub->mod, mod_info->ds, SR_SUB_EV_ABORT,
+-                    nsub->cur_priority))) {
++                    nsub->cur_priority, &multi_sub_shm->subscriber_count))) {
+                 goto cleanup;
+             }
++            if (multi_sub_shm->subscriber_count) {
++                nsub->pending_event = 1;
++                pending_events = 1;
++            } else {
++                /* no one was notified of it, so don't wait on it and clear it */
++                assert(!nsub->pending_event);
++                multi_sub_shm->event = SR_SUB_EV_NONE;
++            }
+         }
+         if (!pending_events) {
+             /* all module events generated and processed, next module priority, if any */
+diff --git a/src/subscr.c b/src/subscr.c
+index 9f1b549..e4b1b94 100644
+--- a/src/subscr.c
++++ b/src/subscr.c
+@@ -936,13 +936,14 @@ sr_subscr_session_count(sr_subscription_ctx_t *subscr, sr_session_ctx_t *sess, s
+ static sr_error_info_t *
+ sr_change_sub_del(sr_subscription_ctx_t *subscr, uint32_t idx1, uint32_t idx2, sr_lock_mode_t has_subs_lock)
+ {
+-    sr_error_info_t *err_info = NULL, *tmp_err;
++    sr_error_info_t *err_info = NULL, *tmp_err = NULL;
+     struct modsub_change_s *change_sub;
+     sr_mod_t *shm_mod;
+     sr_datastore_t ds;
+     sr_lock_mode_t subs_lock = has_subs_lock;
+     uint32_t sub_id;
+     sr_lock_mode_t chsub_lock_mode = SR_LOCK_NONE;
++    uint32_t chsub_unavailable = 0;
+ 
+     assert(has_subs_lock == SR_LOCK_READ);
+     (void)has_subs_lock;
+@@ -962,12 +963,24 @@ sr_change_sub_del(sr_subscription_ctx_t *subscr, uint32_t idx1, uint32_t idx2, s
+     sr_rwunlock(&subscr->subs_lock, SR_SUBSCR_LOCK_TIMEOUT, SR_LOCK_READ, subscr->conn->cid, __func__);
+     subs_lock = SR_LOCK_NONE;
+ 
+-    /* CHANGE SUB WRITE LOCK */
+-    if ((err_info = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE,
++    /* quickly check for any readers and avoid expensive attempt to WRITE lock */
++    chsub_unavailable = SR_RWLOCK_READERS(&shm_mod->change_sub[ds].lock);
++    if (chsub_unavailable ||
++        /* CHANGE SUB WRITE LOCK */
++        (tmp_err = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_UNSUB_LOCK_TIMEOUT, SR_LOCK_WRITE,
+             subscr->conn->cid, __func__, NULL, NULL))) {
+-        goto cleanup;
++        sr_errinfo_free(&tmp_err);
++        SR_LOG_INF("Scrapping change_sub xpath_id %u", change_sub->subs[idx2].xpath_id);
++
++        /* CHANGE SUB READ LOCK */
++        if ((err_info = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ,
++                subscr->conn->cid, __func__, NULL, NULL))) {
++            goto cleanup_unlock;
++        }
++        chsub_lock_mode = SR_LOCK_READ;
++    } else {
++        chsub_lock_mode = SR_LOCK_WRITE;
+     }
+-    chsub_lock_mode = SR_LOCK_WRITE;
+ 
+     /* SUBS WRITE LOCK */
+     if ((err_info = sr_rwlock(&subscr->subs_lock, SR_SUBSCR_LOCK_TIMEOUT, SR_LOCK_WRITE, subscr->conn->cid,
+@@ -985,20 +998,33 @@ sr_change_sub_del(sr_subscription_ctx_t *subscr, uint32_t idx1, uint32_t idx2, s
+         goto cleanup_unlock;
+     }
+ 
+-    /* properly remove the subscription from ext SHM, with separate specific SHM segment if no longer needed while
+-     * holding CHANGE SUB lock to prevent data races and processing events after the subscription is removed from SHM */
+-    if ((err_info = sr_shmext_change_sub_del(subscr->conn, shm_mod, &chsub_lock_mode, ds, sub_id))) {
+-        goto cleanup_unlock;
++    if (SR_LOCK_READ == chsub_lock_mode) {
++        /* scrap the subscription and process any pre-existing events */
++        if ((err_info = sr_shmext_change_sub_scrap(subscr->conn, shm_mod, ds, sub_id))) {
++            goto cleanup_unlock;
++        }
++        if ((tmp_err = sr_shmsub_change_listen_process_module_events(change_sub, subscr->conn))) {
++            /* no point propagating this error, as we don't want to fail unsubscribe for this */
++            sr_errinfo_free(&tmp_err);
++        }
++    } else {
++        assert(SR_LOCK_WRITE == chsub_lock_mode);
++        /* properly remove the subscription from ext SHM, with separate specific SHM segment if no longer needed while
++         * holding CHANGE SUB lock to prevent data races and processing events after the subscription is removed from SHM */
++        if ((err_info = sr_shmext_change_sub_del(subscr->conn, shm_mod, &chsub_lock_mode, ds, sub_id))) {
++            goto cleanup_unlock;
++        }
+     }
+ 
+     /* remove the subscription from the subscription structure */
+     sr_subscr_change_sub_del(subscr, sub_id);
+ 
+ cleanup_unlock:
+-    /* CHANGE SUB WRITE UNLOCK */
++    /* CHANGE SUB READ/WRITE UNLOCK */
+     if (chsub_lock_mode != SR_LOCK_NONE) {
+         sr_rwunlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, chsub_lock_mode, subscr->conn->cid, __func__);
+     }
++
+ cleanup:
+     if (subs_lock != has_subs_lock) {
+         if (subs_lock == SR_LOCK_NONE) {
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 19bd23f..4f6e6d2 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -7516,11 +7516,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+     size_t i = 0;
+     sr_error_info_t *err_info = NULL;
+     sr_mod_change_sub_t *change_subs;
+-
++    uint32_t count;
+     SR_CHECK_ARG_APIRET(!xpaths || !sub_count || !conn || !module_name ||
+             (ds > SR_DS_FACTORY_DEFAULT), NULL, err_info);
+ 
+     *xpaths = NULL;
++    *sub_count = 0;
+ 
+     /* CONTEXT LOCK */
+     if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
+@@ -7533,8 +7534,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+         goto cleanup;
+     }
+ 
+-    *sub_count = shm_mod->change_sub[ds].sub_count;
+-    if (!*sub_count) {
++    count = shm_mod->change_sub[ds].sub_count;
++    if (!count) {
+         goto cleanup;
+     }
+ 
+@@ -7551,12 +7552,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+ 
+     change_subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
+ 
+-    *xpaths = malloc(*sub_count * sizeof (*xpaths));
++    *xpaths = malloc(count * sizeof (*xpaths));
+ 
+-    for (i = 0; i < *sub_count; i++) {
++    for (i = 0; i < count; i++) {
++        if (ATOMIC_LOAD_RELAXED(change_subs[i].suspended)) {
++            continue;
++        }
+         errno = 0;
+         xpath = conn->ext_shm.addr + change_subs[i].xpath;
+         (*xpaths)[i] = xpath ? strdup(xpath) : NULL;
++        (*sub_count)++;
+ 
+         if (errno) {
+             SR_ERRINFO_SYSERRNO(&err_info, "strdup");
+diff --git a/tests/test_subscr_filtering.c b/tests/test_subscr_filtering.c
+index 8a351b7..164d11d 100644
+--- a/tests/test_subscr_filtering.c
++++ b/tests/test_subscr_filtering.c
+@@ -48,7 +48,7 @@ struct state {
+ };
+ 
+ static int
+-setup_f(void **state)
++setup(void **state)
+ {
+     struct state *st;
+     const char *schema_paths[] = {
+@@ -75,7 +75,7 @@ setup_f(void **state)
+ }
+ 
+ static int
+-teardown_f(void **state)
++teardown(void **state)
+ {
+     struct state *st = (struct state *)*state;
+     const char *module_names[] = {
+@@ -97,8 +97,36 @@ teardown_f(void **state)
+ 
+ typedef struct {
+     ATOMIC_T count;
++    ATOMIC_T sleep_us;
+ } cb_stats;
+ 
++static int
++setup_f(void **state)
++{
++    struct state *st = (struct state *)*state;
++
++    ATOMIC_STORE_RELAXED(st->invocation_count, 0);
++    ATOMIC_STORE_RELAXED(st->running, 1);
++    pthread_barrier_init(&st->barrier, NULL, 2);
++    return 0;
++}
++
++static int
++teardown_f(void **state)
++{
++    struct state *st = (struct state *)*state;
++    int ret;
++    ATOMIC_STORE_RELAXED(st->running, 0);
++    pthread_barrier_destroy(&st->barrier);
++
++    if (st->sess) {
++        ret = sr_session_stop(st->sess);
++        assert_int_equal(ret, SR_ERR_OK);
++        st->sess = NULL;
++    }
++    return 0;
++}
++
+ static int
+ module_update_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
+         uint32_t request_id, void *private_data)
+@@ -131,6 +159,9 @@ module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_
+     (void)request_id;
+     cb_stats *stats = (cb_stats *)private_data;
+     ATOMIC_INC_RELAXED(stats->count);
++
++    /* sleep for sleep_us to add delay in callback if needed */
++    usleep(ATOMIC_LOAD_RELAXED(stats->sleep_us));
+     return 0;
+ }
+ static int
+@@ -279,8 +310,6 @@ test_subscr_none(void **arg)
+     ret = sr_apply_changes(st->sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
+ 
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ 
+@@ -349,8 +378,6 @@ test_subscription_filtering(void **arg)
+     for (i = 0; i < 4; i++) {
+         sr_unsubscribe(subscr[i]);
+     }
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ static void
+@@ -395,9 +422,6 @@ test_multisub_filtering(void **arg)
+ 
+     ret = sr_apply_changes(st->sess, 0);
+     assert_int_equal(ret, SR_ERR_OK);
+-
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ static void
+@@ -450,8 +474,6 @@ test_multisub_update(void **arg)
+     for (i = 0; i < 3; i++) {
+         sr_unsubscribe(subscr[i]);
+     }
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ static void *
+@@ -514,9 +536,6 @@ test_subscr_apply_race(void **arg)
+     int ret, i = 0;
+     pthread_t tid;
+ 
+-    ATOMIC_STORE_RELAXED(st->running, 1);
+-    pthread_barrier_init(&st->barrier, NULL, 2);
+-
+     sr_session_start(st->conn, SR_DS_RUNNING, &st->sess);
+     pthread_create(&tid, NULL, test_subscr_add_del, st);
+ 
+@@ -542,8 +561,6 @@ test_subscr_apply_race(void **arg)
+     ATOMIC_STORE_RELAXED(st->running, 0);
+ 
+     pthread_join(tid, NULL);
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ static int
+@@ -589,8 +606,6 @@ test_enable_subscr_add_del(void *arg)
+     TLOG_INF("Unsubscribed");
+     assert_int_equal(ret, SR_ERR_OK);
+ 
+-    ret = sr_session_stop(sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+     return NULL;
+ }
+ 
+@@ -609,8 +624,6 @@ test_subscr_enable_apply_race(void **arg)
+     int ret;
+     pthread_t tid;
+ 
+-    ATOMIC_STORE_RELAXED(st->running, 1);
+-    pthread_barrier_init(&st->barrier, NULL, 2);
+ 
+     sr_session_start(st->conn, SR_DS_RUNNING, &st->sess);
+ 
+@@ -653,8 +666,6 @@ test_subscr_enable_apply_race(void **arg)
+     pthread_join(tid, NULL);
+ 
+     assert_int_equal(6, ATOMIC_LOAD_RELAXED(st->invocation_count));
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ static void test_leafref_edit_nc_del(const char *xpath1, const char *xpath2)
+@@ -826,7 +837,6 @@ test_subscr_wrong_handler(void **arg)
+                   0, 0, &subscr[1]);
+     assert_int_equal(ret, SR_ERR_OK);
+ 
+-    pthread_barrier_init(&st->barrier, NULL, 2);
+     pthread_create(&tid, NULL, test_subscr_make_changes_to_leafref, st);
+ 
+     for (i = 0; i < NUM_ITERS; i++) {
+@@ -848,8 +858,6 @@ test_subscr_wrong_handler(void **arg)
+     sr_unsubscribe(subscr[0]);
+     sr_unsubscribe(subscr[1]);
+ 
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+     TLOG_INF("counts are %u, %u, %u",
+             ATOMIC_LOAD_RELAXED(stats[0].count), ATOMIC_LOAD_RELAXED(stats[1].count), ATOMIC_LOAD_RELAXED(stats[2].count));
+     /* 4x because of [create, delete] and [change, done] events */
+@@ -873,7 +881,6 @@ test_multisub_processing_race(void **arg)
+     cb_stats stats[2] = {0};
+     pthread_t tid;
+ 
+-    pthread_barrier_init(&st->barrier, NULL, 2);
+     pthread_create(&tid, NULL, test_subscr_make_changes_to_leafref, st);
+ 
+     sr_session_start(st->conn, SR_DS_RUNNING, &st->sess);
+@@ -924,8 +931,6 @@ test_multisub_processing_race(void **arg)
+     sr_unsubscribe(subscr[0]);
+     sr_unsubscribe(subscr[1]);
+ 
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+     pthread_join(tid, NULL);
+ }
+ 
+@@ -1191,9 +1196,6 @@ test_subscr_oper_update_deadlock(void **arg)
+ 
+     ATOMIC_STORE_RELAXED(st->running, 0);
+     pthread_join(tid, NULL);
+-
+-    ret = sr_session_stop(st->sess);
+-    assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
+ /* Test for ENG-2075 */
+@@ -1366,25 +1368,242 @@ test_change_iter(void **arg)
+     assert_int_equal(ret, SR_ERR_OK);
+ }
+ 
++static void
++test_create_subscr_and_die(void)
++{
++    int ret;
++    sr_conn_ctx_t *conn = NULL;
++    sr_session_ctx_t *sess = NULL;
++    sr_subscription_ctx_t *subscr = NULL;
++    cb_stats stats = {0};
++
++    /* set up an operational change_sub and exit */
++    ret = sr_connect(0, &conn);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_module_change_subscribe(sess, "test", "/test:l1", module_change_cb, &stats,
++                0, SR_SUBSCR_NO_THREAD, &subscr);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_module_change_subscribe(sess, "test", "/test:l1", module_change_cb, &stats,
++                0, SR_SUBSCR_NO_THREAD, &subscr);
++    assert_int_equal(ret, SR_ERR_OK);
++    TLOG_INF("subscriptions setup with no thread, so publisher will have to wait");
++
++    ret = sr_set_item_str(sess, "/test:test-leaf", "1", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    sleep(1);
++    TLOG_INF("dirty exit");
++    exit(0);
++}
++
++static void
++test_subscr_dirty_exit(void **arg)
++{
++    struct state *st = (struct state *)*arg;
++    int ret;
++    sr_data_t *data = NULL;
++
++    if (!fork()) {
++        /* child process */
++        test_create_subscr_and_die();
++    }
++
++    sr_session_start(st->conn, SR_DS_OPERATIONAL, &st->sess);
++    TLOG_INF("wait for subscriptions to be setup");
++
++    while (sr_get_node(st->sess, "/test:test-leaf", 0, &data) != SR_ERR_OK) {
++        usleep(10000);
++    }
++    sr_release_data(data);
++
++    ret = sr_set_item_str(st->sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 200);
++    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
++
++    while (sr_get_node(st->sess, "/test:test-leaf", 0, &data) == SR_ERR_OK) {
++        sr_release_data(data);
++        usleep(10000);
++    }
++
++    ret = sr_set_item_str(st->sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_delete_item(st->sess, "/test:l1[k='interested_key']/v", 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++}
++
++static void *
++test_make_changes_helper(void *arg)
++{
++    struct state *st = (struct state *)arg;
++    int ret;
++    /* create and delete slow subscriptions and suspend few of them */
++    sr_session_ctx_t *sess = NULL;
++    sr_session_start(st->conn, SR_DS_OPERATIONAL, &sess);
++    ATOMIC_STORE_RELAXED(st->invocation_count, 0);
++
++    pthread_barrier_wait(&st->barrier);
++
++    while (ATOMIC_LOAD_RELAXED(st->running)) {
++        sched_yield();
++
++        ret = sr_set_item_str(sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_apply_changes(sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ATOMIC_INC_RELAXED(st->invocation_count);
++        ret = sr_delete_item(sess, "/test:l1[k='interested_key']/v", 0);
++        assert_int_equal(ret, SR_ERR_OK);
++
++        ret = sr_apply_changes(sess, 0);
++        assert_int_equal(ret, SR_ERR_OK);
++        ATOMIC_INC_RELAXED(st->invocation_count);
++    }
++
++    ret = sr_session_stop(sess);
++    assert_int_equal(ret, SR_ERR_OK);
++    return NULL;
++}
++
++static void
++test_subscr_suspend(void **arg)
++{
++    int NUM_ITERS = test_full_scale ? 10000 : 10;
++
++    struct state *st = (struct state *)*arg;
++    int i, j, ret;
++    pthread_t tid;
++    sr_subscription_ctx_t *subscr[4] = {NULL};
++    cb_stats stats[4] = {0};
++    cb_stats susp_stats = {0};
++    uint32_t sub_id;
++
++    /* launch a thread that keeps pushing changes */
++    pthread_create(&tid, NULL, test_make_changes_helper, st);
++
++    sr_session_start(st->conn, SR_DS_OPERATIONAL, &st->sess);
++
++    memset(subscr, 0, sizeof(subscr));
++    ret = sr_module_change_subscribe(st->sess, "test", NULL, module_change_cb, &susp_stats,
++            0, 0, &subscr[0]);
++    assert_int_equal(ret, 0);
++    sub_id = sr_subscription_get_last_sub_id(subscr[0]);
++
++    for (j = 0; j < 4; j++) {
++        ret = sr_module_change_subscribe(st->sess, "test", NULL, module_change_cb, &stats[j],
++                0, 0, &subscr[j]);
++        assert_int_equal(ret, 0);
++    }
++    /* wait for subscr threads to be launched */
++    pthread_barrier_wait(&st->barrier);
++    for (i = 0; i < NUM_ITERS; i++) {
++        ret = sr_subscription_suspend(subscr[0], sub_id);
++        assert_int_equal(ret, 0);
++        ret = sr_subscription_resume(subscr[0], sub_id);
++        assert_int_equal(ret, 0);
++    }
++
++    ATOMIC_STORE_RELAXED(st->running, 0);
++    pthread_join(tid, NULL);
++
++    /* check that invocation_count is met for all stats */
++
++    assert_int_equal(ret, SR_ERR_OK);
++    for (j = 0; j < 4; j++) {
++        assert_int_equal(ATOMIC_LOAD_RELAXED(stats[j].count), 2*ATOMIC_LOAD_RELAXED(st->invocation_count));
++    }
++
++    for (j = 0; j < 4; j++) {
++        ret = sr_unsubscribe(subscr[j]);
++        assert_int_equal(ret, 0);
++    }
++}
++
++static void
++test_subscr_scrap(void **arg)
++{
++    int NUM_ITERS = test_full_scale ? 20 : 4;
++    struct state *st = (struct state *)*arg;
++    int i, j, ret, priority;
++    pthread_t tid;
++    sr_subscription_ctx_t *subscr[4] = {NULL};
++
++    /* make callbacks sleep and be slow */
++    cb_stats stats[4] = {{0, 100000}, {0, 100000}, {0, 100000}, {0, 100000}};
++    cb_stats susp_stats = { 0, 100000};
++
++    /* launch a thread that keeps pushing changes */
++    pthread_create(&tid, NULL, test_make_changes_helper, st);
++
++    sr_session_start(st->conn, SR_DS_OPERATIONAL, &st->sess);
++
++    for (i = 0; i < NUM_ITERS; i++) {
++        priority=0;
++        memset(subscr, 0, sizeof(subscr));
++        ret = sr_module_change_subscribe(st->sess, "test", NULL, module_change_cb, &susp_stats,
++                priority, 0, &subscr[0]);
++        assert_int_equal(ret, 0);
++
++        for (j = 0; j < 4; j++) {
++            ret = sr_module_change_subscribe(st->sess, "test", NULL, module_change_cb, &stats[j],
++                    priority++%2, 0, &subscr[j]);
++            assert_int_equal(ret, 0);
++        }
++
++        /* wait for subscr threads to be launched the first time */
++        if (!i) pthread_barrier_wait(&st->barrier);
++        usleep(100000);
++        TLOG_INF("starting unsubscribe iter %d", i+1);
++        for (j = 0; j < 4; j++) {
++            ret = sr_unsubscribe(subscr[j]);
++            assert_int_equal(ret, 0);
++        }
++        TLOG_INF("finished unsubscribe iter %d", i+1);
++        memset(stats, 0, sizeof stats);
++        if (i == NUM_ITERS-2) {
++            ATOMIC_STORE_RELAXED(st->running, 0);
++            pthread_join(tid, NULL);
++        }
++    }
++}
++
++
+ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
+-        cmocka_unit_test(test_change_iter),
+-        cmocka_unit_test(test_subscr_none),
+-        cmocka_unit_test(test_subscription_filtering),
+-        cmocka_unit_test(test_multisub_filtering),
+-        cmocka_unit_test(test_multisub_update),
+-        cmocka_unit_test(test_subscr_apply_race),
+-        cmocka_unit_test(test_leafref_edit_with_sub),
+-        cmocka_unit_test(test_subscr_enable_apply_race),
+-        cmocka_unit_test(test_subscr_wrong_handler),
+-        cmocka_unit_test(test_multisub_processing_race),
+-        cmocka_unit_test(test_massive_scale),
+-        cmocka_unit_test(test_subscr_oper_update_deadlock),
++        cmocka_unit_test_setup_teardown(test_subscr_enable_apply_race, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_change_iter, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_none, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscription_filtering, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_multisub_filtering, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_multisub_update, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_apply_race, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_leafref_edit_with_sub, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_enable_apply_race, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_wrong_handler, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_multisub_processing_race, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_massive_scale, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_oper_update_deadlock, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_suspend, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_scrap, setup_f, teardown_f),
++        cmocka_unit_test_setup_teardown(test_subscr_dirty_exit, setup_f, teardown_f),
+     };
++
+     test_full_scale = getenv("TEST_FULL_SCALE") != NULL;
+     setenv("CMOCKA_TEST_ABORT", "1", 1);
+     test_log_init();
+-    return cmocka_run_group_tests(tests, setup_f, teardown_f);
++    return cmocka_run_group_tests(tests, setup, teardown);
+ }
