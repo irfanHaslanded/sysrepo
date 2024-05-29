@@ -1,0 +1,392 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Wed, 17 Apr 2024 06:42:18 +0000
+Subject: shutdown-mgr to disable oper discard on disconnect
+
+optimize a system shutdown for sysrepo with a daemon to disable
+oper discard on disconnect.
+
+During a system reboot or shutdown, it is pointless to spend time
+discarding operational data and informing subscribers of the deletes.
+
+`sysrepo-shutdown-mgr` can be started after other daemons connect to
+sysrepo and awaits SIGTERM and SIGINT signals.
+
+When a system shutdown is initiated, this daemon could be stopped
+before all other sysrepo applications.
+
+When it is sent a SIGTERM or SIGINT, it sets a flag
+in the main shm which does two things:
+1. `sr_disconnect` skips `sr_discard_oper_changes`.
+2. `sr_get_data` skips dead connection check.
+
+So, any subsequent processes disconnecting from sysrepo will leave
+their pushed operational data in the shared memory.
+Any remaining readers will still see the old data, but this should not
+cause any problems.
+
+tests:
+Added test for sysrepo-shutdown-mgr to oper import test script.
+
+ENG-6495
+---
+ CMakeLists.txt                         |  10 ++++
+ src/common.c                           |   7 ++-
+ src/common.h                           |   3 +-
+ src/executables/sysrepo-shutdown-mgr.c | 100 +++++++++++++++++++++++++++++++++
+ src/modinfo.c                          |   8 ++-
+ src/shm_types.h                        |   2 +
+ src/sysrepo.c                          |   5 +-
+ tests/test_sysrepocfg_oper.sh          |  92 +++++++++++++++++++++++++-----
+ 8 files changed, 207 insertions(+), 20 deletions(-)
+ create mode 100644 src/executables/sysrepo-shutdown-mgr.c
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 23cc986..749d359 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -94,6 +94,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
+ option(ENABLE_SYSREPOCTL "Build binary tool 'sysrepoctl'" ON)
+ option(ENABLE_SYSREPOCFG "Build binary tool 'sysrepocfg'" ON)
+ option(ENABLE_SYSREPO_PLUGIND "Build binary daemon 'sysrepo-plugind'" ON)
++option(ENABLE_SYSREPO_SHUTDOWN_MGR "Build binary daemon 'sysrepo-shutdown-mgr'" ON)
+ option(BUILD_SHARED_LIBS "By default, shared libs are enabled. Turn off for a static build." ON)
+ option(INSTALL_SYSCTL_CONF "Install sysctl conf file to allow shared access to SHM files." OFF)
+ set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/sysrepo" CACHE STRING "Directory where to copy the YANG modules to.")
+@@ -480,6 +481,12 @@ if(ENABLE_SYSREPO_PLUGIND)
+     target_link_libraries(sysrepo-plugind sysrepo)
+ endif()
+ 
++if(ENABLE_SYSREPO_SHUTDOWN_MGR)
++    # sysrepo-shutdown-mgr daemon
++    add_executable(sysrepo-shutdown-mgr src/executables/sysrepo-shutdown-mgr.c ${compatsrc})
++    target_link_libraries(sysrepo-shutdown-mgr sysrepo)
++endif()
++
+ # include repository files with highest priority
+ include_directories("${PROJECT_SOURCE_DIR}/src")
+ include_directories("${PROJECT_SOURCE_DIR}/src/plugins")
+@@ -582,6 +589,9 @@ if(ENABLE_SYSREPO_PLUGIND)
+     install(FILES ${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
+     install(DIRECTORY DESTINATION ${SRPD_PLUGINS_PATH})
+ endif()
++if(ENABLE_SYSREPO_SHUTDOWN_MGR)
++    install(TARGETS sysrepo-shutdown-mgr DESTINATION ${CMAKE_INSTALL_BINDIR})
++endif()
+ if(SR_HAVE_DLOPEN)
+     install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
+ endif()
+diff --git a/src/common.c b/src/common.c
+index 69c723d..91f0217 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -5684,7 +5684,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+ }
+ 
+ sr_error_info_t *
+-sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit)
++sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, int ignore_dead_cids, struct lyd_node **edit)
+ {
+     sr_error_info_t *err_info = NULL;
+     struct lyd_node *root, *elem;
+@@ -5699,6 +5699,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+         return err_info;
+     }
+ 
++    if (ignore_dead_cids) {
++        /* no need to check for dead connections, we are done */
++        return err_info;
++    }
++
+ trim_retry:
+     if (dead_cid) {
+         /* this connection is dead, remove its stored edit */
+diff --git a/src/common.h b/src/common.h
+index b3a39fb..12f9b75 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -1336,10 +1336,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
+  * @brief Load operational data (edit) loaded from a SHM for a specific module.
+  *
+  * @param[in] mod Mod info mod.
++ * @param[in] ignore_dead_cids flag to ignore dead connection check.
+  * @param[out] edit Loaded edit to return.
+  * @return err_info, NULL on success.
+  */
+-sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit);
++sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, int ignore_dead_cids, struct lyd_node **edit);
+ 
+ /**
+  * @brief Learn CIDs and PIDs of all the live connections.
+diff --git a/src/executables/sysrepo-shutdown-mgr.c b/src/executables/sysrepo-shutdown-mgr.c
+new file mode 100644
+index 0000000..852b124
+--- /dev/null
++++ b/src/executables/sysrepo-shutdown-mgr.c
+@@ -0,0 +1,100 @@
++/**
++ * @file sysrepo-shutdown-mgr.c
++ * @author Irfan <irfan@graphiant.com>
++ * @brief Optimize a system shutdown for sysrepo
++ *
++ * A sysrepo daemon to disable oper discard on disconnect.
++ * During a system reboot or shutdown, it is pointless to spend time
++ * discarding operational data and informing subscribers of the deletes.
++ *
++ * `sysrepo-shutdown-mgr` is started after all other daemons connect to
++ * sysrepo and awaits SIGTERM and SIGINT signals.
++ *
++ * When a system shutdown is initiated, this daemon will be stopped
++ * before all other sysrepo applications.
++ *
++ * When it is asked to stop by a SIGTERM or SIGINT, it sets a flag
++ * in the main shm which does two things:
++ * 1. `sr_disconnect` skips `sr_discard_oper_changes`.
++ * 2. `sr_get_data` skips dead connection check.
++ *
++ * So, any subsequent processes disconnecting from sysrepo will leave
++ * their pushed operational data in the shared memory.
++ * Any remaining readers will still see the old data, but this should not
++ * cause any problems.
++ *
++ *
++ * @copyright
++ * Copyright 2024 Graphiant
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#define _GNU_SOURCE
++
++#include "compat.h"
++
++#include <stdio.h>
++#include <signal.h>
++
++#include "sysrepo.h"
++#include "common.h"
++
++int
++main(int argc, char **argv)
++{
++    sr_conn_ctx_t *conn = NULL;
++    sigset_t sig_set;
++    int ret = 0;
++    (void)argc;
++    (void)argv;
++
++    /* set logging */
++    sr_log_stderr(SR_LL_INF);
++
++    if ((ret = sr_connect(0, &conn))) {
++        goto cleanup;
++    }
++
++    /*
++     * Unset any previously set flag
++     * In case sysrepo-shutdown-mgr is accidentally stopped (for ex manually terminated)
++     * Restarting it should clear the flag to allow sysrepo to behave normally again.
++     */
++    ATOMIC_STORE_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect, 0);
++    sigemptyset(&sig_set);
++    sigaddset(&sig_set, SIGINT);
++    sigaddset(&sig_set, SIGTERM);
++
++    /* block the signals from being handled by any default handlers */
++    if ((ret = sigprocmask(SIG_BLOCK, &sig_set, NULL) < 0)) {
++        fprintf(stderr, "sigprocmask SIGBLOCK gave %d\n", ret);
++        goto cleanup;
++    }
++
++    puts("Awaiting shutdown signal");
++    fflush(NULL);
++    if ((ret = sigwaitinfo(&sig_set, NULL)) < 0) {
++        fprintf(stderr, "sigwaitinfo %d\n", ret);
++        goto cleanup;
++    }
++
++    /* Received SIGINT or SIGTERM, disable operational data discard globally */
++    ATOMIC_STORE_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect, 1);
++    puts("Implicit discarding of operational data on disconnect DISABLED system-wide");
++    fflush(NULL);
++
++cleanup:
++    ret = sr_disconnect(conn);
++    return ret;
++}
+diff --git a/src/modinfo.c b/src/modinfo.c
+index de1d4c5..04fe223 100644
+--- a/src/modinfo.c
++++ b/src/modinfo.c
+@@ -1160,9 +1160,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+     sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
+     size_t oper_get_sub_count = 0, count = 0;
+ 
++    int ignore_dead_cids = ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect);
+     if (!(get_oper_opts & SR_OPER_NO_STORED)) {
+         /* get stored operational edit */
+-        if ((err_info = sr_module_file_oper_data_load(mod, &edit))) {
++        if ((err_info = sr_module_file_oper_data_load(mod, ignore_dead_cids, &edit))) {
+             return err_info;
+         }
+     }
+@@ -2845,6 +2846,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+         }
+     }
+ 
++    if (ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect)
++            && (mod_info->ds == SR_DS_OPERATIONAL) && !(get_oper_opts & SR_OPER_NO_STORED)) {
++        SR_LOG_WRN("Maybe using operational data from any dead connections");
++    }
++
+     /* load data for each module */
+     for (i = 0; i < mod_info->mod_count; ++i) {
+         mod = &mod_info->mods[i];
+diff --git a/src/shm_types.h b/src/shm_types.h
+index 86f735a..c60cb99 100644
+--- a/src/shm_types.h
++++ b/src/shm_types.h
+@@ -189,6 +189,8 @@ typedef struct {
+     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+     ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
+     ATOMIC_T new_xpath_id;      /**< New rwlock ID to track sr_rwlock_t locks */
++
++    ATOMIC_T oper_keep_on_disconnect;   /**< Do not discard pushed operational data on sr_disconnect */
+ } sr_main_shm_t;
+ 
+ /**
+diff --git a/src/sysrepo.c b/src/sysrepo.c
+index 4f6e6d2..cdcd0fd 100644
+--- a/src/sysrepo.c
++++ b/src/sysrepo.c
+@@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
+         }
+     }
+ 
+-    /* free any stored operational data (API function) */
+-    if ((rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
++    /* free any stored operational data (API function) if needed */
++    if (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect) &&
++            (rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
+         return rc;
+     }
+ 
+diff --git a/tests/test_sysrepocfg_oper.sh b/tests/test_sysrepocfg_oper.sh
+index 35cebef..d188bf1 100755
+--- a/tests/test_sysrepocfg_oper.sh
++++ b/tests/test_sysrepocfg_oper.sh
+@@ -1,9 +1,20 @@
+-#!/bin/sh
+-set -e
+-set -x
+-pwd
+-ctl='./sysrepoctl'
+-cfg='./sysrepocfg'
++#!/bin/bash -xe
++
++ctl="$(pwd)/sysrepoctl"
++cfg="$(pwd)/sysrepocfg"
++shutdown_mgr="$(pwd)/sysrepo-shutdown-mgr"
++
++TestLog() {
++    echo '[TestLog]' "$@"
++}
++
++$ctl -v3 -i ../tests/files/mixed-config.yang
++
++logdir=test_sysrepocfg_oper_logs
++rm -rf $logdir
++mkdir $logdir
++pushd $logdir
++
+ cat << EOF > oper.json
+ {
+   "mixed-config:test-state": {
+@@ -14,18 +25,69 @@ cat << EOF > oper.json
+ }
+ EOF
+ 
+-$ctl -v3 -i ../tests/files/mixed-config.yang
+-$cfg -v3 -Ioper.json -d operational -m mixed-config &
++cat << EOF > empty.json
++{
++
++}
++EOF
++
++# create the log files so foreground checks don't fail because background processes have not started yet.
++touch importer.log warning.log shutdown-mgr.log
++
++TestLog 'Push operational data'
++$cfg -v3 -Ioper.json -d operational -m mixed-config > importer.log 2>&1 &
++oper_pid=$!
++
++TestLog 'Start sysrepo-shutdown-mgr'
++$shutdown_mgr > shutdown-mgr.log 2>&1 &
++shutdown_mgr_pid=$!
++
++TestLog 'Wait for operational data to be pushed'
++timeout 5 tail -f importer.log | grep -m 1 'sr_apply_changes for operational success'
+ 
+-# wait for oper data to be set up
+-sleep 1
+ $cfg -v3 -X -d operational -m mixed-config > out.json
++TestLog 'Verify operational data is pushed'
++diff out.json oper.json
++
++TestLog 'Wait for sysrepo-shutdown-mgr to be ready'
++timeout 5 tail -f shutdown-mgr.log | grep -m 1 'Awaiting shutdown signal'
++
++TestLog 'Stop the shutdown-mgr so oper data is not discarded'
++kill -s SIGTERM $shutdown_mgr_pid
++
++TestLog 'Wait for sysrepo-shutdown-mgr to be stopped'
++wait $shutdown_mgr_pid || true # wait for shutdown_mgr to stop
++TestLog 'Check for log for implicit operational discard disable'
++grep -m 1 'Implicit discarding of operational data on disconnect DISABLED system-wide' shutdown-mgr.log
++
++TestLog 'Stop oper pusher'
++kill -s SIGTERM $oper_pid
++wait $oper_pid || true # wait for oper_pusher to stop
+ 
+-kill -15 $! # SIGTERM
++TestLog 'Check operational data still exists'
++$cfg -v3 -X -d operational -m mixed-config > out-dead.json 2>warning.log
++diff out-dead.json oper.json
+ 
++TestLog 'Check for warning of the sysrepo-shutdown flag'
++grep -F '[WRN] Maybe using operational data from any dead connections' warning.log
++
++TestLog 'Restart shutdown mgr to check clearning of the flag'
++$shutdown_mgr > shutdown-mgr.log 2>&1 &
++shutdown_mgr_pid=$!
++
++echo '- Wait for shutdown_mgr to start up'
++timeout 5 tail -f shutdown-mgr.log | grep -m 1 'Awaiting shutdown signal'
++
++TestLog 'Check operational data is empty now'
++$cfg -v3 -X -d operational -m mixed-config > out-dead.json 2>warning.log
++diff out-dead.json empty.json
++
++TestLog 'Check for warning of a dead CID'
++grep -E '\[WRN\] Connection with CID [0-9]+ is dead.' warning.log
++grep -F '[INF] Recovering module "mixed-config" stored operational data of CID' warning.log
++
++TestLog 'Cleanup'
++kill -s SIGTERM $shutdown_mgr_pid
+ $ctl -u mixed-config
+ 
+-diff out.json oper.json
+-result=$?
+-rm -f out.json oper.json
+-exit $result
++TestLog ' === TEST SUCCESS ==='

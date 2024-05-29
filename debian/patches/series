@@ -56,3 +56,4 @@
 0059-debug-serialize-edit-and-data-in-sr_apply_changes.patch
 0058-Revert-libyang-err-msg-changes.patch
 0058-sr_unsubscribe-without-change_sub-WRITE-lock.patch
+0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
