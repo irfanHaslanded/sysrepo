@@ -1,0 +1,14 @@
+[Unit]
+Description=Skips discard of pushed operational data during system shutdown
+After=graphnos.target gnmi-server.service gnmi-server.target graphnos-oss-agent.service
+Before=shutdown.target
+Conflicts=shutdown.target
+DefaultDependencies=no
+
+[Service]
+ExecStart=/usr/bin/sysrepo-shutdown-mgr
+User=sysrepo
+Group=sysrepo
+
+[Install]
+WantedBy=multi-user.target

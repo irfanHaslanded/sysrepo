@@ -25,6 +25,10 @@ override_dh_auto_configure:
 		-DSYSREPO_SUPERUSER_UID=$(SYSREPO_UID) \
 		-DNACM_SRMON_DATA_PERM=660
 
+override_dh_installsystemd:
+	dh_installtmpfiles
+	dh_installsystemd -psysrepo-tools --name=sysrepo-shutdown-mgr
+
 override_dh_auto_test:
 ifeq ($(filter nocheck,$(DEB_BUILD_OPTIONS)),)
 	make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS=' -j $(NPROCS) -V -E test_notif'
