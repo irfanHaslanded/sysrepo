@@ -24,6 +24,8 @@ their pushed operational data in the shared memory.
 Any remaining readers will still see the old data, but this should not
 cause any problems.
 
+Also increment shm version
+
 tests:
 Added test for sysrepo-shutdown-mgr to oper import test script.
 
@@ -34,10 +36,10 @@ ENG-6495
  src/common.h                           |   3 +-
  src/executables/sysrepo-shutdown-mgr.c | 100 +++++++++++++++++++++++++++++++++
  src/modinfo.c                          |   8 ++-
- src/shm_types.h                        |   2 +
+ src/shm_types.h                        |   6 +-
  src/sysrepo.c                          |   5 +-
  tests/test_sysrepocfg_oper.sh          |  92 +++++++++++++++++++++++++-----
- 8 files changed, 207 insertions(+), 20 deletions(-)
+ 8 files changed, 210 insertions(+), 21 deletions(-)
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -252,10 +254,21 @@ index de1d4c5..04fe223 100644
      for (i = 0; i < mod_info->mod_count; ++i) {
          mod = &mod_info->mods[i];
 diff --git a/src/shm_types.h b/src/shm_types.h
-index 86f735a..c60cb99 100644
+index 86f735a..47fd1e3 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -189,6 +189,8 @@ typedef struct {
+@@ -25,7 +25,9 @@
+ #include "common_types.h"
+ #include "sysrepo_types.h"
+ 
+-#define SR_SHM_VER 16   /**< Main, mod, and ext SHM version of their expected content structures. */
++#define SR_DEBIAN_SHM_VER 1 /**< shm version to track debian changes to shm */
++
++#define SR_SHM_VER ((10000*SR_DEBIAN_SHM_VER) + 16)   /**< Main, mod, and ext SHM version of their expected content structures. */
+ #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
+ 
+ /**
+@@ -189,6 +191,8 @@ typedef struct {
      ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
      ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
      ATOMIC_T new_xpath_id;      /**< New rwlock ID to track sr_rwlock_t locks */
