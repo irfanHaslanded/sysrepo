@@ -4,6 +4,8 @@ After=graphnos.target gnmi-server.service gnmi-server.target graphnos-oss-agent.
 Before=shutdown.target
 Conflicts=shutdown.target
 DefaultDependencies=no
+RefuseManualStop=true
+RefuseManualStart=true
 
 [Service]
 ExecStart=/usr/bin/sysrepo-shutdown-mgr
