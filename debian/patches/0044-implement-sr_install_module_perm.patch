@@ -52,7 +52,7 @@ index 9fe6762..bec16f2 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 97366a1..2d92eac 100644
+index 68d0229..d09688f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@

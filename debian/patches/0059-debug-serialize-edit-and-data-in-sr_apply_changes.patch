@@ -14,7 +14,7 @@ Closes: ENG-6310
  1 file changed, 9 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index a4d63f7..19bd23f 100644
+index 8471c36..6bdc550 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3957,6 +3957,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
@@ -50,6 +50,6 @@ index a4d63f7..19bd23f 100644
 +
 +    free(edit_json);
 +    free(data_json);
-     SR_LOG_INF("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
+     SR_LOG_DBG("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
      return sr_api_ret(session, err_info);
  }

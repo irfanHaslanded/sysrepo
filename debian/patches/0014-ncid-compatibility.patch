@@ -8,7 +8,7 @@ Subject: ncid compatibility
  2 files changed, 27 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 00bbd62..1fbbbd5 100644
+index b70e7cc..e4c2446 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -7237,3 +7237,27 @@ cleanup:

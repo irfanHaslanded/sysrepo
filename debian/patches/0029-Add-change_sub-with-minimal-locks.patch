@@ -233,7 +233,7 @@ index 9d5f2b1..710287e 100644
  /**
   * @brief Delete a change subscription from a subscription structure.
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 28d808c..9539329 100644
+index c989d02..484fb09 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -5029,7 +5029,6 @@ cleanup:

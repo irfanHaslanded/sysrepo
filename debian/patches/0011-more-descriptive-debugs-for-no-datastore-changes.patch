@@ -13,7 +13,7 @@ Also reduce it to debug as it can be noisy at INFO level.
  1 file changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 2c766cf..128062e 100644
+index 2c766cf..e30e930 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3705,7 +3705,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
@@ -47,7 +47,7 @@ index 2c766cf..128062e 100644
          sr_errinfo_merge(&err_info, cb_err_info);
          sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
      }
-+    SR_LOG_INF("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
++    SR_LOG_DBG("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
      return sr_api_ret(session, err_info);
  }
  

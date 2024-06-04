@@ -38,8 +38,8 @@ ENG-6495
  src/modinfo.c                          |   8 ++-
  src/shm_types.h                        |   6 +-
  src/sysrepo.c                          |   5 +-
- tests/test_sysrepocfg_oper.sh          |  92 +++++++++++++++++++++++++-----
- 8 files changed, 210 insertions(+), 21 deletions(-)
+ tests/test_sysrepocfg_oper.sh          |  94 +++++++++++++++++++++++++------
+ 8 files changed, 211 insertions(+), 22 deletions(-)
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -278,7 +278,7 @@ index 86f735a..47fd1e3 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4f6e6d2..cdcd0fd 100644
+index 9dfdf9d..3e5086a 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
@@ -294,7 +294,7 @@ index 4f6e6d2..cdcd0fd 100644
      }
  
 diff --git a/tests/test_sysrepocfg_oper.sh b/tests/test_sysrepocfg_oper.sh
-index 35cebef..d188bf1 100755
+index 35cebef..51ab6b0 100755
 --- a/tests/test_sysrepocfg_oper.sh
 +++ b/tests/test_sysrepocfg_oper.sh
 @@ -1,9 +1,20 @@
@@ -314,7 +314,7 @@ index 35cebef..d188bf1 100755
 +    echo '[TestLog]' "$@"
 +}
 +
-+$ctl -v3 -i ../tests/files/mixed-config.yang
++$ctl -v4 -i ../tests/files/mixed-config.yang
 +
 +logdir=test_sysrepocfg_oper_logs
 +rm -rf $logdir
@@ -332,29 +332,35 @@ index 35cebef..d188bf1 100755
 -$cfg -v3 -Ioper.json -d operational -m mixed-config &
 +cat << EOF > empty.json
 +{
-+
+ 
+-# wait for oper data to be set up
+-sleep 1
+-$cfg -v3 -X -d operational -m mixed-config > out.json
 +}
 +EOF
-+
+ 
+-kill -15 $! # SIGTERM
 +# create the log files so foreground checks don't fail because background processes have not started yet.
 +touch importer.log warning.log shutdown-mgr.log
-+
+ 
+-$ctl -u mixed-config
 +TestLog 'Push operational data'
-+$cfg -v3 -Ioper.json -d operational -m mixed-config > importer.log 2>&1 &
++$cfg -v4 -Ioper.json -d operational -m mixed-config > importer.log 2>&1 &
 +oper_pid=$!
-+
+ 
 +TestLog 'Start sysrepo-shutdown-mgr'
 +$shutdown_mgr > shutdown-mgr.log 2>&1 &
 +shutdown_mgr_pid=$!
 +
 +TestLog 'Wait for operational data to be pushed'
 +timeout 5 tail -f importer.log | grep -m 1 'sr_apply_changes for operational success'
- 
--# wait for oper data to be set up
--sleep 1
- $cfg -v3 -X -d operational -m mixed-config > out.json
++
++$cfg -v4 -X -d operational -m mixed-config > out.json
 +TestLog 'Verify operational data is pushed'
-+diff out.json oper.json
+ diff out.json oper.json
+-result=$?
+-rm -f out.json oper.json
+-exit $result
 +
 +TestLog 'Wait for sysrepo-shutdown-mgr to be ready'
 +timeout 5 tail -f shutdown-mgr.log | grep -m 1 'Awaiting shutdown signal'
@@ -370,12 +376,11 @@ index 35cebef..d188bf1 100755
 +TestLog 'Stop oper pusher'
 +kill -s SIGTERM $oper_pid
 +wait $oper_pid || true # wait for oper_pusher to stop
- 
--kill -15 $! # SIGTERM
++
 +TestLog 'Check operational data still exists'
-+$cfg -v3 -X -d operational -m mixed-config > out-dead.json 2>warning.log
++$cfg -v4 -X -d operational -m mixed-config > out-dead.json 2>warning.log
 +diff out-dead.json oper.json
- 
++
 +TestLog 'Check for warning of the sysrepo-shutdown flag'
 +grep -F '[WRN] Maybe using operational data from any dead connections' warning.log
 +
@@ -387,7 +392,7 @@ index 35cebef..d188bf1 100755
 +timeout 5 tail -f shutdown-mgr.log | grep -m 1 'Awaiting shutdown signal'
 +
 +TestLog 'Check operational data is empty now'
-+$cfg -v3 -X -d operational -m mixed-config > out-dead.json 2>warning.log
++$cfg -v4 -X -d operational -m mixed-config > out-dead.json 2>warning.log
 +diff out-dead.json empty.json
 +
 +TestLog 'Check for warning of a dead CID'
@@ -396,10 +401,6 @@ index 35cebef..d188bf1 100755
 +
 +TestLog 'Cleanup'
 +kill -s SIGTERM $shutdown_mgr_pid
- $ctl -u mixed-config
- 
--diff out.json oper.json
--result=$?
--rm -f out.json oper.json
--exit $result
++$ctl -u mixed-config
++
 +TestLog ' === TEST SUCCESS ==='
