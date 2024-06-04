@@ -1,6 +1,6 @@
 [Unit]
 Description=Skips discard of pushed operational data during system shutdown
-After=graphnos.target gnmi-server.service gnmi-server.target graphnos-oss-agent.service
+After=graphnos.target
 Before=shutdown.target
 Conflicts=shutdown.target
 DefaultDependencies=no
