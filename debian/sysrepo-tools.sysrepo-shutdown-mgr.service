@@ -1,0 +1,16 @@
+[Unit]
+Description=Skips discard of pushed operational data during system shutdown
+After=graphnos.target
+Before=shutdown.target
+Conflicts=shutdown.target
+DefaultDependencies=no
+RefuseManualStop=true
+RefuseManualStart=true
+
+[Service]
+ExecStart=/usr/bin/sysrepo-shutdown-mgr
+User=sysrepo
+Group=sysrepo
+
+[Install]
+WantedBy=multi-user.target

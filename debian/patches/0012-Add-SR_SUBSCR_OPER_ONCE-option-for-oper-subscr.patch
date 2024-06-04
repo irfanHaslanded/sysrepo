@@ -64,7 +64,7 @@ index 4f5e72a..18e6b61 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 128062e..00bbd62 100644
+index e30e930..b70e7cc 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -6999,7 +6999,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const

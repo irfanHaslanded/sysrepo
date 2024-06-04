@@ -910,7 +910,7 @@ index d64ddb0..04a55a1 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 7ed5f82..b6a2818 100644
+index 06b3c6e..6efeb31 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);

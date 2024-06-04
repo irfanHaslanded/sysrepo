@@ -89,7 +89,7 @@ index e7f4586..c3065b4 100644
      if (is_priviliged < 0) {
          is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 66c2d4d..7ed5f82 100644
+index 5940ae9..06b3c6e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -7250,7 +7250,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)

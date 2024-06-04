@@ -7,7 +7,7 @@ Subject: Fix ncid originator name
  1 file changed, 8 insertions(+), 1 deletion(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index d8e217e..66c2d4d 100644
+index 64ae74b..5940ae9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -7243,9 +7243,17 @@ cleanup:

@@ -1186,7 +1186,7 @@ index 710287e..4645820 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 9539329..e2ef6fb 100644
+index 484fb09..da7dac0 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3697,6 +3697,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio

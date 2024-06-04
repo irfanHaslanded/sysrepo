@@ -42,7 +42,7 @@ index 4faad2e..3611c70 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 1723960..766b4b2 100644
+index 39b178e..f7603d7 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -4978,6 +4978,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
