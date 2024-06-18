@@ -4072,10 +4072,45 @@ test_oper_list_enabled(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void
+test_oper_del_then_install_mod(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+    const char *schema_paths[] = {
+        TESTS_SRC_DIR "/files/act.yang",
+        NULL
+    };
+    const char *module_names[] = {
+        "act",
+        NULL
+    };
+
+    /* switch to operational DS */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* delete operational data */
+    sr_delete_item(st->sess, "/mixed-config:test-state/test-case[name='a']/result", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* try to install a new module */
+    ret = sr_install_modules(st->conn, schema_paths, TESTS_SRC_DIR "/files", NULL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_remove_modules(st->conn, module_names, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_del_then_install_mod, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
