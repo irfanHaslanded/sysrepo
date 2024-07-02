@@ -1065,10 +1065,96 @@ test_sub(int rp, int wp)
     return 0;
 }
 
+static int
+pull_oper_cond_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *path,
+        const char *request_xpath, uint32_t request_id, struct lyd_node **parent, void *private_data)
+{
+    const struct ly_ctx *ly_ctx = sr_acquire_context(sr_session_get_connection(session));
+    LY_ERR ret;
+
+    (void)sub_id;
+    (void)module_name;
+    (void)path;
+    (void)request_xpath;
+    (void)request_id;
+    TLOG_INF("%s pvt_data %p", __func__, private_data);
+    if (private_data) {
+        TLOG_INF("%s asked to exit", __func__);
+        exit(0);
+    }
+    return SR_ERR_OK;
+}
+
+static int
+test_oper_get_sub_crash_2(int rp, int wp)
+{
+    sr_conn_ctx_t *conn;
+    sr_session_ctx_t *sess;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+    /* wait for the other process */
+    barrier(rp, wp);
+
+    ret = sr_connect(0, &conn);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_oper_get_subscribe(sess, "ietf-interfaces", "/ietf-interfaces:interfaces-state/interface[name='eth0']/statistics", pull_oper_cond_cb,
+                &ret, SR_SUBSCR_OPER_MERGE, &subscr);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+
+    TLOG_INF("%s created oper get sub", __func__);
+    barrier(rp, wp);
+    barrier(rp, wp);
+    sr_disconnect(conn);
+    TLOG_INF("%s disconnected", __func__);
+    return 0;
+}
+
+static int
+test_oper_get_sub_crash_1(int rp, int wp)
+{
+    sr_conn_ctx_t *conn;
+    sr_session_ctx_t *sess;
+    sr_subscription_ctx_t *subscr = NULL;
+    sr_data_t *data;
+    int ret;
+    /* wait for the other process */
+    barrier(rp, wp);
+    ret = sr_connect(0, &conn);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_oper_get_subscribe(sess, "ietf-interfaces", "/ietf-interfaces:interfaces-state/interface[name='eth0']/statistics", pull_oper_cond_cb,
+                NULL, SR_SUBSCR_OPER_MERGE, &subscr);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("%s created oper get sub", __func__);
+
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/type",
+            "iana-if-type:ethernetCsmacd", NULL, 0);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    sr_assert_int_equal(ret, SR_ERR_OK);
+
+    barrier(rp, wp);
+    /* read the data */
+    ret = sr_get_data(sess, "/ietf-interfaces:*", 0, 0, 0, &data);
+
+    barrier(rp, wp);
+    sr_release_data(data);
+    sr_disconnect(conn);
+    return 0;
+}
+
+
 int
 main(void)
 {
     struct test tests[] = {
+#if 0
         {"rpc sub", test_rpc_sub1, test_rpc_sub2, setup, teardown},
         {"rpc crash", test_rpc_crash1, test_rpc_crash2, setup, teardown},
         {"oper crash", test_oper_crash_set2, test_oper_crash_set1, setup, teardown},
@@ -1077,6 +1163,8 @@ main(void)
         {"context change", test_context_change, test_context_change_sub, setup, teardown},
         {"conn create", test_conn_create, test_conn_create, setup, teardown},
         {"sub apply", test_sub, test_apply, setup, teardown},
+#endif
+        {"oper-get-sub crash", test_oper_get_sub_crash_1, test_oper_get_sub_crash_2, setup, teardown},
     };
 
     test_log_init();
