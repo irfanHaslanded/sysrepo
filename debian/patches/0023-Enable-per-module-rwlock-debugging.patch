@@ -12,7 +12,7 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index dfc1449..e2192b8 100644
+index c8d90a1..dd89de4 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -92,7 +92,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
@@ -27,7 +27,7 @@ index dfc1449..e2192b8 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5701,7 +5704,7 @@ sr_is_priviliged(void)
+@@ -5752,7 +5755,7 @@ sr_is_priviliged(void)
  }
  
  void
@@ -37,10 +37,10 @@ index dfc1449..e2192b8 100644
      if (enable) {
          /* Set the MSB to enable debug logs */
 diff --git a/src/common.h b/src/common.h
-index e5bbd4e..d76af70 100644
+index cea6cc1..81b96bd 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1386,4 +1386,9 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -1398,4 +1398,9 @@ typedef enum sr_val_ly2sr_opts_e {
   */
  sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
  
@@ -137,10 +137,10 @@ index b968055..ee05f0c 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6efeb31..ae36aee 100644
+index 1472d7c..17bd066 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7285,3 +7285,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7353,3 +7353,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }
@@ -177,10 +177,10 @@ index 6efeb31..ae36aee 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index d76aea9..e166098 100644
+index 68b63e2..21216ae 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1874,6 +1874,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
+@@ -1876,6 +1876,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
  uint64_t sr_session_get_event_nc_id(sr_session_ctx_t *session);
  void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
  

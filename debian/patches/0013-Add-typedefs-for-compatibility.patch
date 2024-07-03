@@ -7,7 +7,7 @@ Subject: Add typedefs for compatibility
  1 file changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index c08ae33..0618669 100644
+index 43b7663..9232e3c 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -37,7 +37,7 @@ extern "C" {
@@ -67,7 +67,7 @@ index c08ae33..0618669 100644
      sr_error_info_err_t *err;   /**< Array of all generated errors. */
      uint32_t err_count;         /**< Error count. */
  } sr_error_info_t;
-@@ -205,7 +207,7 @@ typedef struct {
+@@ -208,7 +210,7 @@ typedef struct {
  /**
   * @brief Possible types of a data element stored in the sysrepo datastore.
   */
@@ -76,7 +76,7 @@ index c08ae33..0618669 100644
      /* special types that does not contain any data */
      SR_UNKNOWN_T,              /**< Element unknown to sysrepo (unsupported element). */
  
-@@ -234,7 +236,7 @@ typedef enum {
+@@ -237,7 +239,7 @@ typedef enum {
      SR_UINT64_T,       /**< 64-bit unsigned integer ([RFC 7950 sec 9.2](https://tools.ietf.org/html/rfc7950#section-9.2)) */
      SR_ANYXML_T,       /**< Unknown chunk of XML ([RFC 7950 sec 7.10](https://tools.ietf.org/html/rfc7950#section-7.10)) */
      SR_ANYDATA_T       /**< Unknown set of nodes, encoded in XML ([RFC 7950 sec 7.10](https://tools.ietf.org/html/rfc7950#section-7.10)) */
@@ -85,7 +85,7 @@ index c08ae33..0618669 100644
  
  /**
   * @brief Data of an element (if applicable), properly set according to the type.
-@@ -266,7 +268,7 @@ typedef union {
+@@ -269,7 +271,7 @@ typedef union {
  /**
   * @brief Structure that contains value of an data element stored in the sysrepo datastore.
   */
@@ -94,7 +94,7 @@ index c08ae33..0618669 100644
      /** [XPath](@ref paths) (or rather path) identifier of the data element. */
      char *xpath;
  
-@@ -291,7 +293,7 @@ typedef struct {
+@@ -294,7 +296,7 @@ typedef struct {
  /**
   * @brief Flags used to override default data get behaviour on ::SR_DS_OPERATIONAL.
   */
@@ -103,7 +103,7 @@ index c08ae33..0618669 100644
      SR_OPER_DEFAULT = 0x00,          /**< No special behaviour. */
      SR_OPER_NO_STATE = 0x01,         /**< Return only configuration data. */
      SR_OPER_NO_CONFIG = 0x02,        /**< Return only state data. If there are some state subtrees with configuration
-@@ -333,7 +335,7 @@ typedef uint32_t sr_get_options_t;
+@@ -336,7 +338,7 @@ typedef uint32_t sr_get_options_t;
  /**
   * @brief Flags used to override default behavior of data manipulation calls.
   */
@@ -112,7 +112,7 @@ index c08ae33..0618669 100644
      SR_EDIT_DEFAULT = 0x0,      /**< Default behavior - non-strict. */
      SR_EDIT_NON_RECURSIVE = 0x1,/**< Non-recursive behavior:
                                       by ::sr_set_item, all preceding nodes (parents) of the identified element must exist. */
-@@ -355,7 +357,7 @@ typedef uint32_t sr_edit_options_t;
+@@ -358,7 +360,7 @@ typedef uint32_t sr_edit_options_t;
  /**
   * @brief Options for specifying move direction of ::sr_move_item call.
   */
@@ -121,7 +121,7 @@ index c08ae33..0618669 100644
      SR_MOVE_BEFORE = 0,    /**< Move the specified item before the selected sibling. */
      SR_MOVE_AFTER = 1,     /**< Move the specified item after the selected. */
      SR_MOVE_FIRST = 2,     /**< Move the specified item to the position of the first child. */
-@@ -372,7 +374,7 @@ typedef enum {
+@@ -375,7 +377,7 @@ typedef enum {
  /**
   * @brief Flags used to override default handling of subscriptions.
   */
@@ -130,7 +130,7 @@ index c08ae33..0618669 100644
      /**
       * @brief Default behavior of the subscription. In case of ::sr_module_change_subscribe call it means that:
       *
-@@ -489,7 +491,7 @@ typedef uint32_t sr_subscr_options_t;
+@@ -492,7 +494,7 @@ typedef uint32_t sr_subscr_options_t;
   * ::SR_SUBSCR_DONE_ONLY subscription flag. The general rule is that in case the operation fails, only if the subscriber
   * has __successfully__ processed the first event (::SR_EV_CHANGE/::SR_EV_RPC), it will get the second ::SR_EV_ABORT event.
   */
@@ -139,7 +139,7 @@ index c08ae33..0618669 100644
      SR_EV_UPDATE,  /**< Occurs before any other events and the subscriber can update the apply-changes diff.
                          It is performed by calling `sr_*_item()` or ::sr_edit_batch() on the callback session
                          __without__ calling ::sr_apply_changes() or any other function. */
-@@ -516,7 +518,7 @@ typedef enum {
+@@ -519,7 +521,7 @@ typedef enum {
  /**
   * @brief Type of the operation made on an item, used by changeset retrieval in ::sr_get_change_next.
   */
@@ -148,7 +148,7 @@ index c08ae33..0618669 100644
      SR_OP_CREATED,   /**< The item has been created by the change. */
      SR_OP_MODIFIED,  /**< The value of the item has been modified by the change. */
      SR_OP_DELETED,   /**< The item has been deleted by the change. */
-@@ -604,7 +606,7 @@ typedef int (*sr_rpc_tree_cb)(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -607,7 +609,7 @@ typedef int (*sr_rpc_tree_cb)(sr_session_ctx_t *session, uint32_t sub_id, const
  /**
   * @brief Type of the notification passed to the ::sr_event_notif_cb and ::sr_event_notif_tree_cb callbacks.
   */

@@ -20,7 +20,7 @@ index f1c5274..d363bfb 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5bf36c6..68d0229 100644
+index 20aec67..ec93a9b 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -441,7 +441,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)

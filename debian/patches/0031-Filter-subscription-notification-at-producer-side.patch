@@ -20,7 +20,7 @@ Add tests
  src/shm_ext.c                 |    9 +-
  src/shm_ext.h                 |    5 +-
  src/shm_main.c                |    1 +
- src/shm_sub.c                 |  495 +++++++++++++----
+ src/shm_sub.c                 |  493 +++++++++++++----
  src/shm_sub.h                 |    4 +-
  src/shm_types.h               |    3 +
  src/subscr.c                  |    3 +-
@@ -29,7 +29,7 @@ Add tests
  src/sysrepo_types.h           |    8 +-
  tests/test_apply_changes.c    |    5 +-
  tests/test_subscr_filtering.c | 1182 +++++++++++++++++++++++++++++++++++++++++
- 15 files changed, 1641 insertions(+), 116 deletions(-)
+ 15 files changed, 1639 insertions(+), 116 deletions(-)
  create mode 100644 tests/test_subscr_filtering.c
 
 diff --git a/src/common_types.h b/src/common_types.h
@@ -45,10 +45,10 @@ index 2c6ae14..f1c5274 100644
          uint32_t sub_count;         /**< Configuration change module XPath subscription count. */
  
 diff --git a/src/modinfo.c b/src/modinfo.c
-index dd6f583..714fd74 100644
+index e149cef..564a315 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -3237,7 +3237,7 @@ cleanup:
+@@ -3306,7 +3306,7 @@ sr_modinfo_update_is_foreign(const struct sr_mod_info_s *mod_info, const struct
  
  sr_error_info_t *
  sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session, uint32_t timeout_ms,
@@ -57,15 +57,15 @@ index dd6f583..714fd74 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *update_edit = NULL, *old_diff = NULL, *new_diff = NULL;
-@@ -3269,6 +3269,7 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
+@@ -3362,6 +3362,7 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
+             }
+         }
  
-     /* create new diff if we have an update edit */
-     if (update_edit) {
 +        *updated = 1;
          /* backup the old diff */
          old_diff = mod_info->diff;
          mod_info->diff = NULL;
-@@ -3343,6 +3344,7 @@ cleanup:
+@@ -3430,6 +3431,7 @@ cleanup:
      lyd_free_all(update_edit);
      lyd_free_all(old_diff);
      lyd_free_all(new_diff);
@@ -74,10 +74,10 @@ index dd6f583..714fd74 100644
  }
  
 diff --git a/src/modinfo.h b/src/modinfo.h
-index 3ebc3ce..e7fb3d6 100644
+index 443eaaa..4fadcf4 100644
 --- a/src/modinfo.h
 +++ b/src/modinfo.h
-@@ -56,6 +56,9 @@ struct sr_mod_info_s {
+@@ -58,6 +58,9 @@ struct sr_mod_info_s {
          uint32_t xpath_count;   /**< Count of XPaths. */
          uint32_t state;         /**< Module state (flags). */
          uint32_t request_id;    /**< Request ID of the published event. */
@@ -87,7 +87,7 @@ index 3ebc3ce..e7fb3d6 100644
      } *mods;                    /**< Relevant modules. */
      uint32_t mod_count;         /**< Modules count. */
  };
-@@ -287,7 +290,7 @@ sr_error_info_t *sr_modinfo_get_filter(struct sr_mod_info_s *mod_info, const cha
+@@ -289,7 +292,7 @@ sr_error_info_t *sr_modinfo_get_filter(struct sr_mod_info_s *mod_info, const cha
   * @return err_info, NULL on success.
   */
  sr_error_info_t *sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
@@ -97,10 +97,10 @@ index 3ebc3ce..e7fb3d6 100644
  /**
   * @brief Generate a netconf-config-change notification based on changes in mod info.
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 3e58056..073c50a 100644
+index 728ebd8..d7c3896 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
-@@ -515,7 +515,8 @@ error:
+@@ -516,7 +516,8 @@ error:
  
  sr_error_info_t *
  sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t *has_lock,
@@ -110,7 +110,7 @@ index 3e58056..073c50a 100644
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      off_t xpath_off;
-@@ -529,6 +530,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
+@@ -530,6 +531,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_WRITE, 1, __func__))) {
          goto cleanup;
      }
@@ -118,7 +118,7 @@ index 3e58056..073c50a 100644
  
      if (sub_opts & SR_SUBSCR_UPDATE) {
          /* check that there is not already an update subscription with the same priority */
-@@ -575,6 +577,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
+@@ -576,6 +578,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
      shm_sub->evpipe_num = evpipe_num;
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
@@ -126,7 +126,7 @@ index 3e58056..073c50a 100644
  
      SR_LOG_SHM_DBG("#SHM after (adding change sub)");
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
-@@ -867,7 +870,7 @@ sr_shmext_change_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -868,7 +871,7 @@ sr_shmext_change_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
  
  sr_error_info_t *
  sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id, const char *path,
@@ -135,7 +135,7 @@ index 3e58056..073c50a 100644
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      off_t xpath_off;
-@@ -883,6 +886,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -884,6 +887,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_WRITE, 1, __func__))) {
          return err_info;
      }
@@ -143,7 +143,7 @@ index 3e58056..073c50a 100644
  
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
-@@ -970,7 +974,6 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -971,7 +975,6 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      xpath_sub->priority = *prio;
      ATOMIC_STORE_RELAXED(xpath_sub->suspended, 0);
      xpath_sub->cid = conn->cid;
@@ -175,22 +175,22 @@ index df3503c..9221a81 100644
  /**
   * @brief Remove main SHM module operational get subscription and unlink sub SHM.
 diff --git a/src/shm_main.c b/src/shm_main.c
-index 22e3283..9c896f2 100644
+index 4b6a365..b1b5f21 100644
 --- a/src/shm_main.c
 +++ b/src/shm_main.c
-@@ -511,6 +511,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
-         ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
-         ATOMIC_STORE_RELAXED(main_shm->new_evpipe_num, 1);
+@@ -507,6 +507,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+             goto cleanup;
+         }
          ATOMIC_STORE_RELAXED(main_shm->new_rwlock_id, SR_RWLOCK_RESERVED_ID_MAX);
 +        ATOMIC_STORE_RELAXED(main_shm->new_xpath_id, 1);
-         /* remove leftover event pipes */
-         sr_remove_evpipes();
-     } else {
+         ATOMIC_STORE_RELAXED(main_shm->new_sr_cid, 1);
+         ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
+         ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 1e87995..5380ca0 100644
+index 2153aec..acf3783 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -375,7 +375,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -382,7 +382,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
  
          if (ret == ETIMEDOUT) {
              /* try to recover the event again in case the originator crashed later */
@@ -199,7 +199,7 @@ index 1e87995..5380ca0 100644
                  sr_shmsub_recover(sub_shm);
                  last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
              }
-@@ -473,8 +473,8 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -489,8 +489,8 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
          /* COND WAIT */
          ret = sr_cond_clockwait(&sub_shm->lock.cond, &sub_shm->lock.mutex, COMPAT_CLOCK_ID, timeout_abs);
      }
@@ -209,12 +209,12 @@ index 1e87995..5380ca0 100644
      last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
      last_request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
  
-@@ -836,12 +836,14 @@ sr_shmsub_notify_write_event(sr_sub_shm_t *sub_shm, sr_cid_t orig_cid, uint32_t
+@@ -787,12 +787,14 @@ sr_shmsub_notify_many_wait_wr(struct sr_shmsub_many_info_s *notify_subs, uint32_
  static sr_error_info_t *
- sr_shmsub_multi_notify_write_event(sr_multi_sub_shm_t *multi_sub_shm, sr_cid_t orig_cid, uint32_t request_id,
-         uint32_t priority, sr_sub_event_t event, const char *orig_name, const void *orig_data, uint32_t subscriber_count,
--        sr_shm_t *shm_data_sub, const char *data, uint32_t data_len, const char *event_desc)
-+        sr_shm_t *shm_data_sub, const char *data, uint32_t data_len, const char *event_desc,
+ sr_shmsub_notify_write_event(sr_sub_shm_t *sub_shm, sr_cid_t orig_cid, uint32_t request_id, uint32_t priority,
+         sr_sub_event_t event, const char *orig_name, const void *orig_data, uint32_t subscriber_count,
+-        sr_shm_t *shm_data_sub, const char *xpath, const char *data, uint32_t data_len, const char *event_desc)
++        sr_shm_t *shm_data_sub, const char *xpath, const char *data, uint32_t data_len, const char *event_desc,
 +        uint32_t *xpath_ids, uint32_t xpath_count)
  {
      sr_error_info_t *err_info = NULL;
@@ -223,24 +223,19 @@ index 1e87995..5380ca0 100644
      uint32_t orig_size = 0;
 +    uint32_t xpath_arr_size = xpath_count * sizeof(*xpath_ids);
  
-     if (data_len) {
+     if (xpath || data_len) {
          if (!orig_name) {
-@@ -858,10 +860,11 @@ sr_shmsub_multi_notify_write_event(sr_multi_sub_shm_t *multi_sub_shm, sr_cid_t o
-     ATOMIC_STORE_RELAXED(multi_sub_shm->event, event);
-     ATOMIC_STORE_RELAXED(multi_sub_shm->priority, priority);
-     multi_sub_shm->subscriber_count = subscriber_count;
-+    multi_sub_shm->xpath_count = xpath_count;
+@@ -809,6 +811,7 @@ sr_shmsub_notify_write_event(sr_sub_shm_t *sub_shm, sr_cid_t orig_cid, uint32_t
+     ATOMIC_STORE_RELAXED(sub_shm->event, event);
+     ATOMIC_STORE_RELAXED(sub_shm->priority, priority);
+     sub_shm->subscriber_count = subscriber_count;
++    sub_shm->xpath_count = xpath_count;
  
      /* remap if needed */
-     if (data_len) {
--        if ((err_info = sr_shmsub_data_open_remap(NULL, NULL, -1, shm_data_sub, orig_size + data_len))) {
-+        if ((err_info = sr_shmsub_data_open_remap(NULL, NULL, -1, shm_data_sub, orig_size + xpath_arr_size + data_len))) {
-             return err_info;
-         }
- 
-@@ -875,6 +878,10 @@ sr_shmsub_multi_notify_write_event(sr_multi_sub_shm_t *multi_sub_shm, sr_cid_t o
-         memcpy(shm_data_ptr, orig_data, sr_ev_data_size(orig_data));
-         shm_data_ptr += SR_SHM_SIZE(sr_ev_data_size(orig_data));
+     if (xpath || data_len) {
+@@ -832,6 +835,10 @@ sr_shmsub_notify_write_event(sr_sub_shm_t *sub_shm, sr_cid_t orig_cid, uint32_t
+         strcpy(shm_data_ptr, xpath);
+         shm_data_ptr += sr_strshmlen(xpath);
      }
 +    if (xpath_count) {
 +        memcpy(shm_data_ptr, xpath_ids, xpath_arr_size);
@@ -249,7 +244,7 @@ index 1e87995..5380ca0 100644
      if (data && data_len) {
          /* write any event data */
          memcpy(shm_data_ptr, data, data_len);
-@@ -970,6 +977,219 @@ sr_shmsub_change_filter_is_valid(const char *xpath, const struct lyd_node *diff)
+@@ -927,6 +934,219 @@ sr_shmsub_change_filter_is_valid(const char *xpath, const struct lyd_node *diff)
      return ret;
  }
  
@@ -469,7 +464,7 @@ index 1e87995..5380ca0 100644
  /**
   * @brief Learn whether there is a subscription for a change event.
   *
-@@ -982,13 +1202,18 @@ sr_shmsub_change_filter_is_valid(const char *xpath, const struct lyd_node *diff)
+@@ -939,13 +1159,18 @@ sr_shmsub_change_filter_is_valid(const char *xpath, const struct lyd_node *diff)
   * @return 0 if not, non-zero if there is.
   */
  static int
@@ -490,7 +485,7 @@ index 1e87995..5380ca0 100644
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -1000,15 +1225,6 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
+@@ -957,15 +1182,6 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
      *max_priority_p = 0;
      i = 0;
      while (i < mod->shm_mod->change_sub[ds].sub_count) {
@@ -506,7 +501,7 @@ index 1e87995..5380ca0 100644
          /* skip suspended subscriptions */
          if (ATOMIC_LOAD_RELAXED(shm_sub[i].suspended)) {
              ++i;
-@@ -1017,19 +1233,24 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
+@@ -974,19 +1190,24 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
  
          /* skip subscriptions that filter-out all the changes */
          if ((shm_sub[i].opts & SR_SUBSCR_FILTER_ORIG) &&
@@ -535,7 +530,7 @@ index 1e87995..5380ca0 100644
          ++i;
      }
  
-@@ -1054,14 +1275,15 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
+@@ -1011,14 +1232,15 @@ sr_shmsub_change_notify_has_subscription(sr_conn_ctx_t *conn, struct sr_mod_info
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -554,7 +549,7 @@ index 1e87995..5380ca0 100644
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -1072,15 +1294,6 @@ sr_shmsub_change_notify_next_subscription(sr_conn_ctx_t *conn, struct sr_mod_inf
+@@ -1029,15 +1251,6 @@ sr_shmsub_change_notify_next_subscription(sr_conn_ctx_t *conn, struct sr_mod_inf
      *sub_count_p = 0;
      i = 0;
      while (i < mod->shm_mod->change_sub[ds].sub_count) {
@@ -570,7 +565,7 @@ index 1e87995..5380ca0 100644
          /* skip suspended subscriptions */
          if (ATOMIC_LOAD_RELAXED(shm_sub[i].suspended)) {
              ++i;
-@@ -1089,13 +1302,18 @@ sr_shmsub_change_notify_next_subscription(sr_conn_ctx_t *conn, struct sr_mod_inf
+@@ -1046,13 +1259,18 @@ sr_shmsub_change_notify_next_subscription(sr_conn_ctx_t *conn, struct sr_mod_inf
  
          /* skip subscriptions that filter-out all the changes */
          if ((shm_sub[i].opts & SR_SUBSCR_FILTER_ORIG) &&
@@ -591,7 +586,7 @@ index 1e87995..5380ca0 100644
              /* a subscription that was not notified yet */
              if (*sub_count_p) {
                  if (*next_priority_p < shm_sub[i].priority) {
-@@ -1178,12 +1396,13 @@ cleanup:
+@@ -1135,12 +1353,13 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -607,7 +602,7 @@ index 1e87995..5380ca0 100644
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -1192,10 +1411,6 @@ sr_shmsub_change_notify_evpipe(sr_conn_ctx_t *conn, struct sr_mod_info_mod_s *mo
+@@ -1149,10 +1368,6 @@ sr_shmsub_change_notify_evpipe(sr_conn_ctx_t *conn, struct sr_mod_info_mod_s *mo
  
      shm_sub = (sr_mod_change_sub_t *)(conn->ext_shm.addr + mod->shm_mod->change_sub[ds].subs);
      for (i = 0; i < mod->shm_mod->change_sub[ds].sub_count; ++i) {
@@ -618,7 +613,7 @@ index 1e87995..5380ca0 100644
          /* skip suspended subscriptions */
          if (ATOMIC_LOAD_RELAXED(shm_sub[i].suspended)) {
              continue;
-@@ -1203,14 +1418,17 @@ sr_shmsub_change_notify_evpipe(sr_conn_ctx_t *conn, struct sr_mod_info_mod_s *mo
+@@ -1160,14 +1375,17 @@ sr_shmsub_change_notify_evpipe(sr_conn_ctx_t *conn, struct sr_mod_info_mod_s *mo
  
          /* skip subscriptions that filter-out all the changes */
          if ((shm_sub[i].opts & SR_SUBSCR_FILTER_ORIG) &&
@@ -641,7 +636,7 @@ index 1e87995..5380ca0 100644
              }
          }
      }
-@@ -1280,15 +1498,23 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1237,15 +1455,23 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
              continue;
          }
  
@@ -669,12 +664,12 @@ index 1e87995..5380ca0 100644
              goto cleanup;
          }
  
-@@ -1330,13 +1556,13 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1287,13 +1513,13 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
              }
-             if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, cid, mod->request_id, cur_priority,
-                     SR_SUB_EV_UPDATE, orig_name, orig_data, subscriber_count, &shm_data_sub, diff_lyb, diff_lyb_len,
--                    mod->ly_mod->name))) {
-+                    mod->ly_mod->name, mod->xpath_ids, mod->xpath_id_count))) {
+             if ((err_info = sr_shmsub_notify_write_event(sub_shm, cid, mod->request_id, cur_priority,
+                     SR_SUB_EV_UPDATE, orig_name, orig_data, subscriber_count, &shm_data_sub, NULL, diff_lyb,
+-                    diff_lyb_len, mod->ly_mod->name))) {
++                    diff_lyb_len, mod->ly_mod->name, mod->xpath_ids, mod->xpath_id_count))) {
                  goto cleanup_wrunlock;
              }
  
@@ -686,7 +681,7 @@ index 1e87995..5380ca0 100644
                  goto cleanup_wrunlock;
              }
  
-@@ -1382,8 +1608,8 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1339,8 +1565,8 @@ sr_shmsub_change_notify_update(struct sr_mod_info_s *mod_info, const char *orig_
              }
  
              /* find out what is the next priority and how many subscribers have it */
@@ -697,16 +692,16 @@ index 1e87995..5380ca0 100644
                  goto cleanup_wrunlock;
              }
          } while (subscriber_count);
-@@ -1443,7 +1669,7 @@ sr_shmsub_change_notify_clear(struct sr_mod_info_s *mod_info)
+@@ -1405,7 +1631,7 @@ sr_shmsub_change_notify_clear(struct sr_mod_info_s *mod_info)
  
              /* clear it */
-             if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, 0, mod->request_id,
--                    multi_sub_shm->priority, 0, NULL, NULL, 0, NULL, NULL, 0, NULL))) {
-+                    multi_sub_shm->priority, 0, NULL, NULL, 0, NULL, NULL, 0, NULL, NULL, 0))) {
+             if ((err_info = sr_shmsub_notify_write_event(sub_shm, 0, mod->request_id, sub_shm->priority, 0, NULL, NULL,
+-                    0, NULL, NULL, NULL, 0, NULL))) {
++                    0, NULL, NULL, NULL, 0, NULL, NULL, 0))) {
                  goto cleanup_wrunlock;
              }
  
-@@ -1520,7 +1746,7 @@ sr_shmsub_change_notify_nsubs_set_mod_prio(struct sr_shmsub_many_info_change_s *
+@@ -1482,7 +1708,7 @@ sr_shmsub_change_notify_nsubs_set_mod_prio(struct sr_shmsub_many_info_change_s *
  
  sr_error_info_t *
  sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_name, const void *orig_data,
@@ -715,7 +710,7 @@ index 1e87995..5380ca0 100644
  {
      sr_error_info_t *err_info = NULL;
      uint32_t notify_count = 0, max_priority, cur_mpriority, diff_lyb_len, *aux = NULL, i, subscriber_count;
-@@ -1533,16 +1759,26 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1495,16 +1721,26 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
      cid = mod_info->conn->cid;
  
      while ((mod = sr_modinfo_next_mod(mod, mod_info, mod_info->diff, &aux))) {
@@ -746,7 +741,7 @@ index 1e87995..5380ca0 100644
                  if (mod_info->ds == SR_DS_RUNNING) {
                      SR_LOG_INF("There are no subscribers for changes of the module \"%s\" in %s DS.",
                              mod->ly_mod->name, sr_ds2str(mod_info->ds));
-@@ -1586,8 +1822,8 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1548,8 +1784,8 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
              }
  
              /* get next subscriber(s) priority and subscriber count */
@@ -757,13 +752,12 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
  
-@@ -1622,13 +1858,14 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
+@@ -1584,13 +1820,13 @@ sr_shmsub_change_notify_change(struct sr_mod_info_s *mod_info, const char *orig_
              }
-             if ((err_info = sr_shmsub_multi_notify_write_event((sr_multi_sub_shm_t *)nsub->shm_sub.addr, cid,
-                     nsub->mod->request_id, nsub->cur_priority, SR_SUB_EV_CHANGE, orig_name, orig_data, subscriber_count,
--                    &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name))) {
-+                    &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name,
-+                    nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
+             if ((err_info = sr_shmsub_notify_write_event((sr_sub_shm_t *)nsub->shm_sub.addr, cid, nsub->mod->request_id,
+                     nsub->cur_priority, SR_SUB_EV_CHANGE, orig_name, orig_data, subscriber_count, &nsub->shm_data_sub,
+-                    NULL, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name))) {
++                    NULL, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
                  goto cleanup;
              }
  
@@ -775,7 +769,7 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
          }
-@@ -1711,13 +1948,17 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+@@ -1679,13 +1915,17 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
      cid = mod_info->conn->cid;
  
      while ((mod = sr_modinfo_next_mod(mod, mod_info, mod_info->diff, &aux))) {
@@ -796,7 +790,7 @@ index 1e87995..5380ca0 100644
              /* no subscriptions interested in this event */
              continue;
          }
-@@ -1757,8 +1998,8 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+@@ -1725,8 +1965,8 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
              }
  
              /* get next subscriber(s) priority and subscriber count */
@@ -807,12 +801,12 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
  
-@@ -1792,13 +2033,13 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
+@@ -1760,13 +2000,13 @@ sr_shmsub_change_notify_change_done(struct sr_mod_info_s *mod_info, const char *
              }
-             if ((err_info = sr_shmsub_multi_notify_write_event((sr_multi_sub_shm_t *)nsub->shm_sub.addr, cid,
-                     nsub->mod->request_id, nsub->cur_priority, SR_SUB_EV_DONE, orig_name, orig_data, subscriber_count,
--                    &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name))) {
-+                    &nsub->shm_data_sub, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
+             if ((err_info = sr_shmsub_notify_write_event((sr_sub_shm_t *)nsub->shm_sub.addr, cid, nsub->mod->request_id,
+                     nsub->cur_priority, SR_SUB_EV_DONE, orig_name, orig_data, subscriber_count, &nsub->shm_data_sub,
+-                    NULL, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name))) {
++                    NULL, diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
                  goto cleanup;
              }
  
@@ -824,7 +818,7 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
          }
-@@ -1874,20 +2115,23 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+@@ -1846,20 +2086,23 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
      cid = mod_info->conn->cid;
  
      while ((mod = sr_modinfo_next_mod(mod, mod_info, mod_info->diff, &aux))) {
@@ -852,16 +846,16 @@ index 1e87995..5380ca0 100644
  
          notify_subs = sr_realloc(notify_subs, (notify_count + 1) * sizeof *notify_subs);
          SR_CHECK_MEM_GOTO(!notify_subs, err_info, cleanup);
-@@ -1937,7 +2181,7 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+@@ -1909,7 +2152,7 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
              /* clear the error */
              assert(nsub->sub_shm->request_id == nsub->mod->request_id);
-             if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, 0, nsub->mod->request_id,
--                    nsub->cur_priority, 0, NULL, NULL, 0, &nsub->shm_data_sub, NULL, 0, NULL))) {
-+                    nsub->cur_priority, 0, NULL, NULL, 0, &nsub->shm_data_sub, NULL, 0, NULL, NULL, 0))) {
+             if ((err_info = sr_shmsub_notify_write_event(sub_shm, 0, nsub->mod->request_id,
+-                    nsub->cur_priority, 0, NULL, NULL, 0, &nsub->shm_data_sub, NULL, NULL, 0, NULL))) {
++                    nsub->cur_priority, 0, NULL, NULL, 0, &nsub->shm_data_sub, NULL, NULL, 0, NULL, NULL, 0))) {
                  goto cleanup;
              }
          }
-@@ -1972,8 +2216,8 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+@@ -1944,8 +2187,8 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
              }
  
              /* get next subscriber(s) priority and subscriber count */
@@ -872,12 +866,12 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
  
-@@ -2009,13 +2253,13 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
+@@ -1981,13 +2224,13 @@ sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_info, const char
              /* write the event */
-             if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, cid, nsub->mod->request_id,
-                     nsub->cur_priority, SR_SUB_EV_ABORT, orig_name, orig_data, subscriber_count, &nsub->shm_data_sub,
--                    diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name))) {
-+                    diff_lyb, diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
+             if ((err_info = sr_shmsub_notify_write_event(sub_shm, cid, nsub->mod->request_id, nsub->cur_priority,
+                     SR_SUB_EV_ABORT, orig_name, orig_data, subscriber_count, &nsub->shm_data_sub, NULL, diff_lyb,
+-                    diff_lyb_len, nsub->mod->ly_mod->name))) {
++                    diff_lyb_len, nsub->mod->ly_mod->name, nsub->mod->xpath_ids, nsub->mod->xpath_id_count))) {
                  goto cleanup;
              }
  
@@ -889,53 +883,62 @@ index 1e87995..5380ca0 100644
                  goto cleanup;
              }
          }
-@@ -2697,7 +2941,7 @@ first_sub:
-             *request_id = ++multi_sub_shm->request_id;
+@@ -2144,7 +2387,7 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+         /* write the request for state data */
+         request_id = ATOMIC_LOAD_RELAXED(nsub->sub_shm->request_id) + 1;
+         if ((err_info = sr_shmsub_notify_write_event(nsub->sub_shm, cid, request_id, 0, SR_SUB_EV_OPER, orig_name,
+-                orig_data, 1, &nsub->shm_data_sub, request_xpath, parent_lyb, parent_lyb_len, NULL))) {
++                orig_data, 1, &nsub->shm_data_sub, request_xpath, parent_lyb, parent_lyb_len, NULL, NULL, 0))) {
+             goto cleanup;
          }
-         if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, conn->cid, *request_id, cur_priority,
--                SR_SUB_EV_RPC, orig_name, orig_data, subscriber_count, &shm_data_sub, input_lyb, input_lyb_len, path))) {
-+                SR_SUB_EV_RPC, orig_name, orig_data, subscriber_count, &shm_data_sub, input_lyb, input_lyb_len, path, NULL, 0))) {
+         SR_LOG_INF("EV ORIGIN: \"%s\" \"%s\" index %" PRIu32 " ID %" PRIu32 " published.", xpath,
+@@ -2677,7 +2920,7 @@ first_sub:
+             *request_id = ++sub_shm->request_id;
+         }
+         if ((err_info = sr_shmsub_notify_write_event(sub_shm, conn->cid, *request_id, cur_priority, SR_SUB_EV_RPC,
+-                orig_name, orig_data, subscriber_count, &shm_data_sub, NULL, input_lyb, input_lyb_len, path))) {
++                orig_name, orig_data, subscriber_count, &shm_data_sub, NULL, input_lyb, input_lyb_len, path, NULL, 0))) {
              goto cleanup_wrunlock;
          }
  
-@@ -2799,7 +3043,7 @@ clear_shm:
+@@ -2785,7 +3028,7 @@ clear_shm:
          /* clear the SHM */
-         assert(multi_sub_shm->event == SR_SUB_EV_ERROR);
-         if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, 0, request_id, cur_priority, 0, NULL, NULL, 0,
--                &shm_data_sub, NULL, 0, NULL))) {
-+                &shm_data_sub, NULL, 0, NULL, NULL, 0))) {
+         assert(sub_shm->event == SR_SUB_EV_ERROR);
+         if ((err_info = sr_shmsub_notify_write_event(sub_shm, 0, request_id, cur_priority, 0, NULL, NULL, 0,
+-                &shm_data_sub, NULL, NULL, 0, NULL))) {
++                &shm_data_sub, NULL, NULL, 0, NULL, NULL, 0))) {
              goto cleanup_wrunlock;
          }
  
-@@ -2844,7 +3088,7 @@ clear_shm:
+@@ -2829,7 +3072,7 @@ clear_shm:
+ 
          /* write "abort" event with the same input */
-         if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, conn->cid, request_id, cur_priority,
-                 SR_SUB_EV_ABORT, orig_name, orig_data, subscriber_count, &shm_data_sub, input_lyb, input_lyb_len,
--                path))) {
-+                path, NULL, 0))) {
+         if ((err_info = sr_shmsub_notify_write_event(sub_shm, conn->cid, request_id, cur_priority, SR_SUB_EV_ABORT,
+-                orig_name, orig_data, subscriber_count, &shm_data_sub, NULL, input_lyb, input_lyb_len, path))) {
++                orig_name, orig_data, subscriber_count, &shm_data_sub, NULL, input_lyb, input_lyb_len, path, NULL, 0))) {
              goto cleanup_wrunlock;
          }
  
-@@ -2974,7 +3218,7 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
-     /* write the notification, use first subscriber CID - works better than the originator */
-     request_id = multi_sub_shm->request_id + 1;
-     if ((err_info = sr_shmsub_multi_notify_write_event(multi_sub_shm, sub_cid, request_id, 0, SR_SUB_EV_NOTIF,
--            orig_name, orig_data, notif_sub_count, &shm_data_sub, data, data_len, ly_mod->name))) {
-+            orig_name, orig_data, notif_sub_count, &shm_data_sub, data, data_len, ly_mod->name, NULL, 0))) {
+@@ -2963,7 +3206,7 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
+     /* write the notification, use first subscriber CID if not waiting - depends on the subscriber, not originator */
+     request_id = sub_shm->request_id + 1;
+     if ((err_info = sr_shmsub_notify_write_event(sub_shm, wait ? conn->cid : sub_cid, request_id, 0, SR_SUB_EV_NOTIF,
+-            orig_name, orig_data, notif_sub_count, &shm_data_sub, NULL, data, data_len, ly_mod->name))) {
++            orig_name, orig_data, notif_sub_count, &shm_data_sub, NULL, data, data_len, ly_mod->name, NULL, 0))) {
          goto cleanup_ext_sub_unlock;
      }
  
-@@ -3006,6 +3250,9 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
+@@ -2995,6 +3238,9 @@ sr_shmsub_notif_notify(sr_conn_ctx_t *conn, const struct lyd_node *notif, struct
  
          /* we do not care about an error */
          sr_errinfo_free(&cb_err_info);
 +    } else {
 +        /* clear the orig_cid */
-+        multi_sub_shm->orig_cid = 0;
++        sub_shm->orig_cid = 0;
      }
  
  cleanup_sub_unlock:
-@@ -3349,7 +3596,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3310,7 +3556,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
      sr_error_info_t *err_info = NULL;
      uint32_t i, data_len = 0, valid_subscr_count;
      char *data = NULL, *shm_data_ptr;
@@ -944,33 +947,32 @@ index 1e87995..5380ca0 100644
      sr_lock_mode_t sub_lock = SR_LOCK_NONE;
      struct lyd_node *diff;
      sr_data_t *edit_data;
-@@ -3360,6 +3607,12 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
-     sr_session_ctx_t *ev_sess = NULL;
+@@ -3322,6 +3568,11 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
      struct info_sub_s sub_info;
  
+     sub_shm = (sr_sub_shm_t *)change_subs->sub_shm.addr;
 +    uint32_t filtered = 0;
 +    uint32_t not_new_event = 0;
 +    uint32_t first_new_event_sub_idx = 0;
 +    uint32_t xpath_count = 0;
 +    uint32_t *xpath_ids = NULL;
-+
-     multi_sub_shm = (sr_multi_sub_shm_t *)change_subs->sub_shm.addr;
  
      for (i = 0; i < change_subs->sub_count; ++i) {
-@@ -3371,6 +3624,8 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
-         /* no new module event */
+         if (sr_shmsub_change_listen_is_new_event(sub_shm, &change_subs->subs[i])) {
+@@ -3333,6 +3584,8 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
          goto cleanup;
      }
-+    
-+    first_new_event_sub_idx = i;
  
++    first_new_event_sub_idx = i;
++
      /* SUB READ LOCK */
-     if ((err_info = sr_rwlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
-@@ -3399,12 +3654,18 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
-     sub_info.event = ATOMIC_LOAD_RELAXED(multi_sub_shm->event);
-     sub_info.request_id = ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id);
-     sub_info.priority = ATOMIC_LOAD_RELAXED(multi_sub_shm->priority);
-+    xpath_count = multi_sub_shm->xpath_count;
+     if ((err_info = sr_rwlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
+             NULL, NULL))) {
+@@ -3360,12 +3613,18 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+     sub_info.event = ATOMIC_LOAD_RELAXED(sub_shm->event);
+     sub_info.request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
+     sub_info.priority = ATOMIC_LOAD_RELAXED(sub_shm->priority);
++    xpath_count = sub_shm->xpath_count;
  
      /* parse originator name and data (while creating the event session) */
      if ((err_info = _sr_session_start(conn, change_subs->ds, sub_info.event, &shm_data_ptr, &ev_sess))) {
@@ -985,17 +987,17 @@ index 1e87995..5380ca0 100644
      /* parse event diff */
      if ((err_info = sr_lyd_parse_data(conn->ly_ctx, shm_data_ptr, NULL, LYD_LYB,
              LYD_PARSE_STORE_ONLY | LYD_PARSE_STRICT | LYD_PARSE_ORDERED, 0, &diff))) {
-@@ -3428,6 +3689,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3389,6 +3648,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
      for ( ; i < change_subs->sub_count; ++i) {
          change_sub = &change_subs->subs[i];
-         if (!sr_shmsub_change_listen_is_new_event(multi_sub_shm, change_sub)) {
+         if (!sr_shmsub_change_listen_is_new_event(sub_shm, change_sub)) {
 +            not_new_event++;
              continue;
          }
  
-@@ -3435,10 +3697,27 @@ process_event:
+@@ -3396,10 +3656,27 @@ process_event:
          /* SUB UNLOCK */
-         sr_rwunlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, sub_lock, conn->cid, __func__);
+         sr_rwunlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, sub_lock, conn->cid, __func__);
          sub_lock = SR_LOCK_NONE;
 -
 +        filter_valid = 0;
@@ -1013,7 +1015,7 @@ index 1e87995..5380ca0 100644
 +                filtered++;
 +                ATOMIC_INC_RELAXED(change_sub->filtered_out);
 +                /* Reacquire lock and continue to next subscription */
-+                if ((err_info = sr_rwlock(&multi_sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
++                if ((err_info = sr_rwlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
 +                        NULL, NULL))) {
 +                    goto cleanup;
 +                }
@@ -1024,21 +1026,21 @@ index 1e87995..5380ca0 100644
              ret = change_sub->cb(ev_sess, change_sub->sub_id, change_subs->module_name, change_sub->xpath,
                      sr_ev2api(sub_info.event), sub_info.request_id, change_sub->private_data);
          } else if (!(change_sub->opts & SR_SUBSCR_FILTER_ORIG)) {
-@@ -3484,6 +3763,13 @@ process_event:
-         ATOMIC_STORE_RELAXED(change_sub->event, ATOMIC_LOAD_RELAXED(multi_sub_shm->event));
+@@ -3445,6 +3722,13 @@ process_event:
+         ATOMIC_STORE_RELAXED(change_sub->event, ATOMIC_LOAD_RELAXED(sub_shm->event));
      }
  
 +    if (change_subs->sub_count == not_new_event + filtered + first_new_event_sub_idx) {
 +        SR_LOG_INF("No events processed for request ID %" PRIuFAST32 " event %" PRIuFAST32,
-+                ATOMIC_LOAD_RELAXED(multi_sub_shm->request_id),
-+                ATOMIC_LOAD_RELAXED(multi_sub_shm->event));
++                ATOMIC_LOAD_RELAXED(sub_shm->request_id),
++                ATOMIC_LOAD_RELAXED(sub_shm->event));
 +        goto cleanup;
 +    }
 +
      /*
       * prepare additional event data written into subscription data SHM
       */
-@@ -3931,6 +4217,7 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
+@@ -3833,6 +4117,7 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
      int found;
      sr_session_ctx_t *ev_sess = NULL;
      sr_get_options_t get_opts;
@@ -1046,7 +1048,7 @@ index 1e87995..5380ca0 100644
  
      /* find LY module */
      ly_mod = ly_ctx_get_module_implemented(conn->ly_ctx, oper_poll_subs->module_name);
-@@ -4033,10 +4320,14 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
+@@ -3935,10 +4220,14 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
              if (mod_info.diff) {
                  /* publish "update" event to update the data/diff */
                  if ((err_info = sr_modinfo_change_notify_update(&mod_info, NULL, SR_CHANGE_CB_TIMEOUT, &change_sub_lock,
@@ -1062,7 +1064,7 @@ index 1e87995..5380ca0 100644
                  if (cb_err_info) {
                      /* return callback error if some was generated */
                      sr_errinfo_merge(&err_info, cb_err_info);
-@@ -4074,7 +4365,7 @@ finish_iter:
+@@ -3976,7 +4265,7 @@ finish_iter:
  
          if (mod_info.diff) {
              /* publish "change" event, we do not care about callback failure */
@@ -1071,7 +1073,7 @@ index 1e87995..5380ca0 100644
                  goto cleanup_unlock;
              }
              sr_errinfo_free(&cb_err_info);
-@@ -4101,6 +4392,8 @@ cleanup_unlock:
+@@ -4003,6 +4292,8 @@ cleanup_unlock:
      sr_rwunlock(&conn->oper_cache_lock, SR_CONN_OPER_CACHE_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
  
  cleanup:
@@ -1080,7 +1082,7 @@ index 1e87995..5380ca0 100644
      lyd_free_siblings(mod_info.diff);
      free(mod_info.mods);
      return err_info;
-@@ -4965,3 +5258,21 @@ error:
+@@ -4869,3 +5160,21 @@ error:
      pthread_detach(pthread_self());
      return NULL;
  }
@@ -1103,7 +1105,7 @@ index 1e87995..5380ca0 100644
 +}
 +
 diff --git a/src/shm_sub.h b/src/shm_sub.h
-index 823c8ae..b9ae665 100644
+index 42cf05d..ef83e42 100644
 --- a/src/shm_sub.h
 +++ b/src/shm_sub.h
 @@ -132,7 +132,7 @@ sr_error_info_t *sr_shmsub_change_notify_clear(struct sr_mod_info_s *mod_info);
@@ -1123,18 +1125,18 @@ index 823c8ae..b9ae665 100644
 +
  #endif /* _SHM_SUB_H */
 diff --git a/src/shm_types.h b/src/shm_types.h
-index 798a4c0..86f735a 100644
+index d8a3392..c921365 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -188,6 +188,7 @@ typedef struct {
-     ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
-     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+@@ -184,6 +184,7 @@ typedef struct {
+     uint32_t content_id;        /**< Context content ID of the latest context. */
+ 
      ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
 +    ATOMIC_T new_xpath_id;      /**< New rwlock ID to track sr_rwlock_t locks */
- } sr_main_shm_t;
- 
- /**
-@@ -201,6 +202,7 @@ typedef struct {
+     ATOMIC_T new_sr_cid;        /**< Connection ID for a new connection. */
+     ATOMIC_T new_sr_sid;        /**< SID for a new session. */
+     ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
+@@ -203,6 +204,7 @@ typedef struct {
      uint32_t evpipe_num;        /**< Event pipe number. */
      ATOMIC_T suspended;         /**< Whether the subscription is suspended. */
      sr_cid_t cid;               /**< Connection ID. */
@@ -1142,16 +1144,16 @@ index 798a4c0..86f735a 100644
  } sr_mod_change_sub_t;
  
  /**
-@@ -373,6 +375,7 @@ typedef struct {
-     /* specific fields */
+@@ -363,6 +365,7 @@ typedef struct {
+ 
      ATOMIC_T priority;          /**< Priority of the subscriber. */
      uint32_t subscriber_count;  /**< Number of subscribers to process this event. */
 +    uint32_t xpath_count;       /**< Number of xpaths in the shm that match filter. */
- } sr_multi_sub_shm_t;
+ } sr_sub_shm_t;
  
  #endif /* _SHM_TYPES_H */
 diff --git a/src/subscr.c b/src/subscr.c
-index dcf1796..cd8062b 100644
+index e856911..f10aa64 100644
 --- a/src/subscr.c
 +++ b/src/subscr.c
 @@ -38,7 +38,7 @@
@@ -1186,10 +1188,10 @@ index 710287e..4645820 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 484fb09..da7dac0 100644
+index 5d50d46..9777579 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3697,6 +3697,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3765,6 +3765,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      uint32_t sid = 0;
      char *orig_name = NULL;
      void *orig_data = NULL;
@@ -1197,7 +1199,7 @@ index 484fb09..da7dac0 100644
  
      *cb_err_info = NULL;
  
-@@ -3788,7 +3789,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3856,7 +3857,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      change_sub_lock = SR_LOCK_READ;
  
      /* first publish "update" event for the diff to be updated */
@@ -1206,7 +1208,7 @@ index 484fb09..da7dac0 100644
              *cb_err_info) {
          goto cleanup;
      }
-@@ -3798,8 +3799,12 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3866,8 +3867,12 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
          goto store;
      }
  
@@ -1220,7 +1222,7 @@ index 484fb09..da7dac0 100644
          goto cleanup;
      }
      if (*cb_err_info) {
-@@ -3848,6 +3853,7 @@ cleanup:
+@@ -3916,6 +3921,7 @@ cleanup:
      }
  
      free(denied.rule_name);
@@ -1228,7 +1230,7 @@ index 484fb09..da7dac0 100644
      return err_info;
  }
  
-@@ -5217,10 +5223,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5285,10 +5291,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      sr_conn_ctx_t *conn;
      uint32_t sub_id;
      sr_subscr_options_t sub_opts;
@@ -1241,7 +1243,7 @@ index 484fb09..da7dac0 100644
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
              !callback || !subscription, session, err_info);
-@@ -5230,12 +5237,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5298,12 +5305,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
          xpath = NULL;
      }
  
@@ -1256,7 +1258,7 @@ index 484fb09..da7dac0 100644
  
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -5300,11 +5306,14 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5368,11 +5374,14 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
       */
  
      /* add module subscription into ext SHM and create separate specific SHM segment */
@@ -1272,7 +1274,7 @@ index 484fb09..da7dac0 100644
      /* SUBS WRITE LOCK */
      if ((err_info = sr_rwlock(&(*subscription)->subs_lock, SR_SUBSCR_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
              __func__, NULL, NULL))) {
-@@ -5313,7 +5322,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5381,7 +5390,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      subs_lock_held = 1;
  
      /* add subscription into structure */
@@ -1281,7 +1283,7 @@ index 484fb09..da7dac0 100644
              priority, sub_opts, SR_LOCK_WRITE, &is_event_pending))) {
          goto error1;
      }
-@@ -5351,6 +5360,7 @@ cleanup:
+@@ -5419,6 +5428,7 @@ cleanup:
      }
  
      if (chsub_lock_mode != SR_LOCK_NONE) {
@@ -1289,7 +1291,7 @@ index 484fb09..da7dac0 100644
          /* CHANGE SUB UNLOCK */
          sr_rwunlock(&shm_mod->change_sub[session->ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, chsub_lock_mode, conn->cid, __func__);
      }
-@@ -7015,6 +7025,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7083,6 +7093,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_subscr_options_t sub_opts;
      sr_mod_t *shm_mod;
      uint32_t prio = 0;
@@ -1297,7 +1299,7 @@ index 484fb09..da7dac0 100644
  
      SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !module_name || !path || !callback || !subscription,
              session, err_info);
-@@ -7074,7 +7085,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7142,7 +7153,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      }
  
      /* add oper get subscription into ext SHM and create separate specific SHM segment */
@@ -1307,10 +1309,10 @@ index 484fb09..da7dac0 100644
          goto cleanup_unlock2;
      }
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 6fdd1a7..5d4cab4 100644
+index 1daadc5..2d4ccc4 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
-@@ -466,7 +466,13 @@ typedef enum sr_subscr_flag_e {
+@@ -469,7 +469,13 @@ typedef enum sr_subscr_flag_e {
       * is called no more than once, regardless of whether the subscription path is a child of a list.
       * When this option is specified, a parent node is not passed to the subscriber's callback.
       */
@@ -1326,10 +1328,10 @@ index 6fdd1a7..5d4cab4 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 9485460..e72f7ff 100644
+index acefb63..33d80e7 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7060,9 +7060,8 @@ test_write_starve(void **state)
+@@ -7143,9 +7143,8 @@ test_write_starve(void **state)
  static void *
  apply_when1_thread(void *arg)
  {
@@ -1340,7 +1342,7 @@ index 9485460..e72f7ff 100644
      sr_session_ctx_t *sess;
      int ret;
  
-@@ -7101,7 +7100,6 @@ static void *
+@@ -7184,7 +7183,6 @@ static void *
  apply_when2_thread(void *arg)
  {
      sr_conn_ctx_t *conn;
@@ -1348,7 +1350,7 @@ index 9485460..e72f7ff 100644
      (void)arg;
      sr_session_ctx_t *sess;
      int ret;
-@@ -7155,7 +7153,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
+@@ -7238,7 +7236,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
      (void)event;
      (void)request_id;
      (void)private_data;

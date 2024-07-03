@@ -14,10 +14,10 @@ Closes: ENG-6310
  1 file changed, 9 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 8471c36..6bdc550 100644
+index bb5a5c7..dfb74eb 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3957,6 +3957,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+@@ -4027,6 +4027,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
      sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
      struct sr_mod_info_s mod_info;
      uint32_t mi_opts;
@@ -25,7 +25,7 @@ index 8471c36..6bdc550 100644
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds), session, err_info);
  
-@@ -3986,6 +3987,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+@@ -4056,6 +4057,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
          goto cleanup;
      }
  
@@ -35,7 +35,7 @@ index 8471c36..6bdc550 100644
      /* create diff */
      if (mod_info.ds == SR_DS_OPERATIONAL) {
          err_info = sr_modinfo_edit_merge(&mod_info, session->dt[session->ds].edit->tree, 1);
-@@ -4008,12 +4012,17 @@ cleanup:
+@@ -4078,12 +4082,17 @@ cleanup:
          /* free applied edit */
          sr_release_data(session->dt[session->ds].edit);
          session->dt[session->ds].edit = NULL;

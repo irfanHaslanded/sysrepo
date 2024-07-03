@@ -24,7 +24,7 @@ index c80db1e..03af25a 100644
          set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 3b0df8a..375f4b9 100644
+index c77770b..fabe048 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -34,6 +34,9 @@
@@ -81,7 +81,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
-@@ -2807,8 +2810,8 @@ subscribe_change_any_thread(void *arg)
+@@ -2890,8 +2893,8 @@ subscribe_change_any_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -92,7 +92,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
-@@ -3450,8 +3453,8 @@ subscribe_change_dflt_leaf_thread(void *arg)
+@@ -3533,8 +3536,8 @@ subscribe_change_dflt_leaf_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -103,7 +103,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
-@@ -4165,8 +4168,8 @@ subscribe_change_dflt_leaflist_thread(void *arg)
+@@ -4248,8 +4251,8 @@ subscribe_change_dflt_leaflist_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -114,7 +114,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
-@@ -4410,8 +4413,8 @@ subscribe_change_dflt_choice_thread(void *arg)
+@@ -4493,8 +4496,8 @@ subscribe_change_dflt_choice_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -125,7 +125,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
-@@ -4948,8 +4951,8 @@ subscribe_change_done_when_thread(void *arg)
+@@ -5031,8 +5034,8 @@ subscribe_change_done_when_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -136,7 +136,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
-@@ -5347,8 +5350,8 @@ subscribe_change_done_xpath_thread(void *arg)
+@@ -5430,8 +5433,8 @@ subscribe_change_done_xpath_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -147,7 +147,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 8);
-@@ -5460,8 +5463,8 @@ subscribe_change_unlocked_thread(void *arg)
+@@ -5543,8 +5546,8 @@ subscribe_change_unlocked_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -158,7 +158,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-@@ -5545,12 +5548,12 @@ apply_change_timeout_thread(void *arg)
+@@ -5628,12 +5631,12 @@ apply_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      /* perform the change, time out but give it some time so that the callback is at least called) */
@@ -173,7 +173,7 @@ index 3b0df8a..375f4b9 100644
      assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
      pthread_barrier_wait(&st->barrier2);
  
-@@ -5598,8 +5601,8 @@ subscribe_change_timeout_thread(void *arg)
+@@ -5681,8 +5684,8 @@ subscribe_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -184,7 +184,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-@@ -5608,8 +5611,8 @@ subscribe_change_timeout_thread(void *arg)
+@@ -5691,8 +5694,8 @@ subscribe_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -195,7 +195,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
-@@ -5696,7 +5699,7 @@ apply_done_timeout_thread(void *arg)
+@@ -5779,7 +5782,7 @@ apply_done_timeout_thread(void *arg)
      /* try again, time out again (callback is called but gets stuck) */
      ret = sr_set_item_str(sess, "/test:test-leaf", "31", NULL, 0);
      assert_int_equal(ret, SR_ERR_OK);
@@ -204,7 +204,7 @@ index 3b0df8a..375f4b9 100644
      assert_int_equal(ret, SR_ERR_OK);
  
      /* unstuck the callback so it finishes */
-@@ -5741,11 +5744,11 @@ subscribe_done_timeout_thread(void *arg)
+@@ -5824,11 +5827,11 @@ subscribe_done_timeout_thread(void *arg)
  
      /* keep handling events */
      count = 0;
@@ -218,7 +218,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
  
-@@ -5754,11 +5757,11 @@ subscribe_done_timeout_thread(void *arg)
+@@ -5837,11 +5840,11 @@ subscribe_done_timeout_thread(void *arg)
  
      /* keep handling events */
      count = 0;
@@ -232,7 +232,7 @@ index 3b0df8a..375f4b9 100644
          ++count;
      }
  
-@@ -6509,8 +6512,8 @@ subscribe_change_userord_thread(void *arg)
+@@ -6592,8 +6595,8 @@ subscribe_change_userord_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
