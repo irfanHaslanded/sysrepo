@@ -1,3 +1,19 @@
+sysrepo (2.10.4-1) unstable; urgency=medium
+
+  [ IrfanMohammad ]
+  * sr_unsubscribe without change_sub WRITE lock
+  * shutdown-mgr to disable oper discard on disconnect
+  * systemd add sysrepo-shutdown-mgr service
+  * update the SHM VERSION
+  * Lower sr_apply_changes result log to debug level
+  * shm_sub BUGFIX donot store error on lost_lock
+  * shm_sub REFACTOR recover, new lock and notify wait
+  * sysrepocfg UPDATE log api errors (#3328)
+  * shm_sub BUGFIX clear left over event and orig_cid
+  * update patches for upstream/v2.10.4
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Wed, 03 Jul 2024 23:33:21 +0000
+
 sysrepo (2.3.10-1) unstable; urgency=medium
 
   [ IrfanMohammad ]
