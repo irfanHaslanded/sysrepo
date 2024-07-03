@@ -146,27 +146,30 @@ print_change(sr_change_oper_t op, sr_val_t *old_val, sr_val_t *new_val)
 }
 
 static int
-print_current_config(sr_session_ctx_t *session, const char *module_name)
+print_current_data(sr_session_ctx_t *session, const char *module_name, const char *path)
 {
-    sr_val_t *values = NULL;
-    size_t count = 0;
     int rc = SR_ERR_OK;
-    char *xpath;
+    char *xpath = path ? strdup(path) : NULL;
+    sr_data_t *data;
 
-    if (asprintf(&xpath, "/%s:*//.", module_name) == -1) {
-        return SR_ERR_NO_MEMORY;
+    if (!xpath) {
+        if (asprintf(&xpath, "/%s:*", module_name) == -1) {
+            return SR_ERR_NO_MEMORY;
+        }
     }
-    rc = sr_get_items(session, xpath, 0, 0, &values, &count);
+    rc = sr_get_data(session, xpath, 0, 0, 0, &data);
     free(xpath);
+
     if (rc != SR_ERR_OK) {
         return rc;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        print_val(&values[i]);
+    rc = lyd_print_fd(STDOUT_FILENO, data->tree, LYD_JSON, LYD_PRINT_WITHSIBLINGS);
+    if (rc) {
+        return rc;
     }
-    sr_free_values(values, count);
 
+    sr_release_data(data);
     return rc;
 }
 
@@ -220,8 +223,8 @@ module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_
     printf("\n ========== END OF CHANGES =======================================");
 
     if (event == SR_EV_DONE) {
-        printf("\n\n ========== CONFIG HAS CHANGED, CURRENT RUNNING CONFIG: ==========\n\n");
-        if (print_current_config(session, module_name) != SR_ERR_OK) {
+        printf("\n\n ========== DATA HAS CHANGED, CURRENT DATA: ==========\n\n");
+        if (print_current_data(session, module_name, path) != SR_ERR_OK) {
             goto cleanup;
         }
     }
@@ -320,8 +323,8 @@ main(int argc, char **argv)
     }
 
     /* read current config */
-    printf("\n ========== READING RUNNING CONFIG: ==========\n\n");
-    if (print_current_config(session, mod_name) != SR_ERR_OK) {
+    printf("\n ========== READING CURRENT DATA: ==========\n\n");
+    if (print_current_data(session, mod_name, xpath) != SR_ERR_OK) {
         goto cleanup;
     }
 
