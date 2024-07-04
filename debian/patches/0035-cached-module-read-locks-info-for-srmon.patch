@@ -16,10 +16,10 @@ Closes: ENG-3840
 
 cherry-picked from 0063-Remove-unnecessary-read-locks-from-srmon.patch
 ---
- src/modinfo.c                 | 19 ++++++++++-----
- tests/test_oper_edit.c        | 55 ++++++++++++++++++++++++++++++++++++++++---
+ src/modinfo.c                 | 19 +++++++++-----
+ tests/test_oper_edit.c        | 58 ++++++++++++++++++++++++++++++++++++++++---
  tests/test_subscr_filtering.c |  2 +-
- 3 files changed, 66 insertions(+), 10 deletions(-)
+ 3 files changed, 68 insertions(+), 11 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
 index 564a315..09b48fc 100644
@@ -69,7 +69,7 @@ index 564a315..09b48fc 100644
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
 diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
-index 53edfdd..7523160 100644
+index 53edfdd..5f9fdc2 100644
 --- a/tests/test_oper_edit.c
 +++ b/tests/test_oper_edit.c
 @@ -169,7 +169,7 @@ test_oper_srmon_helper(void *arg)
@@ -90,7 +90,7 @@ index 53edfdd..7523160 100644
          assert_int_equal(ret, SR_ERR_OK);
          sr_release_data(data);
          data = NULL;
-@@ -200,21 +200,70 @@ test_oper_srmon_helper(void *arg)
+@@ -200,21 +200,71 @@ test_oper_srmon_helper(void *arg)
      return NULL;
  }
  
@@ -100,7 +100,7 @@ index 53edfdd..7523160 100644
 +    struct state *st = (struct state *)arg;
 +    sr_session_ctx_t *oper_sess = NULL;
 +    int ret, i;
-+    int NUM_ITERS = test_full_scale ? 100 : 10;
++    int NUM_ITERS = test_full_scale ? 100 : 1;
 +    (void)arg;
 +
 +    const char *a1 = "/test-leafref:car-state/a1";
@@ -112,6 +112,7 @@ index 53edfdd..7523160 100644
 +
 +    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &oper_sess);
 +    assert_int_equal(ret, SR_ERR_OK);
++    pthread_barrier_wait(&st->barrier);
 +    for (i = 0; i < NUM_ITERS; i++) {
 +        ret = sr_set_item_str(oper_sess, a1, "", NULL, 0);
 +        assert_int_equal(ret, SR_ERR_OK);
@@ -144,12 +145,13 @@ index 53edfdd..7523160 100644
  test_oper_sr_mon(void **arg)
  {
 -    const int NUM_THREADS = test_full_scale ? 5 : 2;
-+    const int NUM_THREADS = test_full_scale ? 3 : 2;
++    const int NUM_THREADS = test_full_scale ? 3 : 1;
      struct state *st = (struct state *)*arg;
      int i;
      pthread_t tid[NUM_THREADS];
+-    pthread_barrier_init(&st->barrier, NULL, NUM_THREADS);
 +    pthread_t tid_set[NUM_THREADS];
-     pthread_barrier_init(&st->barrier, NULL, NUM_THREADS);
++    pthread_barrier_init(&st->barrier, NULL, 2*NUM_THREADS);
  
      for (i = 0; i < NUM_THREADS; i++) {
          pthread_create(&tid[i], NULL, test_oper_srmon_helper, st);

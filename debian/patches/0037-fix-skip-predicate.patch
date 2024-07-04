@@ -199,7 +199,7 @@ index 0000000..613042b
 +  }
 +}
 diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
-index 7523160..e570b5b 100644
+index 5f9fdc2..4f9b941 100644
 --- a/tests/test_oper_edit.c
 +++ b/tests/test_oper_edit.c
 @@ -48,6 +48,8 @@ setup_f(void **state)
@@ -278,7 +278,7 @@ index 7523160..e570b5b 100644
  static void
  test_leafref_oper_data(void **arg)
  {
-@@ -272,6 +327,7 @@ int
+@@ -273,6 +328,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {
