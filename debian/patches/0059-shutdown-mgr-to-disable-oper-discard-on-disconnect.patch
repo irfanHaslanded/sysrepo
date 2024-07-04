@@ -286,7 +286,7 @@ index c921365..85db8c8 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 38c5bbd..4989896 100644
+index c39e00f..fd8b5c9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)

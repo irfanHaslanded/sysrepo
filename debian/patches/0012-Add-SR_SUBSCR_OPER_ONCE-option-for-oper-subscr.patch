@@ -64,10 +64,10 @@ index 9edb449..1a22d53 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index a1b7b0f..2013b22 100644
+index 6016b0e..e7dadcf 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7067,7 +7067,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7076,7 +7076,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */

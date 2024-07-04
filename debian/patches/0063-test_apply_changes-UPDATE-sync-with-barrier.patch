@@ -1,0 +1,35 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Thu, 4 Jul 2024 17:39:03 +0000
+Subject: test_apply_changes UPDATE sync with barrier
+
+Additional fix is needed for apply_change_userord_thread where we must
+sync unsubscribe or else the subscription callback can be called for the
+clean up portion of the test.
+---
+ tests/test_apply_changes.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
+index c9d0147..77bfa3c 100644
+--- a/tests/test_apply_changes.c
++++ b/tests/test_apply_changes.c
+@@ -6506,7 +6506,8 @@ apply_change_userord_thread(void *arg)
+     sr_release_data(data);
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
+ 
+-    /* signal that we have finished applying changes */
++    /* signal that we have finished applying changes and wait for unsubscribe */
++    pthread_barrier_wait(&st->barrier);
+     pthread_barrier_wait(&st->barrier);
+ 
+     /* cleanup */
+@@ -6541,6 +6542,9 @@ subscribe_change_userord_thread(void *arg)
+ 
+     sr_unsubscribe(subscr);
+ 
++    /* signal that subscription was removed */
++    pthread_barrier_wait(&st->barrier);
++
+     sr_session_stop(sess);
+     return NULL;
+ }

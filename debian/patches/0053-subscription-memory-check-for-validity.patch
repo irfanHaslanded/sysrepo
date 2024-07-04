@@ -42,7 +42,7 @@ index 4faad2e..3611c70 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index b6cd400..0ec758c 100644
+index 5b54e09..45a2380 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -5048,6 +5048,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
@@ -108,7 +108,7 @@ index b6cd400..0ec758c 100644
      if (!*subscription) {
          /* create a new subscription */
          if ((err_info = sr_subscr_new(conn, opts, subscription))) {
-@@ -5989,8 +6013,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
+@@ -5998,8 +6022,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
      sr_mod_t *shm_mod = NULL;
      int is_ext;
  
@@ -119,7 +119,7 @@ index b6cd400..0ec758c 100644
  
      conn = session->conn;
  
-@@ -6663,7 +6687,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+@@ -6672,7 +6696,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
              (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
              (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
              (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
@@ -128,7 +128,7 @@ index b6cd400..0ec758c 100644
      conn = session->conn;
  
      /* CONTEXT LOCK */
-@@ -7161,8 +7185,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7170,8 +7194,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      uint32_t prio = 0;
      uint32_t xpath_id = 0;
  
@@ -139,7 +139,7 @@ index b6cd400..0ec758c 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -7283,7 +7307,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7292,7 +7316,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_mod_t *shm_mod;
      struct modsub_operpoll_s *oper_poll_subs;
  

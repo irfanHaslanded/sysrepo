@@ -32,7 +32,7 @@ index cffe1e7..53f4b8b 100644
              } else {
                  sr_val->type = SR_ENUM_T;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ea36c6c..dfda990 100644
+index c2a2cef..94ad2d7 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -2862,7 +2862,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,

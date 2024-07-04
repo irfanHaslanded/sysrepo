@@ -89,10 +89,10 @@ index 53f4b8b..4bfdf97 100644
      if (is_priviliged < 0) {
          is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 836a190..4a2e5f3 100644
+index 5b2e021..00d1ccc 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7318,7 +7318,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7327,7 +7327,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -101,7 +101,7 @@ index 836a190..4a2e5f3 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7328,8 +7328,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7337,8 +7337,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -112,7 +112,7 @@ index 836a190..4a2e5f3 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7343,6 +7344,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7352,6 +7353,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;

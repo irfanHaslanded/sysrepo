@@ -14,7 +14,7 @@ Closes: ENG-6310
  1 file changed, 9 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index bb5a5c7..dfb74eb 100644
+index 664f436..de49580 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -4027,6 +4027,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)

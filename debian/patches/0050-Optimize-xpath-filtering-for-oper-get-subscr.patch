@@ -285,10 +285,10 @@ index 09b48fc..bf54268 100644
      lyd_free_siblings(mod_data);
      return err_info;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index f0ef322..acb9744 100644
+index 2db6bd7..0c5fed6 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7497,3 +7497,81 @@ cleanup:
+@@ -7506,3 +7506,81 @@ cleanup:
      }
  }
  

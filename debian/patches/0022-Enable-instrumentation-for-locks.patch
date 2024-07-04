@@ -879,7 +879,7 @@ index bd48960..a16fef5 100644
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4a2e5f3..1472d7c 100644
+index 00d1ccc..359e5ce 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);

@@ -1188,7 +1188,7 @@ index 710287e..4645820 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5d50d46..9777579 100644
+index d73fe7d..228c898 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3765,6 +3765,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
@@ -1291,7 +1291,7 @@ index 5d50d46..9777579 100644
          /* CHANGE SUB UNLOCK */
          sr_rwunlock(&shm_mod->change_sub[session->ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, chsub_lock_mode, conn->cid, __func__);
      }
-@@ -7083,6 +7093,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7092,6 +7102,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_subscr_options_t sub_opts;
      sr_mod_t *shm_mod;
      uint32_t prio = 0;
@@ -1299,7 +1299,7 @@ index 5d50d46..9777579 100644
  
      SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !module_name || !path || !callback || !subscription,
              session, err_info);
-@@ -7142,7 +7153,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7151,7 +7162,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      }
  
      /* add oper get subscription into ext SHM and create separate specific SHM segment */
@@ -1328,10 +1328,10 @@ index 1daadc5..2d4ccc4 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index acefb63..33d80e7 100644
+index f3ec2c2..32a6453 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7143,9 +7143,8 @@ test_write_starve(void **state)
+@@ -7076,9 +7076,8 @@ test_write_starve(void **state)
  static void *
  apply_when1_thread(void *arg)
  {
@@ -1342,7 +1342,7 @@ index acefb63..33d80e7 100644
      sr_session_ctx_t *sess;
      int ret;
  
-@@ -7184,7 +7183,6 @@ static void *
+@@ -7117,7 +7116,6 @@ static void *
  apply_when2_thread(void *arg)
  {
      sr_conn_ctx_t *conn;
@@ -1350,7 +1350,7 @@ index acefb63..33d80e7 100644
      (void)arg;
      sr_session_ctx_t *sess;
      int ret;
-@@ -7238,7 +7236,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
+@@ -7171,7 +7169,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
      (void)event;
      (void)request_id;
      (void)private_data;
