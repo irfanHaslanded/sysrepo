@@ -176,10 +176,10 @@ index 21216ae..311632b 100644
   * @brief Remove an installed module from sysrepo.
   *
 diff --git a/tests/test_modules.c b/tests/test_modules.c
-index 929e7b0..3027d02 100644
+index 979b84f..a3419bf 100644
 --- a/tests/test_modules.c
 +++ b/tests/test_modules.c
-@@ -1568,10 +1568,50 @@ test_running_disabled(void **state)
+@@ -1569,10 +1569,50 @@ test_running_disabled(void **state)
      assert_int_equal(ret, SR_ERR_OK);
  }
  

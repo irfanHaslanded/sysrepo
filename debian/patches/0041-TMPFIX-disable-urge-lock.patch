@@ -44,10 +44,10 @@ index aa0ac01..1daaee6 100644
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index d6df3b1..c9d0147 100644
+index d9128ce..77bfa3c 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7966,12 +7966,13 @@ main(void)
+@@ -7970,12 +7970,13 @@ main(void)
          cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),

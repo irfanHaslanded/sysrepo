@@ -1328,10 +1328,10 @@ index 1daadc5..2d4ccc4 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index f3ec2c2..32a6453 100644
+index 9a78136..97c9d35 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7076,9 +7076,8 @@ test_write_starve(void **state)
+@@ -7080,9 +7080,8 @@ test_write_starve(void **state)
  static void *
  apply_when1_thread(void *arg)
  {
@@ -1342,7 +1342,7 @@ index f3ec2c2..32a6453 100644
      sr_session_ctx_t *sess;
      int ret;
  
-@@ -7117,7 +7116,6 @@ static void *
+@@ -7121,7 +7120,6 @@ static void *
  apply_when2_thread(void *arg)
  {
      sr_conn_ctx_t *conn;
@@ -1350,7 +1350,7 @@ index f3ec2c2..32a6453 100644
      (void)arg;
      sr_session_ctx_t *sess;
      int ret;
-@@ -7171,7 +7169,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
+@@ -7175,7 +7173,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
      (void)event;
      (void)request_id;
      (void)private_data;

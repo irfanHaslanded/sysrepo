@@ -59,5 +59,3 @@
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
 0060-shm-sub-UPDATE-wait-a-bit-for-a-lock-after-event-tim.patch
 0061-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
-0062-tests-BUGFIX-warn_unused_result.patch
-0063-test_apply_changes-UPDATE-sync-with-barrier.patch

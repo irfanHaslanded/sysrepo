@@ -43,7 +43,7 @@ index 228c898..e870af8 100644
      }
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 32a6453..becdc0e 100644
+index 97c9d35..6ec90ed 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -3676,7 +3676,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
