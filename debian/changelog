@@ -1,7 +1,9 @@
 sysrepo (2.10.5-1) unstable; urgency=medium
 
   [ IrfanMohammad ]
-  * tests BUGFIX warn_unused_result
+  * test_apply_changes UPDATE sync with barrier
+  * tests BUGFIX warn_unused_result for read
+  * Update patches for upstream/v2.10.5
   * test_apply_changes REFACTOR sync with barrier
   * bugfix tests for valgrind
   * sr_unsubscribe without change_sub WRITE lock
@@ -14,7 +16,7 @@ sysrepo (2.10.5-1) unstable; urgency=medium
   * sysrepocfg UPDATE log api errors (#3328)
   * shm_sub BUGFIX clear left over event and orig_cid
 
- -- Irfan Mohammad <irfan@graphiant.com>  Wed, 03 Jul 2024 23:33:21 +0000
+ -- Irfan Mohammad <irfan@graphiant.com>  Mon, 15 Jul 2024 14:18:07 +0000
 
 sysrepo (2.3.10-1) unstable; urgency=medium
 
