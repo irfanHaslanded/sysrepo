@@ -43,6 +43,10 @@
 
 #define ERRINFO(err, type, func, message) srplg_log_errinfo(err, plugin_name, NULL, type, func " failed on %d in %s [%s].", __LINE__, __FILE__, message);
 
+#define MONGO_LIST_KEY_LEN_BYTES 2 /* MongoDB stores the length of a list key in two bytes */
+#define MONGO_LIST_KEY_LEN_BITS 7 /* MongoDB uses only 7 bits in a byte to store the length of a list key */
+#define MONGO_LIST_KEY_GET_LEN(first_byte, second_byte) ((uint32_t)(first_byte) << MONGO_LIST_KEY_LEN_BITS) | second_byte /* get length of a list key */
+
 typedef struct mongo_data_s {
     mongoc_client_t *client; /* client that connects to the database and manages changes on the data */
     mongoc_database_t *datastore; /* specific database that is currently being managed (startup, running, ...) */
@@ -77,10 +81,45 @@ struct mongo_diff_data {
     struct mongo_diff_inner_data rep_keys; /* array for storing selectors for replace operation */
 };
 
+typedef struct mongo_userordered_data_s {
+    struct lyd_node *ptr;
+    int64_t order;
+} mongo_userordered_data_t;
+
+typedef struct mongo_userordered_list_s {
+    char *name;
+    size_t size;
+    mongo_userordered_data_t *data;
+} mongo_userordered_list_t;
+
+typedef struct mongo_userordered_lists_s {
+    size_t size;
+    mongo_userordered_list_t *lists;
+} mongo_userordered_lists_t;
+
+enum srpds_mongo_ly_types {
+    MONGO_LY_NONE = 0,      /* none */
+    MONGO_LY_CONTAINER,     /* container */
+    MONGO_LY_LIST,          /* list */
+    MONGO_LY_TERM,          /* leaf or leaf-list */
+    MONGO_LY_ANY,           /* anydata or anyxml */
+    MONGO_LY_LIST_UO,       /* user-ordered list */
+    MONGO_LY_LEAFLIST_UO,   /* user-ordered leaf-list */
+    MONGO_LY_OPAQUE,        /* opaque node */
+    MONGO_LY_META,          /* metadata */
+    MONGO_LY_ATTR           /* attribute */
+};
+
 static void
 terminate(void)
 {
     mongoc_cleanup();
+}
+
+static int
+srpds_uo_elem_comp(const void *a, const void *b)
+{
+    return ((mongo_userordered_data_t *)a)->order - ((mongo_userordered_data_t *)b)->order;
 }
 
 /**
@@ -512,7 +551,103 @@ srpds_get_predicate(const struct lyd_node *node, const char **predicate, char **
         return err_info;
     }
     *predicate = *standard + strlen(*no_predicate);
+
     return err_info;
+}
+
+/**
+ * @brief Iterates through @p path in the direction @p direction ,
+ *      finds '/' and returns a pointer to the '/'.
+ *
+ * @param[in] path Path ending with NULL.
+ * @param[in] direction Direction in which to go through @p path .
+ * 1 = from start to end. -1 = from end to start.
+ * @return Pointer to the first occurence of '/' in @p path .
+ */
+static char *
+srpds_path_token(const char *path, int direction)
+{
+    int open_single_quote = 0, open_double_quote = 0;
+
+    if (direction == -1) {
+        path = path + strlen(path) - 1;
+    }
+
+    while (1) {
+        switch (path[0]) {
+        case '\'':
+            if (open_single_quote) {
+                open_single_quote = 0;
+            }
+            /* XPath allows nesting single quotes inside double quotes */
+            else if (!open_double_quote) {
+                open_single_quote = 1;
+            }
+            break;
+        case '"':
+            if (open_double_quote) {
+                open_double_quote = 0;
+            }
+            /* XPath allows nesting double quotes inside single quotes */
+            else if (!open_single_quote) {
+                open_double_quote = 1;
+            }
+            break;
+        case '/':
+            /* return only if we are not inside of a string */
+            if (!open_single_quote && !open_double_quote) {
+                return (char *)path;
+            }
+            break;
+        case '\0':
+            return NULL;
+        }
+        path += direction;
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Change all '/' in the path for ' ', except in the predicate.
+ *
+ * @param[in] path Path.
+ * @param[out] out Allocated result with ' '.
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_get_modif_path(const char *path, char **out)
+{
+    sr_error_info_t *err_info = NULL;
+    char *it = NULL;
+
+    if (asprintf(out, "%s ", path) == -1) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+        goto cleanup;
+    }
+
+    it = *out;
+    while ((it = srpds_path_token(it, 1))) {
+        *it = ' ';
+        ++it;
+    }
+
+cleanup:
+    return err_info;
+}
+
+/**
+ * @brief Get path of the parent node.
+ *
+ * @param[in] path Path of the current node.
+ */
+static void
+srpds_get_parent_path(char *path)
+{
+    char *it = srpds_path_token(path, -1);
+
+    *it = '\0';
 }
 
 /**
@@ -563,7 +698,7 @@ srpds_escape_string(const char *string, char **escaped_string)
     sr_error_info_t *err_info = NULL;
     uint32_t i, count, len = strlen(string);
 
-    *escaped_string = calloc(sizeof(char), 2 * len + 1);
+    *escaped_string = calloc(2 * len + 1, sizeof(char));
     if (!(*escaped_string)) {
         ERRINFO(&err_info, SR_ERR_NO_MEMORY, "calloc()", "")
         return err_info;
@@ -579,6 +714,7 @@ srpds_escape_string(const char *string, char **escaped_string)
         (*escaped_string)[count] = string[i];
     }
     (*escaped_string)[count] = '\0';
+
     return err_info;
 }
 
@@ -593,16 +729,19 @@ srpds_escape_string(const char *string, char **escaped_string)
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath_cnt, char **out)
+srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath_cnt, int *is_valid, bson_t *xpath_filter)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t i;
-    int32_t j;
-    char *tmp = NULL, *path = NULL;
+    char *tmp = NULL, *path = NULL, *escaped_path = NULL;
     struct lyd_node *ctx_node = NULL, *match = NULL;
     uint32_t log_options = 0, *old_options;
+    bson_t top, bottom;
+    LY_ERR lyrc;
 
-    *out = NULL;
+    /* prepare the start of the filter document */
+    bson_init(xpath_filter);
+    bson_append_array_begin(xpath_filter, "$or", 3, &top);
 
     /* create new data node for lyd_find_path to work correctly */
     if (lyd_new_path(NULL, ctx, "/ietf-yang-library:yang-library", NULL, 0, &ctx_node) != LY_SUCCESS) {
@@ -614,12 +753,12 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
     for (i = 0; i < xpath_cnt; ++i) {
         old_options = ly_temp_log_options(&log_options);
         /* check whether the xpaths are paths */
-        if (lyd_find_path(ctx_node, xpaths[i], 0, &match) != LY_ENOTFOUND) {
+        lyrc = lyd_find_path(ctx_node, xpaths[i], 0, &match);
+        ly_temp_log_options(old_options);
+        if (lyrc != LY_ENOTFOUND) {
             /* not a path, load all data */
-            ly_temp_log_options(old_options);
             goto cleanup;
         }
-        ly_temp_log_options(old_options);
 
         /* copy the path for further manipulation */
         path = strdup(xpaths[i]);
@@ -636,50 +775,122 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
             }
             free(path);
             path = tmp;
+            tmp = NULL;
         }
 
         /* path is key */
         if (lysc_is_key(lys_find_path(ctx, NULL, path, 0))) {
-            for (j = strlen(path) - 1; j >= 0; --j) {
-                /* key leaves are not stored in the database, only predicates */
-                if (path[j] == '/') {
-                    path[j] = '\0';
-                    break;
-                }
-            }
+            srpds_get_parent_path(path);
         }
 
-        if ((err_info = srpds_escape_string(path, &tmp))) {
+        if ((err_info = srpds_escape_string(path, &escaped_path))) {
             goto cleanup;
         }
-        free(path);
-        path = tmp;
 
-        /* start regex */
-        if (i == 0) {
-            if (asprintf(&tmp, "^%s", path) == -1) {
-                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
-                goto cleanup;
-            }
-            /* continue regex */
-        } else {
-            if (asprintf(&tmp, "%s|%s", *out, path) == -1) {
-                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
-                goto cleanup;
-            }
+        /* add path as regex */
+        if (asprintf(&tmp, "^%s", escaped_path) == -1) {
+            ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            goto cleanup;
         }
-        free(*out);
-        *out = tmp;
+        bson_append_document_begin(&top, "_id", 3, &bottom);
+        bson_append_regex(&bottom, "_id", 3, tmp, "s");
+        bson_append_document_end(&top, &bottom);
+        free(tmp);
+        tmp = NULL;
+        free(escaped_path);
+        escaped_path = NULL;
+
+        /* add all parent paths also */
+        srpds_get_parent_path(path);
+        while (path[0] != '\0') {
+            /* continue with exact match (for parent nodes) */
+            bson_append_document_begin(&top, "_id", 3, &bottom);
+            bson_append_utf8(&bottom, "_id", 3, path, -1);
+            bson_append_document_end(&top, &bottom);
+            srpds_get_parent_path(path);
+        }
+
         free(path);
         path = NULL;
     }
 
+    *is_valid = xpath_cnt;
+
 cleanup:
-    if (err_info) {
-        free(*out);
+    bson_append_array_end(xpath_filter, &top);
+    if (!*is_valid) {
+        bson_destroy(xpath_filter);
     }
     free(path);
+    free(escaped_path);
+    free(tmp);
     lyd_free_all(ctx_node);
+    return err_info;
+}
+
+/**
+ * @brief Get how deep the node is within the data tree.
+ *
+ * @param[in] path Path to node.
+ * @return Depth of the node.
+ */
+static uint32_t
+srpds_get_node_depth(const char *path)
+{
+    uint32_t depth = 0;
+    char *it = (char *)path;
+
+    while ((it = srpds_path_token(it, 1))) {
+        ++depth;
+        ++it;
+    }
+
+    return depth;
+}
+
+/**
+ * @brief Goes through concatenated keys and separates them.
+ *
+ * @param[in] keys Concatenated keys and their respective lengths
+ *      (length is the first two bytes and then the key).
+ * @param[out] parsed Array of keys.
+ * @param[out] lengths Array of key lengths.
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_parse_keys(const char *keys, char ***parsed, uint32_t **lengths)
+{
+    sr_error_info_t *err_info = NULL;
+    uint32_t i;
+    uint8_t num_of_keys = keys[0];
+    const char *key = keys + 1;
+
+    *parsed = malloc(num_of_keys * sizeof **parsed);
+    if (!*parsed) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "malloc()", "")
+        goto cleanup;
+    }
+
+    *lengths = malloc(num_of_keys * sizeof **lengths);
+    if (!*lengths) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "malloc()", "")
+        goto cleanup;
+    }
+
+    /* collect all other remaining keys and put them into the array */
+    for (i = 0; i < num_of_keys; ++i) {
+        /* get key (do not forget to skip length) */
+        (*parsed)[i] = ((char *)key) + MONGO_LIST_KEY_LEN_BYTES;
+
+        /* get length of the key from the first two bytes */
+        (*lengths)[i] = MONGO_LIST_KEY_GET_LEN(key[0], key[1]);
+
+        /* move onto the next key */
+        key += MONGO_LIST_KEY_LEN_BYTES + (*lengths)[i];
+    }
+
+cleanup:
     return err_info;
 }
 
@@ -693,35 +904,54 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, struct lyd_node **mod_data)
+srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_t *xpath_filter, struct lyd_node **mod_data)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
-    const char *xpath, *ptr, *key_value, *value = NULL;
-    char *meta_name = NULL;
+    const char *path, *name, *module_name, *path_to_node, *value;
+    struct lys_module *node_module = NULL;
+    enum srpds_mongo_ly_types type;
     int32_t valtype = 0;
-    bson_t *doc2 = NULL, *filter = NULL;
+    int dflt_flag = 0;
+    char **keys = NULL;
+    uint32_t *lengths = NULL;
+
+    bson_t *doc2 = NULL;
     mongoc_cursor_t *cursor = NULL;
     bson_iter_t iter;
-    struct lyd_node *meta_match = NULL, *last_node = NULL, *first_node = NULL;
+    struct lyd_node *meta_match = NULL, *new_node = NULL, *parent_node = NULL;
     struct ly_set *meta_match_nodes = NULL;
-    uint32_t idx = -1;
-    int is_opaque = 0;
 
-    filter = bson_new();
-    cursor = mongoc_collection_find_with_opts(module, filter, NULL, NULL);
+    struct lyd_node **parent_nodes = NULL, **tmp_pnodes = NULL;
+    size_t pnodes_size = 1;
+    uint32_t node_idx = 0;
+
+    cursor = mongoc_collection_find_with_opts(module, xpath_filter, NULL, NULL);
 
     /*
     *   Loading multiple different sets of data
     *
     *   Load Oper
-    *   | 1) nodes without a value
-    *   |    Dataset [ xpath(_id) | is_opaque ]
+    *   | 1) containers (LYS_CONTAINER)
+    *   |    Dataset [ path(_id) | name | type | module_name ]
     *   |
-    *   | 2) nodes with a value
-    *   |    Dataset [ xpath(_id) | value | valtype | is_opaque ] - valtype can be 0 - XML, 1 - JSON
+    *   | 2) lists (LYS_LIST)
+    *   |    Dataset [ path(_id) | name | type | module_name | keys ]
     *   |
-    *   | 3) metadata and attributes (0, 1, 2, 3, 4) ... (0, 1, 4) DO NOT LOAD
+    *   | 3) leafs and leaf-lists (LYS_LEAF and LYS_LEAFLIST)
+    *   |    Dataset [ path(_id) | name | type | module_name | value | dflt_flag ]
+    *   |
+    *   | 4) anydata and anyxml (LYS_ANYDATA and LYS_ANYXML)
+    *   |    Dataset [ path(_id) | name | type | module_name | value | dflt_flag | valtype ]
+    *   |
+    *   | 7) opaque nodes
+    *   |    Dataset [ path(_id) | name | type | module_name | value ]
+    *   |
+    *   | 8/9) metadata and attributes (0, 1, 2, 3, 4) ... (0, 1, 4) DO NOT LOAD
+    *   |
+    *   | module_name = NULL - use parent's module | name - use the module specified by this name
+    *   | valtype = 0 - XML | 1 - JSON
+    *   | start number defines the type (1 - container, 2 - list...)
     *
     *   Metadata, Attributes and MaxOrder
     *   | 1) metadata and attributes (starting with a number)
@@ -730,10 +960,16 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, struc
     *   |     1.3) 2 node metadata
     *   |     1.4) 3 attribute data for opaque nodes
     *   |     1.5) 4 owner, group and permissions [ !!! NOT LOADED]
-    *   |    Dataset [ xpath(_id) | value ]
+    *   |    Dataset [ path_with_name(_id) | name | type | path_to_node | value ]
     *
     *   [ !!! NOT LOADED ] data are only for internal use
     */
+
+    parent_nodes = calloc(1, sizeof *parent_nodes);
+    if (!parent_nodes) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "calloc()", "")
+        goto cleanup;
+    }
 
     while (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
@@ -741,12 +977,13 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, struc
             goto cleanup;
         }
 
+        /* get path */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        xpath = bson_iter_utf8(&iter, NULL);
-        if (!bson_utf8_validate(xpath, strlen(xpath), 0)) {
+        path = bson_iter_utf8(&iter, NULL);
+        if (!bson_utf8_validate(path, strlen(path), 0)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
             goto cleanup;
         }
@@ -755,97 +992,232 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, struc
          * 0 - timestamp of the last modification
          * 1 - modified flag for candidate datastore
          * 4 - owner, group and permissions */
-        if ((xpath[0] == '0') || (xpath[0] == '1') || (xpath[0] == '4')) {
+        switch (path[0]) {
+        case '0':
+        case '1':
+        case '4':
             continue;
+        default:
+            break;
         }
 
-        /* next item differs in different datasets */
+        /* get name */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        key_value = bson_iter_key(&iter);
+        name = bson_iter_utf8(&iter, NULL);
+        if (!bson_utf8_validate(name, strlen(name), 0)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            goto cleanup;
+        }
 
-        /* if no valtype present, valtype is 0 - LYD_ANYDATA_XML */
-        value = NULL;
-        valtype = 0;
-        is_opaque = 0;
+        /* get type */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        type = bson_iter_int32(&iter);
 
-        /* is_opaque, this is a node without a value */
-        if (!strcmp(key_value, "is_opaque")) {
-            is_opaque = bson_iter_bool(&iter);
-            /* value, this is a node with a value or metadata */
-        } else if (!strcmp(key_value, "value")) {
-            /* get value */
+        /* get module_name or path_to_node based on type */
+        switch (type) {
+        case MONGO_LY_CONTAINER:    /* containers */
+        case MONGO_LY_LIST:         /* lists */
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+        case MONGO_LY_ANY:          /* anydata and anyxml */
+        case MONGO_LY_OPAQUE:       /* opaque nodes */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            module_name = bson_iter_utf8(&iter, NULL);
+            if (module_name && !bson_utf8_validate(module_name, strlen(module_name), 0)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_META:
+        case MONGO_LY_ATTR:
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            path_to_node = bson_iter_utf8(&iter, NULL);
+            if (!bson_utf8_validate(path_to_node, strlen(path_to_node), 0)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                goto cleanup;
+            }
+            break;
+        default:
+            break;
+        }
+
+        /* get keys or value based on type */
+        switch (type) {
+        case MONGO_LY_TERM:
+        case MONGO_LY_ANY:
+        case MONGO_LY_OPAQUE:
+        case MONGO_LY_META:
+        case MONGO_LY_ATTR:
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
             value = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(value, strlen(value), 0)) {
                 ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
                 goto cleanup;
             }
-
-            /* get valtype */
-            if (bson_iter_next(&iter)) {
-                valtype = bson_iter_int32(&iter);
+            break;
+        case MONGO_LY_LIST:
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
             }
-
-            /* get opaque flag */
-            if (bson_iter_next(&iter)) {
-                is_opaque = bson_iter_bool(&iter);
+            value = bson_iter_utf8(&iter, NULL);
+            if ((err_info = srpds_parse_keys(value, &keys, &lengths))) {
+                goto cleanup;
             }
+            break;
+        default:
+            break;
         }
 
-        /* 2 - tree metadata (e.g. 'nc:operation="merge"' or 'or:origin="unknown"') */
-        /* 3 - attributes of opaque nodes (e.g. 'operation="delete"') */
-        if ((xpath[0] == '2') || (xpath[0] == '3')) {
-            if (asprintf(&meta_name, "%s", xpath + 1) == -1) {
-                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+        /* get default flag based on type */
+        switch (type) {
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+        case MONGO_LY_ANY:          /* anydata and anyxml */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
                 goto cleanup;
             }
-            ptr = strchr(meta_name, '#');
-            if (!ptr) {
-                ERRINFO(&err_info, SR_ERR_NOT_FOUND, "strchr()", "")
+            dflt_flag = bson_iter_as_bool(&iter);
+            break;
+        default:
+            break;
+        }
+
+        /* get valtype based on type */
+        switch (type) {
+        case MONGO_LY_ANY:  /* anydata and anyxml */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
                 goto cleanup;
             }
-            idx = (uint32_t)(ptr - meta_name);
-            meta_name[idx] = '\0';
-            if (lyd_find_xpath(*mod_data, meta_name, &meta_match_nodes) != LY_SUCCESS) {
+            valtype = bson_iter_int32(&iter);
+            break;
+        default:
+            break;
+        }
+
+        /* get module from module_name */
+        if (module_name) {
+            node_module = ly_ctx_get_module_implemented(mod->ctx, module_name);
+        } else {
+            node_module = NULL;
+        }
+
+        /* get index of the node in the parent_nodes array based on its height */
+        if ((type != MONGO_LY_META) && (type != MONGO_LY_ATTR)) {
+            node_idx = srpds_get_node_depth(path) - 1;
+            parent_node = node_idx ? parent_nodes[node_idx - 1] : NULL;
+        } else { /* get node to which we want to add the metadata or attribute */
+            if (lyd_find_xpath(*mod_data, path_to_node, &meta_match_nodes) != LY_SUCCESS) {
                 ERRINFO(&err_info, SR_ERR_LY, "lyd_find_xpath()", "")
                 goto cleanup;
             }
             if (!meta_match_nodes->count) {
-                ERRINFO(&err_info, SR_ERR_NOT_FOUND, "lyd_find_xpath()", "XPath not found")
+                ERRINFO(&err_info, SR_ERR_NOT_FOUND, "lyd_find_xpath()", "Path not found")
                 goto cleanup;
             }
             meta_match = meta_match_nodes->dnodes[0];
+        }
 
-            /* setting the default flag */
-            if (!strcmp(meta_name + idx + 1, "ietf-netconf-with-defaults:default")) {
-                meta_match->flags = meta_match->flags | LYD_DEFAULT;
-                srpds_cont_set_dflt(lyd_parent(meta_match));
-                /* setting metadata */
-            } else if ((xpath[0] == '2') && (lyd_new_meta(LYD_CTX(meta_match), meta_match, NULL, meta_name + idx + 1, value, 0, NULL) != LY_SUCCESS)) {
+        /* create a node based on type */
+        switch (type) {
+        /* 2 - tree metadata (e.g. 'nc:operation="merge"' or 'or:origin="unknown"') */
+        case MONGO_LY_META:         /* metadata */
+            if (lyd_new_meta(LYD_CTX(meta_match), meta_match, NULL, name, value, LYD_NEW_VAL_STORE_ONLY, NULL) != LY_SUCCESS) {
                 ERRINFO(&err_info, SR_ERR_LY, "lyd_new_meta()", "")
                 goto cleanup;
-                /* setting attributes for opaque nodes */
-            } else if ((xpath[0] == '3') && lyd_new_attr(meta_match, NULL, meta_name + idx + 1, value, NULL)) {
+            }
+            break;
+        /* 3 - attributes of opaque nodes (e.g. 'operation="delete"') */
+        case MONGO_LY_ATTR:         /* attributes */
+            if (lyd_new_attr(meta_match, NULL, name, value, NULL) != LY_SUCCESS) {
                 ERRINFO(&err_info, SR_ERR_LY, "lyd_new_attr()", "")
                 goto cleanup;
             }
-        } else {
-            if (lyd_new_path2(*mod_data, mod->ctx, xpath, value, 0, valtype ? LYD_ANYDATA_JSON : LYD_ANYDATA_XML, is_opaque ? LYD_NEW_PATH_OPAQ : 0, &first_node, &last_node) != LY_SUCCESS) {
-                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_path2()", "")
+            break;
+        case MONGO_LY_CONTAINER:    /* containers */
+            if (lyd_new_inner(parent_node, node_module, name, 0, &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_inner()", "")
                 goto cleanup;
             }
+            break;
+        case MONGO_LY_LIST:         /* lists */
+            if (lyd_new_list3(parent_node, node_module, name, (const char **)keys, lengths, LYD_NEW_VAL_STORE_ONLY,
+                    &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_list3()", "")
+                goto cleanup;
+            }
+            free(keys);
+            free(lengths);
+            keys = NULL;
+            lengths = NULL;
+            break;
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+            if (lyd_new_term(parent_node, node_module, name, value, LYD_NEW_VAL_STORE_ONLY,
+                    &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_term()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_ANY:          /* anydata and anyxml */
+            if (lyd_new_any(parent_node, node_module, name, value, valtype ? LYD_ANYDATA_JSON : LYD_ANYDATA_XML,
+                    LYD_NEW_VAL_STORE_ONLY, &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_any()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_OPAQUE:       /* opaque nodes */
+            if (lyd_new_opaq(parent_node, mod->ctx, name, value, NULL, module_name, &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_opaq()", "")
+                goto cleanup;
+            }
+            break;
+        default:
+            break;
+        }
 
-            if (*mod_data == NULL) {
-                *mod_data = first_node;
+        if ((type != MONGO_LY_META) && (type != MONGO_LY_ATTR)) {
+            /* store new node in the parent nodes array for children */
+            if (node_idx >= pnodes_size) {
+                tmp_pnodes = realloc(parent_nodes, (++pnodes_size) * sizeof *parent_nodes);
+                if (!tmp_pnodes) {
+                    ERRINFO(&err_info, SR_ERR_NO_MEMORY, "realloc()", "")
+                    goto cleanup;
+                }
+                parent_nodes = tmp_pnodes;
+            }
+            parent_nodes[node_idx] = new_node;
+            if (!node_idx) {
+                if (lyd_insert_sibling(*mod_data, new_node, mod_data) != LY_SUCCESS) {
+                    ERRINFO(&err_info, SR_ERR_LY, "lyd_insert_sibling()", "")
+                    goto cleanup;
+                }
+            }
+
+            /* for default nodes add a flag */
+            if (dflt_flag) {
+                new_node->flags = new_node->flags | LYD_DEFAULT;
+                dflt_flag = 0;
+                srpds_cont_set_dflt(lyd_parent(new_node));
             }
         }
 
         ly_set_free(meta_match_nodes, NULL);
-        free(meta_name);
         meta_match_nodes = NULL;
-        meta_name = NULL;
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
@@ -856,9 +1228,10 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, struc
     *mod_data = lyd_first_sibling(*mod_data);
 
 cleanup:
+    free(keys);
+    free(lengths);
     ly_set_free(meta_match_nodes, NULL);
-    free(meta_name);
-    bson_destroy(filter);
+    free(parent_nodes);
     mongoc_cursor_destroy(cursor);
     return err_info;
 }
@@ -875,57 +1248,83 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_datastore_t ds, const char *paths_regex, struct lyd_node **mod_data)
+srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_datastore_t ds, bson_t *xpath_filter, struct lyd_node **mod_data)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
-    const char *xpath, *key_value;
-    const char *value = NULL;
+    const char *path, *name, *module_name, *value = NULL, *path_no_pred;
+    char **keys = NULL;
+    uint32_t *lengths = NULL;
+    enum srpds_mongo_ly_types type;
     int32_t valtype;
-    bson_t *doc2 = NULL, *filter = NULL, *opts = NULL;
+    int64_t order;
+    int dflt_flag = 0;
+    mongo_userordered_lists_t uo_lists = {0};
+    mongo_userordered_list_t *list = NULL;
+    mongo_userordered_data_t *data = NULL;
+    size_t size;
+    int uo_found;
+
+    bson_t *doc2 = NULL, *opts = NULL;
     mongoc_cursor_t *cursor = NULL;
     bson_iter_t iter;
-    struct lyd_node *meta_match = NULL, *last_node = NULL, *first_node = NULL;
-    int dflt_flag = 0;
+    struct lyd_node *new_node = NULL, *parent_node = NULL;
 
-    if (paths_regex) {
-        /* only load needed paths */
-        filter = BCON_NEW("_id", "{", "$regex", BCON_UTF8(paths_regex), "$options", "s", "}");
-    } else {
-        /* load all */
-        filter = bson_new();
-    }
-    opts = BCON_NEW("sort", "{", "path_no_pred", BCON_INT32(1), "order", BCON_INT32(1), "}");
-    cursor = mongoc_collection_find_with_opts(module, filter, opts, NULL);
+    struct lyd_node **parent_nodes = NULL, **tmp_pnodes = NULL;
+    size_t pnodes_size = 1;
+    uint32_t node_idx = 0, i, j;
+    struct lys_module *node_module = NULL;
+
+    opts = BCON_NEW("sort", "{", "path_modif", BCON_INT32(1), "}");
+    cursor = mongoc_collection_find_with_opts(module, xpath_filter, opts, NULL);
 
     /*
     *   Loading multiple different sets of data
     *
     *   Load Conventional Datastore
-    *   | 1) nodes without a value
-    *   |    Dataset [ xpath(_id) | path_no_pred ]
+    *   | 1) containers (LYS_CONTAINER)
+    *   |    Dataset [ path(_id) | name | type | module_name | path_modif ]
     *   |
-    *   | 2) nodes with a value
-    *   |    Dataset [ xpath(_id) | value | dflt_flag | valtype | path_no_pred] - valtype can be 0 - XML, 1 - JSON
+    *   | 2) lists (LYS_LIST)
+    *   |    Dataset [ path(_id) | name | type | module_name | keys | path_modif ]
     *   |
-    *   | 3) userordered lists and leaflists
-    *   |    Dataset [ xpath(_id) | prev | dflt_flag | order | path_no_pred]
+    *   | 3) leafs and leaf-lists (LYS_LEAF and LYS_LEAFLIST)
+    *   |    Dataset [ path(_id) | name | type | module_name | dflt_flag | value | path_modif ]
     *   |
-    *   | 4) metadata and maxorder (0, 1, 4, #)
+    *   | 4) anydata and anyxml (LYS_ANYDATA and LYS_ANYXML)
+    *   |    Dataset [ path(_id) | name | type | module_name | dflt_flag | value | valtype | path_modif ]
+    *   |
+    *   | 5) user-ordered lists
+    *   |    Dataset [ path(_id) | name | type | module_name | keys | order | path_no_pred | prev | path_modif ]
+    *   |
+    *   | 6) user-ordered leaf-lists
+    *   |    Dataset [ path(_id) | name | type | module_name | dflt_flag | value | order | path_no_pred | prev | path_modif ]
+    *   |
+    *   | 7) metadata and maxorder (0, 1, 4, #)
+    *   |
+    *   | module_name = NULL - use parent's module | name - use the module specified by this name
+    *   | valtype = 0 - XML | 1 - JSON
+    *   | start number defines the type (1 - container, 2 - list...)
     *
     *   Metadata and MaxOrder
     *   | 1) metadata
     *   |     1.1) 0 timestamp (last-modif) [ !!! NOT LOADED ]
     *   |     1.2) 1 is different from running? (for candidate datastore) [ !!! NOT LOADED ]
     *   |     1.3) 4 owner, group and permissions [ !!! NOT LOADED ]
-    *   |    Dataset [ xpath(_id) | value ]
+    *   |    Dataset [ path(_id) | value ]
     *   |
     *   | 2) maximum order for a userordered list or leaflist (starting with a #)
     *   |     2.1) # maximum order [ !!! NOT LOADED ]
-    *   |    Dataset [ xpath(_id) | value ]
+    *   |    Dataset [ path(_id) | value ]
     *
     *   [ !!! NOT LOADED ] data are only for internal use
     */
+
+    parent_nodes = calloc(1, sizeof *parent_nodes);
+    if (!parent_nodes) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "calloc()", "")
+        goto cleanup;
+    }
 
     while (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
@@ -933,13 +1332,13 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
             goto cleanup;
         }
 
-        /* get xpath */
+        /* get path */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        xpath = bson_iter_utf8(&iter, NULL);
-        if (!bson_utf8_validate(xpath, strlen(xpath), 0)) {
+        path = bson_iter_utf8(&iter, NULL);
+        if (!bson_utf8_validate(path, strlen(path), 0)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
             goto cleanup;
         }
@@ -949,85 +1348,292 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
          * 1 - modified flag for candidate datastore
          * # - maximum load-order for list or leaf-list
          * 4 - owner, group and permissions */
-        if ((xpath[0] == '0') || (xpath[0] == '1') || (xpath[0] == '#') || (xpath[0] == '4')) {
+        switch (path[0]) {
+        case '0':
+        case '1':
+        case '#':
+        case '4':
             continue;
+        default:
+            break;
         }
 
-        /* get value if any */
+        /* get name */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        key_value = bson_iter_key(&iter);
+        name = bson_iter_utf8(&iter, NULL);
+        if (!bson_utf8_validate(name, strlen(name), 0)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            goto cleanup;
+        }
 
-        /* reset default flag */
-        dflt_flag = 0;
+        /* get type */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        type = bson_iter_int32(&iter);
 
-        /* this is not a node without a value, so get the value and default flag */
-        if (strcmp(key_value, "path_no_pred")) {
-            /* get value */
-            value = bson_iter_utf8(&iter, NULL);
-            if (!bson_utf8_validate(value, strlen(value), 0)) {
-                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
-                goto cleanup;
-            }
+        /* get module name */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        module_name = bson_iter_utf8(&iter, NULL);
+        if (module_name && !bson_utf8_validate(module_name, strlen(module_name), 0)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            goto cleanup;
+        }
 
-            /* get default flag */
+        /* get default flag or keys based on type */
+        switch (type) {
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+        case MONGO_LY_ANY:          /* anydata and anyxml */
+        case MONGO_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
             if (!bson_iter_next(&iter)) {
                 ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
                 goto cleanup;
             }
             dflt_flag = bson_iter_as_bool(&iter);
+            break;
+        case MONGO_LY_LIST:     /* lists */
+        case MONGO_LY_LIST_UO:  /* user-ordered lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            value = bson_iter_utf8(&iter, NULL);
+            if ((err_info = srpds_parse_keys(value, &keys, &lengths))) {
+                goto cleanup;
+            }
+            break;
+        default:
+            break;
         }
 
-        /* if no valtype present, valtype is 0 - LYD_ANYDATA_XML */
-        valtype = 0;
+        /* get value or order based on type */
+        switch (type) {
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+        case MONGO_LY_ANY:          /* anydata and anyxml */
+        case MONGO_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            value = bson_iter_utf8(&iter, NULL);
+            if (!bson_utf8_validate(value, strlen(value), 0)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_LIST_UO:  /* user-ordered lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            order = bson_iter_int64(&iter);
+            break;
+        default:
+            break;
+        }
 
-        /* this is a node with a value, so get valtype */
-        if (!strcmp(key_value, "value")) {
-            /* get valtype */
+        /* get valtype or path_no_pred or order based on type */
+        switch (type) {
+        case MONGO_LY_ANY:  /* anydata and anyxml */
             if (!bson_iter_next(&iter)) {
                 ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
                 goto cleanup;
             }
             valtype = bson_iter_int32(&iter);
+            break;
+        case MONGO_LY_LIST_UO:  /* user-ordered lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            path_no_pred = bson_iter_utf8(&iter, NULL);
+            if (!bson_utf8_validate(path_no_pred, strlen(path_no_pred), 0)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            order = bson_iter_int64(&iter);
+            break;
+        default:
+            break;
         }
 
-        if (lyd_new_path2(*mod_data, mod->ctx, xpath, value, 0, valtype ? LYD_ANYDATA_JSON : LYD_ANYDATA_XML, 0, &first_node, &last_node) != LY_SUCCESS) {
-            ERRINFO(&err_info, SR_ERR_LY, "lyd_new_path2()", "")
-            goto cleanup;
+        switch (type) {
+        case MONGO_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
+            if (!bson_iter_next(&iter)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                goto cleanup;
+            }
+            path_no_pred = bson_iter_utf8(&iter, NULL);
+            if (!bson_utf8_validate(path_no_pred, strlen(path_no_pred), 0)) {
+                ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                goto cleanup;
+            }
+            break;
+        default:
+            break;
         }
 
-        if (*mod_data == NULL) {
-            *mod_data = first_node;
+        /* get module from module_name */
+        if (module_name) {
+            node_module = ly_ctx_get_module_implemented(mod->ctx, module_name);
+        } else {
+            node_module = NULL;
+        }
+
+        /* get index of the node in the parent_nodes array based on its height */
+        node_idx = srpds_get_node_depth(path) - 1;
+        parent_node = node_idx ? parent_nodes[node_idx - 1] : NULL;
+
+        /* create a node based on type */
+        switch (type) {
+        case MONGO_LY_CONTAINER:    /* containers */
+            if (lyd_new_inner(parent_node, node_module, name, 0, &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_inner()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_LIST:     /* lists */
+        case MONGO_LY_LIST_UO:  /* user-ordered lists */
+            if (lyd_new_list3(parent_node, node_module, name, (const char **)keys, lengths, LYD_NEW_VAL_STORE_ONLY,
+                    &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_list3()", "")
+                goto cleanup;
+            }
+            free(keys);
+            free(lengths);
+            keys = NULL;
+            lengths = NULL;
+            break;
+        case MONGO_LY_TERM:         /* leafs and leaf-lists */
+        case MONGO_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
+            if (lyd_new_term(parent_node, node_module, name, value, LYD_NEW_VAL_STORE_ONLY,
+                    &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_term()", "")
+                goto cleanup;
+            }
+            break;
+        case MONGO_LY_ANY:   /* anydata and anyxml */
+            if (lyd_new_any(parent_node, node_module, name, value, valtype ? LYD_ANYDATA_JSON : LYD_ANYDATA_XML,
+                    LYD_NEW_VAL_STORE_ONLY, &new_node) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_new_any()", "")
+                goto cleanup;
+            }
+            break;
+        default:
+            break;
+        }
+
+        /* store new node in the parent nodes array for children */
+        if (node_idx >= pnodes_size) {
+            tmp_pnodes = realloc(parent_nodes, (++pnodes_size) * sizeof *parent_nodes);
+            if (!tmp_pnodes) {
+                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "realloc()", "")
+                goto cleanup;
+            }
+            parent_nodes = tmp_pnodes;
+        }
+        parent_nodes[node_idx] = new_node;
+        if (!node_idx) {
+            if (lyd_insert_sibling(*mod_data, new_node, mod_data) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_insert_sibling()", "")
+                goto cleanup;
+            }
+        }
+
+        /* store nodes and their orders of userordered lists and leaflists for final ordering */
+        if ((type == MONGO_LY_LIST_UO) || (type == MONGO_LY_LEAFLIST_UO)) {
+            uo_found = 0;
+            for (i = 0; i < uo_lists.size; ++i) {
+                if (!strcmp(uo_lists.lists[i].name, path_no_pred)) {
+                    uo_found = 1;
+                    size = uo_lists.lists[i].size;
+                    data = realloc(uo_lists.lists[i].data, (size + 1) * sizeof *data);
+                    if (!data) {
+                        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "realloc()", "")
+                        goto cleanup;
+                    }
+                    uo_lists.lists[i].data = data;
+                    uo_lists.lists[i].data[size].ptr = new_node;
+                    uo_lists.lists[i].data[size].order = order;
+                    uo_lists.lists[i].size = size + 1;
+                }
+            }
+            if (!uo_found) {
+                size = uo_lists.size;
+                if (size) {
+                    list = realloc(uo_lists.lists, (size + 1) * sizeof *list);
+                    if (!list) {
+                        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "realloc()", "")
+                        goto cleanup;
+                    }
+                    uo_lists.lists = list;
+                    uo_lists.size = size + 1;
+                } else {
+                    list = calloc(1, sizeof *list);
+                    if (!list) {
+                        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "calloc()", "")
+                        goto cleanup;
+                    }
+                    uo_lists.lists = list;
+                    uo_lists.size = 1;
+                }
+                if (!(uo_lists.lists[size].name = strdup(path_no_pred))) {
+                    ERRINFO(&err_info, SR_ERR_NO_MEMORY, "strdup()", strerror(errno))
+                    goto cleanup;
+                }
+                uo_lists.lists[size].size = 1;
+                data = calloc(1, sizeof *data);
+                if (!data) {
+                    ERRINFO(&err_info, SR_ERR_NO_MEMORY, "calloc()", "")
+                    goto cleanup;
+                }
+                uo_lists.lists[size].data = data;
+                uo_lists.lists[size].data[0].ptr = new_node;
+                uo_lists.lists[size].data[0].order = order;
+                uo_lists.lists[size].size = 1;
+            }
         }
 
         /* for default nodes add a flag */
         if (dflt_flag) {
-            if (lyd_find_path(*mod_data, xpath, 0, &meta_match) != LY_SUCCESS) {
-                ERRINFO(&err_info, SR_ERR_LY, "lyd_find_path()", "")
-                goto cleanup;
-            }
-            meta_match->flags = meta_match->flags | LYD_DEFAULT;
-            srpds_cont_set_dflt(lyd_parent(meta_match));
+            new_node->flags = new_node->flags | LYD_DEFAULT;
+            dflt_flag = 0;
+            srpds_cont_set_dflt(lyd_parent(new_node));
         }
 
         /* for 'when' nodes add a flag */
-        if ((ds == SR_DS_RUNNING) || (ds == SR_DS_STARTUP) || (ds == SR_DS_FACTORY_DEFAULT)) {
-            while (first_node != last_node) {
-                if (lysc_has_when(last_node->schema)) {
-                    last_node->flags |= LYD_WHEN_TRUE;
+        switch (ds) {
+        case SR_DS_STARTUP:
+        case SR_DS_RUNNING:
+        case SR_DS_FACTORY_DEFAULT:
+            while (parent_nodes[0] != new_node) {
+                if (lysc_has_when(new_node->schema)) {
+                    new_node->flags |= LYD_WHEN_TRUE;
                 }
-                last_node->flags &= ~LYD_NEW;
-                last_node = lyd_parent(last_node);
+                new_node->flags &= ~LYD_NEW;
+                new_node = lyd_parent(new_node);
             }
-            if (lysc_has_when(first_node->schema)) {
-                first_node->flags |= LYD_WHEN_TRUE;
+            if (lysc_has_when(parent_nodes[0]->schema)) {
+                parent_nodes[0]->flags |= LYD_WHEN_TRUE;
             }
-            first_node->flags &= ~LYD_NEW;
+            parent_nodes[0]->flags &= ~LYD_NEW;
+            break;
+        default:
+            break;
         }
-
-        value = NULL;
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
@@ -1035,11 +1641,31 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         goto cleanup;
     }
 
+    /* go through all userordered lists and leaflists and order them */
+    for (i = 0; i < uo_lists.size; ++i) {
+        data = uo_lists.lists[i].data;
+        size = uo_lists.lists[i].size;
+        qsort(data, size, sizeof *data, srpds_uo_elem_comp);
+        for (j = 1; j < size; ++j) {
+            if (lyd_insert_after(data[0].ptr, data[size - j].ptr) != LY_SUCCESS) {
+                ERRINFO(&err_info, SR_ERR_LY, "lyd_insert_after()", "")
+                goto cleanup;
+            }
+        }
+    }
+
     *mod_data = lyd_first_sibling(*mod_data);
 
 cleanup:
+    free(keys);
+    free(lengths);
+    for (i = 0; i < uo_lists.size; ++i) {
+        free(uo_lists.lists[i].name);
+        free(uo_lists.lists[i].data);
+    }
+    free(uo_lists.lists);
+    free(parent_nodes);
     bson_destroy(opts);
-    bson_destroy(filter);
     mongoc_cursor_destroy(cursor);
     return err_info;
 }
@@ -1389,7 +2015,7 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_load_prev(mongoc_collection_t *module, const char *prev, const char *path_no_pred, uint64_t *order)
+srpds_load_prev(mongoc_collection_t *module, uint16_t nodetype, const char *prev, const char *path_no_pred, uint64_t *order)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
@@ -1418,13 +2044,28 @@ srpds_load_prev(mongoc_collection_t *module, const char *prev, const char *path_
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        /* prev */
+        /* name */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-        /* dflt_flag */
+        /* type */
         if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* module_name */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* predicate or dflt_flag */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* value */
+        if ((nodetype == LYS_LEAFLIST) && !bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
@@ -1459,7 +2100,7 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_load_next(mongoc_collection_t *module, const char *prev, const char *path_no_pred, uint64_t *order)
+srpds_load_next(mongoc_collection_t *module, uint16_t nodetype, const char *prev, const char *path_no_pred, uint64_t *order)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
@@ -1480,25 +2121,37 @@ srpds_load_next(mongoc_collection_t *module, const char *prev, const char *path_
             goto cleanup;
         }
 
-        /* skip path of the next element */
+        /* path */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-
-        /* skip prev element of the next element */
+        /* name */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-
-        /* skip dflt_flag element of the next element */
+        /* type */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
         }
-
-        /* get order of the next element */
+        /* module_name */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* predicate or dflt_flag */
+        if (!bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* value */
+        if ((nodetype == LYS_LEAFLIST) && !bson_iter_next(&iter)) {
+            ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            goto cleanup;
+        }
+        /* order */
         if (!bson_iter_next(&iter)) {
             ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
             goto cleanup;
@@ -1618,6 +2271,96 @@ cleanup:
 }
 
 /**
+ * @brief Concatenate the keys of a list instance into a single string.
+ *
+ * @param[in] node List instance.
+ * @param[out] keys String containing all of the keys and their respective lengths.
+ * @param[out] keys_length Length of the @p keys .
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_concat_key_values(const struct lyd_node *node, char **keys, uint32_t *keys_length)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *child = lyd_child(node), *iter;
+    char *tmp = NULL;
+    const char *key;
+    uint32_t keylen, i, prev_keys_len = 0, num_of_keys = 0;
+
+    *keys = NULL;
+    *keys_length = 0;
+
+    /* count the number of keys */
+    iter = child;
+    while (iter && lysc_is_key(iter->schema)) {
+        ++num_of_keys;
+        iter = iter->next;
+    }
+    if (num_of_keys > (UINT8_MAX >> 1)) {
+        ERRINFO(&err_info, SR_ERR_INTERNAL, "srpds_concat_key_values()", "Number of keys is bigger than (UINT8_MAX >> 1)")
+        goto cleanup;
+    }
+
+    /* store the number of keys */
+    *keys = malloc(1);
+    if (!*keys) {
+        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "malloc()", strerror(errno))
+        goto cleanup;
+    }
+    (*keys)[0] = num_of_keys;
+    *keys_length += 1;
+
+    iter = child;
+    while (iter && lysc_is_key(iter->schema)) {
+        key = lyd_get_value(iter);
+        keylen = strlen(key);
+
+        /* we are only using 7 bits of two bytes for length,
+         * therefore length cannot be bigger than (UINT16_MAX >> 2) */
+        if (keylen > (UINT16_MAX >> 2)) {
+            ERRINFO(&err_info, SR_ERR_INTERNAL, "srpds_concat_key_values()", "Key length is bigger than (UINT16_MAX >> 2)")
+            goto cleanup;
+        }
+
+        /* store length from previous iteration */
+        prev_keys_len = *keys_length;
+
+        /* length of a newly created string will increase by length of the next key and
+         * two bytes for storing length of the next key */
+        *keys_length += keylen + MONGO_LIST_KEY_LEN_BYTES;
+        tmp = malloc(*keys_length);
+        if (!tmp) {
+            ERRINFO(&err_info, SR_ERR_NO_MEMORY, "malloc()", strerror(errno))
+            goto cleanup;
+        }
+
+        /* copy contents of the previous string */
+        for (i = 0; i < prev_keys_len; ++i) {
+            tmp[i] = (*keys)[i];
+        }
+
+        /* store length of the next key */
+        tmp[prev_keys_len] = keylen >> MONGO_LIST_KEY_LEN_BITS; /* upper byte */
+        tmp[prev_keys_len + 1] = keylen & 0x007f; /* lower byte */
+
+        /* store the next key */
+        for (i = 0; i < keylen; ++i) {
+            tmp[prev_keys_len + 2 + i] = key[i];
+        }
+
+        free(*keys);
+        *keys = tmp;
+        tmp = NULL;
+        iter = iter->next;
+    }
+
+cleanup:
+    free(tmp);
+    return err_info;
+}
+
+/**
  * @brief Insert a user-ordered element into a list or a leaf-list in the database.
  *
  * @param[in] module Given MongoDB collection.
@@ -1631,26 +2374,29 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *path_no_pred, const char *predicate,
-        const char *value, const char *value_pred, uint64_t *max_order)
+srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const char *module_name, const char *path,
+        const char *path_no_pred, const char *path_modif, const char *predicate, const char *value, const char *prev,
+        const char *prev_pred, uint64_t *max_order)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
     bson_t *bson_query_uo_rep = NULL, *bson_query_uo_key = NULL,
             *bson_query_uo = NULL;
-    uint64_t prev_order = 0, next_order = 0;
+    uint64_t prev_order = 0, next_order = 0, order;
+    char *keys = NULL;
+    uint32_t keys_length = 0;
 
     /* there is a previous element */
-    if (strcmp(value, "")) {
+    if (strcmp(prev, "")) {
         /* load previous,
          * get order of the previous element */
-        if ((err_info = srpds_load_prev(module, value_pred, path_no_pred, &prev_order))) {
+        if ((err_info = srpds_load_prev(module, node->schema->nodetype, prev_pred, path_no_pred, &prev_order))) {
             goto cleanup;
         }
 
         /* load next
          * get order of the next element */
-        if ((err_info = srpds_load_next(module, value_pred, path_no_pred, &next_order))) {
+        if ((err_info = srpds_load_next(module, node->schema->nodetype, prev_pred, path_no_pred, &next_order))) {
             goto cleanup;
         }
 
@@ -1662,27 +2408,20 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
 
             srpds_inc_maxord(max_order);
 
-            /* insert an element */
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64(*max_order),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = *max_order;
         } else if (next_order - prev_order == 1) {
             /* shift the next elements by one recursively */
             if ((err_info = srpds_shift_uo_list_recursively(module, path_no_pred, next_order, max_order))) {
                 goto cleanup;
             }
 
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64(next_order),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = next_order;
 
             /* add new prev element to the next element,
              * selector for replace command */
-            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(value_pred), "path_no_pred", BCON_UTF8(path_no_pred));
+            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(prev_pred), "path_no_pred", BCON_UTF8(path_no_pred));
 
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
@@ -1691,16 +2430,12 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
                 goto cleanup;
             }
         } else {
-            /* insert an element */
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64((int64_t)(prev_order + (next_order - prev_order) / 2)),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = (uint64_t)(prev_order + (next_order - prev_order) / 2);
 
             /* add new prev element to the next element,
              * selector for replace command */
-            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(value_pred), "path_no_pred", BCON_UTF8(path_no_pred));
+            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(prev_pred), "path_no_pred", BCON_UTF8(path_no_pred));
 
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
@@ -1712,7 +2447,7 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
         /* there is no previous element */
     } else {
         /* load next */
-        if ((err_info = srpds_load_next(module, value_pred, path_no_pred, &next_order))) {
+        if ((err_info = srpds_load_next(module, node->schema->nodetype, prev_pred, path_no_pred, &next_order))) {
             goto cleanup;
         }
 
@@ -1727,27 +2462,20 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
                 goto cleanup;
             }
 
-            /* insert an element */
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64(1000),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = 1000;
         } else if (next_order == 1) {
             /* shift next elements by one recursively */
             if ((err_info = srpds_shift_uo_list_recursively(module, path_no_pred, next_order, max_order))) {
                 goto cleanup;
             }
 
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64(next_order),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = next_order;
 
             /* add new prev element to the next element,
              * selector for replace command */
-            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(value_pred), "path_no_pred", BCON_UTF8(path_no_pred));
+            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(prev_pred), "path_no_pred", BCON_UTF8(path_no_pred));
 
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
@@ -1756,16 +2484,12 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
                 goto cleanup;
             }
         } else {
-            /* insert an element */
-            bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
-                    "prev", BCON_UTF8(value_pred),
-                    "dflt_flag", BCON_BOOL(0),
-                    "order", BCON_INT64((uint64_t)(next_order / 2)),
-                    "path_no_pred", BCON_UTF8(path_no_pred));
+            /* calculate order */
+            order = (uint64_t)(next_order / 2);
 
             /* add new prev element to the next element,
              * selector for replace command */
-            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(value_pred), "path_no_pred", BCON_UTF8(path_no_pred));
+            bson_query_uo_key = BCON_NEW("prev", BCON_UTF8(prev_pred), "path_no_pred", BCON_UTF8(path_no_pred));
 
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
@@ -1776,12 +2500,43 @@ srpds_create_uo_op(mongoc_collection_t *module, const char *path, const char *pa
         }
     }
 
+    /* insert an element */
+    switch (node->schema->nodetype) {
+    case LYS_LIST:
+        if ((err_info = srpds_concat_key_values(node, &keys, &keys_length))) {
+            goto cleanup;
+        }
+        bson_query_uo = bson_new();
+        bson_append_utf8(bson_query_uo, "_id", 3, path, -1);
+        bson_append_utf8(bson_query_uo, "name", 4, node->schema->name, -1);
+        bson_append_int32(bson_query_uo, "type", 4, MONGO_LY_LIST_UO);
+        bson_append_utf8(bson_query_uo, "module_name", 11, module_name, -1);
+        bson_append_utf8(bson_query_uo, "keys", 4, keys, keys_length);
+        bson_append_int64(bson_query_uo, "order", 5, order);
+        bson_append_utf8(bson_query_uo, "path_no_pred", 12, path_no_pred, -1);
+        bson_append_utf8(bson_query_uo, "prev", 4, prev, -1);
+        bson_append_utf8(bson_query_uo, "path_modif", 10, path_modif, -1);
+        break;
+    case LYS_LEAFLIST:
+        bson_query_uo = BCON_NEW("_id", BCON_UTF8(path),
+                "name", BCON_UTF8(node->schema->name),
+                "type", BCON_INT32(MONGO_LY_LEAFLIST_UO),
+                "module_name", BCON_UTF8(module_name),
+                "dflt_flag", BCON_BOOL(0),
+                "value", BCON_UTF8(value),
+                "order", BCON_INT64(order),
+                "path_no_pred", BCON_UTF8(path_no_pred),
+                "prev", BCON_UTF8(prev_pred),
+                "path_modif", BCON_UTF8(path_modif));
+        break;
+    }
     if (!mongoc_collection_insert_one(module, bson_query_uo, NULL, NULL, &error)) {
         ERRINFO(&err_info, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
         goto cleanup;
     }
 
 cleanup:
+    free(keys);
     bson_destroy(bson_query_uo);
     bson_destroy(bson_query_uo_key);
     bson_destroy(bson_query_uo_rep);
@@ -1981,23 +2736,49 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_create_op(mongoc_collection_t *module, struct lyd_node *node, const char *path, const char *path_no_pred,
-        const char *predicate, const char *value, const char *value_pred, int32_t valtype, uint64_t *max_order,
-        struct mongo_diff_data *diff_data)
+srpds_create_op(mongoc_collection_t *module, struct lyd_node *node, const char *module_name, const char *path, const char *path_no_pred,
+        const char *predicate, const char *path_modif, const char *value, const char *prev, const char *prev_pred, int32_t valtype,
+        uint64_t *max_order, struct mongo_diff_data *diff_data)
 {
     sr_error_info_t *err_info = NULL;
     bson_t *bson_query = NULL;
+    char *keys = NULL;
+    uint32_t keys_length = 0;
 
     if (lysc_is_userordered(node->schema)) {
         /* insert a new element into the user-ordered list */
-        if ((err_info = srpds_create_uo_op(module, path, path_no_pred, predicate, value, value_pred, max_order))) {
+        if ((err_info = srpds_create_uo_op(module, node, module_name, path, path_no_pred, path_modif, predicate, value, prev, prev_pred, max_order))) {
             goto cleanup;
         }
     } else {
-        if (!value) {
-            bson_query = BCON_NEW("_id", BCON_UTF8(path), "path_no_pred", BCON_UTF8(path_no_pred));
-        } else {
-            bson_query = BCON_NEW("_id", BCON_UTF8(path), "value", BCON_UTF8(value), "dflt_flag", BCON_BOOL(0), "valtype", BCON_INT32(valtype), "path_no_pred", BCON_UTF8(path_no_pred));
+        switch (node->schema->nodetype) {
+        case LYS_CONTAINER:
+            bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(node->schema->name), "type", BCON_INT32(MONGO_LY_CONTAINER),
+                    "module_name", BCON_UTF8(module_name), "path_modif", BCON_UTF8(path_modif));
+            break;
+        case LYS_LIST:
+            if ((err_info = srpds_concat_key_values(node, &keys, &keys_length))) {
+                goto cleanup;
+            }
+            bson_query = bson_new();
+            bson_append_utf8(bson_query, "_id", 3, path, -1);
+            bson_append_utf8(bson_query, "name", 4, node->schema->name, -1);
+            bson_append_int32(bson_query, "type", 4, MONGO_LY_LIST);
+            bson_append_utf8(bson_query, "module_name", 11, module_name, -1);
+            bson_append_utf8(bson_query, "keys", 4, keys, keys_length);
+            bson_append_utf8(bson_query, "path_modif", 10, path_modif, -1);
+            break;
+        case LYS_LEAF:
+        case LYS_LEAFLIST:
+            bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(node->schema->name), "type", BCON_INT32(MONGO_LY_TERM),
+                    "module_name", BCON_UTF8(module_name), "dflt_flag", BCON_BOOL(0), "value", BCON_UTF8(value), "path_modif", BCON_UTF8(path_modif));
+            break;
+        case LYS_ANYDATA:
+        case LYS_ANYXML:
+            bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(node->schema->name), "type", BCON_INT32(MONGO_LY_ANY),
+                    "module_name", BCON_UTF8(module_name), "dflt_flag", BCON_BOOL(0), "value", BCON_UTF8(value),
+                    "valtype", BCON_INT32(valtype), "path_modif", BCON_UTF8(path_modif));
+            break;
         }
 
         if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
@@ -2011,6 +2792,7 @@ srpds_create_op(mongoc_collection_t *module, struct lyd_node *node, const char *
     }
 
 cleanup:
+    free(keys);
     if (err_info) {
         bson_destroy(bson_query);
     }
@@ -2069,9 +2851,9 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_replace_op(mongoc_collection_t *module, struct lyd_node *node, const char *path, const char *path_no_pred,
-        const char *predicate, const char *value, const char *value_pred, const char *orig_value_pred, uint64_t *max_order,
-        struct mongo_diff_data *diff_data)
+srpds_replace_op(mongoc_collection_t *module, struct lyd_node *node, const char *module_name, const char *path, const char *path_no_pred,
+        const char *path_modif, const char *predicate, const char *value, const char *prev, const char *prev_pred, const char *orig_prev_pred,
+        uint64_t *max_order, struct mongo_diff_data *diff_data)
 {
     sr_error_info_t *err_info = NULL;
 
@@ -2082,12 +2864,12 @@ srpds_replace_op(mongoc_collection_t *module, struct lyd_node *node, const char 
             * has to be executed nevertheless */
 
         /* delete an element from the user-ordered list */
-        if ((err_info = srpds_delete_uo_op(module, path, path_no_pred, predicate, orig_value_pred))) {
+        if ((err_info = srpds_delete_uo_op(module, path, path_no_pred, predicate, orig_prev_pred))) {
             goto cleanup;
         }
 
         /* insert a new element into the user-ordered list */
-        if ((err_info = srpds_create_uo_op(module, path, path_no_pred, predicate, value, value_pred, max_order))) {
+        if ((err_info = srpds_create_uo_op(module, node, module_name, path, path_no_pred, path_modif, predicate, value, prev, prev_pred, max_order))) {
             goto cleanup;
         }
     } else {
@@ -2125,7 +2907,7 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_get_values(struct lyd_node *node, const char **value, const char **orig_value, char **value_pred, char **orig_value_pred, char **any_value, int32_t *valtype)
+srpds_get_values(struct lyd_node *node, const char **value, const char **prev, const char **orig_prev, char **prev_pred, char **orig_prev_pred, char **any_value, int32_t *valtype)
 {
     sr_error_info_t *err_info = NULL;
 
@@ -2148,25 +2930,26 @@ srpds_get_values(struct lyd_node *node, const char **value, const char **orig_va
     } else if (lysc_is_userordered(node->schema)) {
         /* get value of the previous node */
         if (node->schema->nodetype == LYS_LEAFLIST) {
-            *value = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:value"));
-            if (*value && !strlen(*value)) {
-                *value_pred = (char *)*value;
-            } else if (asprintf(value_pred, "[.='%s']", *value) == -1) {
+            *prev = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:value"));
+            if (*prev && !strlen(*prev)) {
+                *prev_pred = (char *)*prev;
+            } else if (asprintf(prev_pred, "[.='%s']", *prev) == -1) {
                 ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
                 goto cleanup;
             }
-            *orig_value = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:orig-value"));
-            if (*orig_value && !strlen(*orig_value)) {
-                *orig_value_pred = (char *)*orig_value;
-            } else if (asprintf(orig_value_pred, "[.='%s']", *orig_value) == -1) {
+            *orig_prev = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:orig-value"));
+            if (*orig_prev && !strlen(*orig_prev)) {
+                *orig_prev_pred = (char *)*orig_prev;
+            } else if (asprintf(orig_prev_pred, "[.='%s']", *orig_prev) == -1) {
                 ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
                 goto cleanup;
             }
+            *value = lyd_get_value(node);
         } else {
-            *value = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:key"));
-            *value_pred = (char *)*value;
-            *orig_value = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:orig-key"));
-            *orig_value_pred = (char *)*orig_value;
+            *prev = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:key"));
+            *prev_pred = (char *)*prev;
+            *orig_prev = lyd_get_meta_value(lyd_find_meta(node->meta, NULL, "yang:orig-key"));
+            *orig_prev_pred = (char *)*orig_prev;
         }
     } else {
         *value = lyd_get_value(node);
@@ -2187,18 +2970,18 @@ cleanup:
  * @param[in] any_value Value of the type 'any value'.
  */
 static void
-srpds_cleanup_values(struct lyd_node *node, const char *value, const char *orig_value, char **value_pred, char **orig_value_pred, char **any_value)
+srpds_cleanup_values(struct lyd_node *node, const char *prev, const char *orig_prev, char **prev_pred, char **orig_prev_pred, char **any_value)
 {
     free(*any_value);
     *any_value = NULL;
     if (node && node->schema && (node->schema->nodetype == LYS_LEAFLIST)) {
-        if (*value_pred != value) {
-            free(*value_pred);
-            *value_pred = NULL;
+        if (*prev_pred != prev) {
+            free(*prev_pred);
+            *prev_pred = NULL;
         }
-        if (*orig_value_pred != orig_value) {
-            free(*orig_value_pred);
-            *orig_value_pred = NULL;
+        if (*orig_prev_pred != orig_prev) {
+            free(*orig_prev_pred);
+            *orig_prev_pred = NULL;
         }
     }
 }
@@ -2218,10 +3001,10 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
 {
     sr_error_info_t *err_info = NULL;
     struct lyd_node *sibling = (struct lyd_node *)node, *child = NULL;
-    char *path = NULL, *path_no_pred = NULL;
-    const char *predicate = NULL;
-    const char *value = NULL, *orig_value = NULL;
-    char *any_value = NULL, *value_pred = NULL, *orig_value_pred = NULL;
+    char *path = NULL, *path_no_pred = NULL, *path_modif = NULL;
+    const char *predicate = NULL, *module_name = NULL;
+    const char *value = NULL, *prev = NULL, *orig_prev = NULL;
+    char *prev_pred = NULL, *orig_prev_pred = NULL, *any_value = NULL;
     int32_t valtype;
     char this_op = 0;
     struct lyd_meta *meta_op;
@@ -2241,9 +3024,21 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
             goto cleanup;
         }
 
-        /* node's values */
-        if ((err_info = srpds_get_values(sibling, &value, &orig_value, &value_pred, &orig_value_pred, &any_value, &valtype))) {
+        /* get modified version of path and path_no_pred */
+        if ((err_info = srpds_get_modif_path(path, &path_modif))) {
             goto cleanup;
+        }
+
+        /* node's values */
+        if ((err_info = srpds_get_values(sibling, &value, &prev, &orig_prev, &prev_pred, &orig_prev_pred, &any_value, &valtype))) {
+            goto cleanup;
+        }
+
+        /* get module name */
+        if ((sibling->parent == NULL) || strcmp(sibling->schema->module->name, sibling->parent->schema->module->name)) {
+            module_name = sibling->schema->module->name;
+        } else {
+            module_name = NULL;
         }
 
         /* operation */
@@ -2255,19 +3050,19 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
             }
             break;
         case 'c':
-            if ((err_info = srpds_create_op(module, sibling, path, path_no_pred, predicate, value, value_pred, valtype,
-                    &max_order, diff_data))) {
+            if ((err_info = srpds_create_op(module, sibling, module_name, path, path_no_pred, predicate, path_modif, value, prev, prev_pred,
+                    valtype, &max_order, diff_data))) {
                 goto cleanup;
             }
             break;
         case 'd':
-            if ((err_info = srpds_delete_op(module, sibling, path, path_no_pred, predicate, orig_value_pred, diff_data))) {
+            if ((err_info = srpds_delete_op(module, sibling, path, path_no_pred, predicate, orig_prev_pred, diff_data))) {
                 goto cleanup;
             }
             break;
         case 'r':
-            if ((err_info = srpds_replace_op(module, sibling, path, path_no_pred, predicate, value, value_pred,
-                    orig_value_pred, &max_order, diff_data))) {
+            if ((err_info = srpds_replace_op(module, sibling, module_name, path, path_no_pred, path_modif, predicate, value, prev, prev_pred,
+                    orig_prev_pred, &max_order, diff_data))) {
                 goto cleanup;
             }
             break;
@@ -2291,7 +3086,9 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
         path = NULL;
         free(path_no_pred);
         path_no_pred = NULL;
-        srpds_cleanup_values(sibling, value, orig_value, &value_pred, &orig_value_pred, &any_value);
+        free(path_modif);
+        path_modif = NULL;
+        srpds_cleanup_values(sibling, prev, orig_prev, &prev_pred, &orig_prev_pred, &any_value);
 
         if ((child = lyd_child_no_keys(sibling))) {
             if ((err_info = srpds_load_diff_recursively(module, child, this_op, diff_data))) {
@@ -2305,7 +3102,8 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
 cleanup:
     free(path);
     free(path_no_pred);
-    srpds_cleanup_values(sibling, value, orig_value, &value_pred, &orig_value_pred, &any_value);
+    free(path_modif);
+    srpds_cleanup_values(sibling, prev, orig_prev, &prev_pred, &orig_prev_pred, &any_value);
     return err_info;
 }
 
@@ -2472,6 +3270,124 @@ cleanup:
 }
 
 /**
+ * @brief Add new metadata to store in the database.
+ *
+ * @param[in] meta Metadata to store.
+ * @param[in] path Path to the node with metadata.
+ * @param[out] diff_data Structure to store the operation in.
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_add_meta(struct lyd_meta *meta, const char *path, struct mongo_diff_data *diff_data)
+{
+    sr_error_info_t *err_info = NULL;
+    const char *meta_value;
+    char *path_with_name = NULL, *meta_name = NULL;
+    bson_t *bson_query = NULL;
+
+    while (meta) {
+        meta_value = lyd_get_meta_value(meta);
+
+        /* skip yang:lyds_tree metadata, this is libyang specific data */
+        if (strcmp(meta->annotation->module->name, "yang") || strcmp(meta->name, "lyds_tree")) {
+            /* concatenate meta name with module name */
+            if (asprintf(&meta_name, "%s:%s", meta->annotation->module->name, meta->name) == -1) {
+                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                goto cleanup;
+            }
+
+            /* create unique path for new metadata */
+            if (asprintf(&path_with_name, "2%s#%s", path, meta_name) == -1) {
+                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                goto cleanup;
+            }
+
+            /* create new metadata */
+            bson_query = BCON_NEW("_id", BCON_UTF8(path_with_name), "name", BCON_UTF8(meta_name), "type", BCON_INT32(MONGO_LY_META),
+                    "path_to_node", BCON_UTF8(path), "value", BCON_UTF8(meta_value));
+
+            if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
+                goto cleanup;
+            }
+        }
+
+        meta = meta->next;
+        free(meta_name);
+        meta_name = NULL;
+        free(path_with_name);
+        path_with_name = NULL;
+    }
+
+cleanup:
+    free(meta_name);
+    free(path_with_name);
+    if (err_info) {
+        bson_destroy(bson_query);
+    }
+    return err_info;
+}
+
+/**
+ * @brief Add new attributes to store in the database.
+ *
+ * @param[in] attr Attributes to store.
+ * @param[in] path Path to the node with attributes.
+ * @param[out] diff_data Structure to the operation in.
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_add_attr(struct lyd_attr *attr, const char *path, struct mongo_diff_data *diff_data)
+{
+    sr_error_info_t *err_info = NULL;
+    char *path_with_name = NULL, *attr_name = NULL;
+    bson_t *bson_query = NULL;
+
+    while (attr) {
+        /* opaque node has to have a JSON format */
+        assert(attr->format == LY_VALUE_JSON);
+
+        /* skip yang:lyds_tree attributes, this is libyang specific data */
+        if (strcmp(attr->name.module_name, "yang") || strcmp(attr->name.name, "lyds_tree")) {
+            /* concatenate attr name with module name */
+            if (asprintf(&attr_name, "%s:%s", attr->name.module_name, attr->name.name) == -1) {
+                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                goto cleanup;
+            }
+
+            /* create unique path for new attribute */
+            if (asprintf(&path_with_name, "3%s#%s", path, attr_name) == -1) {
+                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                goto cleanup;
+            }
+
+            /* create new attribute */
+            bson_query = BCON_NEW("_id", BCON_UTF8(path_with_name), "name", BCON_UTF8(attr_name), "type", BCON_INT32(MONGO_LY_ATTR),
+                    "path_to_node", BCON_UTF8(path), "value", BCON_UTF8(attr->value));
+
+            if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
+                goto cleanup;
+            }
+        }
+
+        attr = attr->next;
+        free(attr_name);
+        attr_name = NULL;
+        free(path_with_name);
+        path_with_name = NULL;
+    }
+
+cleanup:
+    free(attr_name);
+    free(path_with_name);
+    if (err_info) {
+        bson_destroy(bson_query);
+    }
+    return err_info;
+}
+
+/**
  * @brief Load the whole data tree (only for operational).
  *
  * @param[in] mod_data Whole data tree.
@@ -2485,16 +3401,15 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
     sr_error_info_t *err_info = NULL;
     const struct lyd_node *sibling = mod_data;
     struct lyd_node *child = NULL;
-    struct lyd_meta *meta = NULL;
-    struct lys_module *module = NULL; // for opaque nodes
-    struct lyd_attr *attr = NULL; // for opaque nodes
-    const char *meta_value, *predicate = NULL;
-    char *path_no_pred = NULL;
-    char *path = NULL, *final_path = NULL;
-    const char *value = NULL;
+    struct lyd_node_opaq *opaque = NULL; // for opaque nodes
+    const char *predicate = NULL;
+    char *path, *path_no_pred;
+    const char *value, *module_name;
     char *any_value = NULL;
-    int32_t valtype;
     bson_t *bson_query = NULL;
+
+    char *keys = NULL;
+    uint32_t keys_length = 0;
 
     while (sibling) {
         /* get path */
@@ -2502,17 +3417,8 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
             goto cleanup;
         }
 
-        /* LYD_ANYDATA_XML */
-        valtype = 0;
-
         /* get value */
         if (sibling->schema && (sibling->schema->nodetype & LYD_NODE_ANY)) {
-            /* these are JSON data, set valtype */
-            if (((struct lyd_node_any *)sibling)->value_type == LYD_ANYDATA_JSON) {
-                /* LYD_ANYDATA_JSON */
-                valtype = 1;
-            }
-
             /* lyd_node_any */
             if (lyd_any_value_str(sibling, &any_value) != LY_SUCCESS) {
                 ERRINFO(&err_info, SR_ERR_LY, "lyd_any_value_str()", "")
@@ -2524,93 +3430,74 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
             value = lyd_get_value(sibling);
         }
 
-        /* create all data,
-         * there is no need to store order for userordered lists and leaflists
-         * since MongoDB does load all data in the same order in which they were stored */
-        if (!value) {
-            if ((err_info = srpds_add_operation(BCON_NEW("_id", BCON_UTF8(path), "is_opaque", BCON_BOOL(sibling->schema ? 0 : 1)), &(diff_data->cre)))) {
-                goto cleanup;
-            }
+        /* get module name */
+        if (!sibling->schema) {
+            /* opaque node has to have a JSON format */
+            opaque = ((struct lyd_node_opaq *)sibling);
+            assert(opaque->format == LY_VALUE_JSON);
+            module_name = opaque->name.module_name;
+        } else if ((sibling->parent == NULL) || strcmp(sibling->schema->module->name, sibling->parent->schema->module->name)) {
+            module_name = sibling->schema->module->name;
         } else {
-            if ((err_info = srpds_add_operation(BCON_NEW("_id", BCON_UTF8(path), "value", BCON_UTF8(value), "valtype", BCON_INT32(valtype), "is_opaque", BCON_BOOL(sibling->schema ? 0 : 1)), &(diff_data->cre)))) {
-                goto cleanup;
-            }
+            module_name = NULL;
         }
 
-        /* for default nodes metadata */
-        if ((sibling->flags & LYD_DEFAULT) && (sibling->schema->nodetype & LYD_NODE_TERM)) {
-            if (asprintf(&final_path, "2%s#ietf-netconf-with-defaults:default", path) == -1) {
-                ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
-                goto cleanup;
+        /* create all data,
+         * there is no need to store order for user-ordered lists and leaf-lists
+         * since MongoDB does load all data in the same order in which they were stored */
+        if (sibling->schema) {
+            switch (sibling->schema->nodetype) {
+            case LYS_CONTAINER:
+                bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(sibling->schema->name), "type", BCON_INT32(MONGO_LY_CONTAINER),
+                        "module_name", BCON_UTF8(module_name));
+                break;
+            case LYS_LIST:     /* does not matter if this is user-ordered list or not */
+                if ((err_info = srpds_concat_key_values(sibling, &keys, &keys_length))) {
+                    goto cleanup;
+                }
+                bson_query = bson_new();
+                bson_append_utf8(bson_query, "_id", 3, path, -1);
+                bson_append_utf8(bson_query, "name", 4, sibling->schema->name, -1);
+                bson_append_int32(bson_query, "type", 4, MONGO_LY_LIST);
+                bson_append_utf8(bson_query, "module_name", 11, module_name, -1);
+                bson_append_utf8(bson_query, "keys", 4, keys, keys_length);
+                free(keys);
+                keys = NULL;
+                break;
+            case LYS_LEAF:
+            case LYS_LEAFLIST:  /* does not matter if this is user-ordered leaf-list or not */
+                bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(sibling->schema->name), "type", BCON_INT32(MONGO_LY_TERM),
+                        "module_name", BCON_UTF8(module_name), "value", BCON_UTF8(value), "dflt_flag", BCON_BOOL(sibling->flags & LYD_DEFAULT));
+                break;
+            case LYS_ANYDATA:
+            case LYS_ANYXML:
+                bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(sibling->schema->name), "type", BCON_INT32(MONGO_LY_ANY),
+                        "module_name", BCON_UTF8(module_name), "value", BCON_UTF8(value), "dflt_flag", BCON_BOOL(sibling->flags & LYD_DEFAULT),
+                        "valtype", BCON_INT32(((struct lyd_node_any *)sibling)->value_type == LYD_ANYDATA_JSON));
+                break;
             }
 
-            bson_query = BCON_NEW("_id", BCON_UTF8(final_path), "value", BCON_UTF8("true"));
+            /* create new node */
             if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
                 goto cleanup;
             }
 
-            free(final_path);
-            final_path = NULL;
-        }
-
-        /* create metadata and attributes of the node */
-        if (sibling->schema) {
-            /* nodes */
-            meta = sibling->meta;
-            while (meta) {
-                meta_value = lyd_get_meta_value(meta);
-
-                /* skip yang:lyds_tree metadata, this is libyang specific data */
-                if (strcmp(meta->annotation->module->name, "yang") || strcmp(meta->name, "lyds_tree")) {
-                    /* create new metadata */
-                    if (asprintf(&final_path, "2%s#%s:%s", path, meta->annotation->module->name, meta->name) == -1) {
-                        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
-                        goto cleanup;
-                    }
-
-                    bson_query = BCON_NEW("_id", BCON_UTF8(final_path), "value", BCON_UTF8(meta_value));
-                    if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
-                        goto cleanup;
-                    }
-                }
-
-                meta = meta->next;
-                free(final_path);
-                final_path = NULL;
+            /* create new metadata */
+            if ((err_info = srpds_add_meta(sibling->meta, path, diff_data))) {
+                goto cleanup;
             }
         } else {
-            /* opaque nodes */
-            attr = ((struct lyd_node_opaq *)sibling)->attr;
-            while (attr) {
-                if (attr->format == LY_VALUE_JSON) {
-                    module = ly_ctx_get_module_implemented(attr->parent->ctx, attr->name.module_name);
-                } else if (attr->format == LY_VALUE_XML) {
-                    module = ly_ctx_get_module_implemented(attr->parent->ctx, attr->name.module_ns);
-                }
+            bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(opaque->name.name), "type", BCON_INT32(MONGO_LY_OPAQUE),
+                    "module_name", BCON_UTF8(module_name), "value", BCON_UTF8(value));
 
-                if (!module) {
-                    ERRINFO(&err_info, SR_ERR_LY, "ly_ctx_get_module_implemented()", "Did not return any module.")
-                    goto cleanup;
-                }
+            /* create new opaque node */
+            if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
+                goto cleanup;
+            }
 
-                /* skip yang:lyds_tree attributes, this is libyang specific data */
-                if (strcmp(module->name, "yang") || strcmp(attr->name.name, "lyds_tree")) {
-                    /* create new attribute data */
-                    if (asprintf(&final_path, "3%s#%s:%s", path, module->name, attr->name.name) == -1) {
-                        ERRINFO(&err_info, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
-                        goto cleanup;
-                    }
-
-                    bson_query = BCON_NEW("_id", BCON_UTF8(final_path), "value", BCON_UTF8(attr->value));
-                    if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
-                        goto cleanup;
-                    }
-                }
-
-                attr = attr->next;
-                free(final_path);
-                final_path = NULL;
-                module = NULL;
+            /* create new attribute */
+            if ((err_info = srpds_add_attr(opaque->attr, path, diff_data))) {
+                goto cleanup;
             }
         }
 
@@ -2623,15 +3510,15 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
         sibling = sibling->next;
 
         free(path);
-        free(path_no_pred);
         path = NULL;
+        free(path_no_pred);
         path_no_pred = NULL;
     }
 
 cleanup:
     free(path);
     free(path_no_pred);
-    free(final_path);
+    free(keys);
     if (err_info) {
         bson_destroy(bson_query);
     }
@@ -3227,7 +4114,8 @@ srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, const char **x
     mongo_data_t mdata;
     mongo_plg_conn_data_t *pdata = (mongo_plg_conn_data_t *)plg_data;
     sr_error_info_t *err_info = NULL;
-    char *out_regex = NULL;
+    bson_t xpath_filter;
+    int is_valid = 0;
 
     assert(mod && mod_data);
     *mod_data = NULL;
@@ -3236,22 +4124,27 @@ srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, const char **x
         goto cleanup;
     }
 
-    if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, &out_regex))) {
+    if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, &is_valid, &xpath_filter))) {
         goto cleanup;
     }
 
+    /* initialize xpath_filter for loading */
+    if (!is_valid) {
+        bson_init(&xpath_filter);
+    }
+
     if (ds == SR_DS_OPERATIONAL) {
-        if ((err_info = srpds_load_oper(mdata.module, mod, mod_data))) {
+        if ((err_info = srpds_load_oper(mdata.module, mod, &xpath_filter, mod_data))) {
             goto cleanup;
         }
     } else {
-        if ((err_info = srpds_load_conv(mdata.module, mod, ds, out_regex, mod_data))) {
+        if ((err_info = srpds_load_conv(mdata.module, mod, ds, &xpath_filter, mod_data))) {
             goto cleanup;
         }
     }
 
 cleanup:
-    free(out_regex);
+    bson_destroy(&xpath_filter);
     srpds_data_destroy(pdata, &mdata);
     return err_info;
 }

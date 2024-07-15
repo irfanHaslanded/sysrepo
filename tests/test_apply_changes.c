@@ -4,8 +4,8 @@
  * @brief test for sr_apply_changes()
  *
  * @copyright
- * Copyright (c) 2018 - 2021 Deutsche Telekom AG.
- * Copyright (c) 2018 - 2021 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -517,15 +517,11 @@ subscribe_change_done_thread(void *arg)
     ret = sr_subscription_process_events(subscr, NULL, NULL);
     assert_int_equal(ret, SR_ERR_OK);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 5) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 5);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
+
+    /* final invocation count check */
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 5);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
@@ -762,6 +758,7 @@ apply_update_thread(void *arg)
     /* perform 1st change */
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 3);
 
     /* check current data tree */
     ret = sr_get_subtree(sess, "/ietf-interfaces:interfaces", 0, &subtree);
@@ -792,6 +789,8 @@ apply_update_thread(void *arg)
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
+
     /* check current data tree */
     ret = sr_get_subtree(sess, "/ietf-interfaces:interfaces", 0, &subtree);
     assert_int_equal(ret, SR_ERR_OK);
@@ -815,7 +814,7 @@ subscribe_update_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -830,13 +829,6 @@ subscribe_update_thread(void *arg)
 
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
-
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
 
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
@@ -1312,6 +1304,8 @@ apply_update_fail_thread(void *arg)
     /* perform the change (it should fail) */
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
+
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
     assert_int_equal(err_info->err_count, 2);
@@ -1348,7 +1342,7 @@ subscribe_update_fail_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1360,13 +1354,6 @@ subscribe_update_fail_thread(void *arg)
 
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
-
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 1) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
 
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
@@ -1386,6 +1373,89 @@ test_update_fail(void **state)
 
     pthread_join(tid[0], NULL);
     pthread_join(tid[1], NULL);
+}
+
+/* TEST */
+static int
+module_update_foreign_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
+{
+    struct state *st = (struct state *)private_data;
+    int ret = SR_ERR_OK;
+
+    (void)session;
+    (void)sub_id;
+    (void)request_id;
+
+    assert_string_equal(module_name, "when1");
+    assert_null(xpath);
+
+    switch (ATOMIC_LOAD_RELAXED(st->cb_called)) {
+    case 0:
+        assert_int_equal(event, SR_EV_UPDATE);
+
+        /* change the data of another module */
+        ret = sr_set_item_str(session, "/when2:cont/l", "val", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        break;
+    case 1:
+    case 2:
+        /* ignore */
+        break;
+    default:
+        fail();
+    }
+
+    ATOMIC_INC_RELAXED(st->cb_called);
+    return ret;
+}
+
+static void
+test_update_foreign(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_session_ctx_t *sess;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+    sr_data_t *data;
+    char *str1;
+    const char *str2;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* subscribe */
+    ret = sr_module_change_subscribe(sess, "when1", NULL, module_update_foreign_cb, st, 0, SR_SUBSCR_UPDATE, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* perform a change */
+    ret = sr_set_item_str(sess, "/when1:l1", "str", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 3);
+
+    /* check current data tree */
+    ret = sr_get_data(sess, "/when1:* | /when2:*", 0, 0, 0, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+    assert_int_equal(ret, 0);
+    sr_release_data(data);
+
+    str2 =
+            "<l1 xmlns=\"urn:when1\">str</l1>\n"
+            "<cont xmlns=\"urn:when2\">\n"
+            "  <l>val</l>\n"
+            "</cont>\n";
+    assert_string_equal(str1, str2);
+    free(str1);
+
+    /* cleanup */
+    sr_unsubscribe(subscr);
+    sr_delete_item(sess, "/when1:l1", 0);
+    sr_delete_item(sess, "/when2:cont", 0);
+    sr_apply_changes(sess, 0);
+    sr_session_stop(sess);
 }
 
 /* TEST */
@@ -1773,6 +1843,10 @@ apply_change_fail_thread(void *arg)
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
 
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 2);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called3), 1);
+
     /* no custom error message set */
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1800,10 +1874,6 @@ apply_change_fail_thread(void *arg)
     assert_null(str1);
     sr_release_data(subtree);
 
-    /* signal that we have finished applying changes #1 and wait for the cb_called check */
-    pthread_barrier_wait(&st->barrier);
-    pthread_barrier_wait(&st->barrier);
-
     /* perform another change (it should fail) */
     ret = sr_set_item_str(sess, "/when1:l2", "value2", NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1811,6 +1881,10 @@ apply_change_fail_thread(void *arg)
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 3);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called3), 3);
 
     ret = sr_discard_changes(sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1824,12 +1898,11 @@ apply_change_fail_thread(void *arg)
 
     assert_null(str1);
     sr_release_data(subtree);
-
-    /* signal that we have finished applying changes #2 and wait for the cb_called check */
-    pthread_barrier_wait(&st->barrier);
-    pthread_barrier_wait(&st->barrier);
-
     sr_session_stop(sess);
+
+    /* signal we are done */
+    pthread_barrier_wait(&st->barrier);
+
     return NULL;
 }
 
@@ -1862,24 +1935,7 @@ subscribe_change_fail_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    /* wait for the other thread to signal #1 (all changes sent) */
-    pthread_barrier_wait(&st->barrier);
-
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 2);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called3), 1);
-
-    /* cb_called checked */
-    pthread_barrier_wait(&st->barrier);
-
-    /* wait for the other thread to signal #2 (all changes sent) */
-    pthread_barrier_wait(&st->barrier);
-
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 3);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called3), 3);
-
-    /* cb_called checked */
+    /* wait for apply_changes thread to finish */
     pthread_barrier_wait(&st->barrier);
 
     sr_unsubscribe(subscr);
@@ -2795,7 +2851,7 @@ subscribe_change_any_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -2806,15 +2862,9 @@ subscribe_change_any_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
@@ -3429,6 +3479,9 @@ apply_change_dflt_leaf_thread(void *arg)
 
     /* cleanup */
     sr_session_stop(sess);
+
+    /* signal we are finished */
+    pthread_barrier_wait(&st->barrier);
     return NULL;
 }
 
@@ -3438,7 +3491,7 @@ subscribe_change_dflt_leaf_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -3449,11 +3502,8 @@ subscribe_change_dflt_leaf_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
+    /* wait for other thread to finish */
+    pthread_barrier_wait(&st->barrier);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
 
     sr_unsubscribe(subscr);
@@ -4144,6 +4194,10 @@ apply_change_dflt_leaflist_thread(void *arg)
     assert_int_equal(ret, SR_ERR_OK);
 
     sr_session_stop(sess);
+
+    /* signal we are finished */
+    pthread_barrier_wait(&st->barrier);
+
     return NULL;
 }
 
@@ -4153,7 +4207,7 @@ subscribe_change_dflt_leaflist_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -4164,11 +4218,8 @@ subscribe_change_dflt_leaflist_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
+    /* wait for other thread to finish */
+    pthread_barrier_wait(&st->barrier);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
 
     sr_unsubscribe(subscr);
@@ -4389,6 +4440,10 @@ apply_change_dflt_choice_thread(void *arg)
 
     /* cleanup */
     sr_session_stop(sess);
+
+    /* signal we are finished */
+    pthread_barrier_wait(&st->barrier);
+
     return NULL;
 }
 
@@ -4398,7 +4453,7 @@ subscribe_change_dflt_choice_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -4409,11 +4464,8 @@ subscribe_change_dflt_choice_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
+    /* wait for other thread to finish */
+    pthread_barrier_wait(&st->barrier);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 
     sr_unsubscribe(subscr);
@@ -4934,7 +4986,7 @@ subscribe_change_done_when_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -4947,16 +4999,11 @@ subscribe_change_done_when_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while (((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) || (ATOMIC_LOAD_RELAXED(st->cb_called2) < 6)) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 6);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
+
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 6);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
@@ -5331,7 +5378,7 @@ subscribe_change_done_xpath_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -5346,16 +5393,10 @@ subscribe_change_done_xpath_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 8) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 8);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
 
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 8);
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
     return NULL;
@@ -5448,7 +5489,7 @@ subscribe_change_unlocked_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -5459,15 +5500,9 @@ subscribe_change_unlocked_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 2) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
@@ -6034,8 +6069,7 @@ apply_change_order_thread(void *arg)
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
-    pthread_barrier_wait(&st->barrier);
-
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
     /* order: ietf-interfaces, test */
     sr_module_change_set_order(st->conn, "test", SR_DS_RUNNING, 0);
     sr_module_change_set_order(st->conn, "ietf-interfaces", SR_DS_RUNNING, 50);
@@ -6049,8 +6083,7 @@ apply_change_order_thread(void *arg)
     /* perform the second change */
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
-
-    pthread_barrier_wait(&st->barrier);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 8);
 
     /* cleanup edit */
     ret = sr_delete_item(sess, "/test:l1", 0);
@@ -6061,6 +6094,7 @@ apply_change_order_thread(void *arg)
     /* perform the third change */
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 12);
 
     /* signal that we have finished applying changes */
     pthread_barrier_wait(&st->barrier);
@@ -6091,17 +6125,8 @@ subscribe_change_order_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    /* wait for the first edit */
+    /* wait for the other thread */
     pthread_barrier_wait(&st->barrier);
-    assert_true(ATOMIC_LOAD_RELAXED(st->cb_called) >= 4);
-
-    /* wait for the second edit */
-    pthread_barrier_wait(&st->barrier);
-    assert_true(ATOMIC_LOAD_RELAXED(st->cb_called) >= 8);
-
-    /* wait for the third edit */
-    pthread_barrier_wait(&st->barrier);
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 12);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);
@@ -6456,6 +6481,8 @@ apply_change_userord_thread(void *arg)
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
 
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+
     /* perform 2nd change */
     ret = sr_set_item_str(sess, "/test:l3[k='k1']/l4[k='k1']", NULL, NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
@@ -6463,6 +6490,7 @@ apply_change_userord_thread(void *arg)
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 
     /* get data and reapply, the module change callback should not be called
     else the test fails */
@@ -6474,11 +6502,10 @@ apply_change_userord_thread(void *arg)
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
     sr_release_data(data);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 
-    /* signal that we have finished applying changes */
+    /* signal that we have finished applying changes and wait for unsubscribe */
     pthread_barrier_wait(&st->barrier);
-
-    /* wait for unsubscribe */
     pthread_barrier_wait(&st->barrier);
 
     /* cleanup */
@@ -6497,7 +6524,7 @@ subscribe_change_userord_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -6508,19 +6535,12 @@ subscribe_change_userord_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
-
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
 
     sr_unsubscribe(subscr);
 
-    /* signal unsubscribe */
+    /* signal that subscription was removed */
     pthread_barrier_wait(&st->barrier);
 
     sr_session_stop(sess);
@@ -7256,6 +7276,672 @@ test_done_timeout_priority(void **state)
     sr_session_stop(sess);
 }
 
+/* TEST */
+static int
+module_list_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
+{
+    struct state *st = (struct state *)private_data;
+    sr_change_oper_t op;
+    sr_change_iter_t *iter;
+    const struct lyd_node *node;
+    const char *prev_val;
+    int ret;
+
+    (void)sub_id;
+    (void)request_id;
+
+    assert_string_equal(module_name, "ietf-interfaces");
+    assert_null(xpath);
+
+    switch (ATOMIC_LOAD_RELAXED(st->cb_called)) {
+    case 0:
+    case 1:
+        if (ATOMIC_LOAD_RELAXED(st->cb_called) % 2) {
+            assert_int_equal(event, SR_EV_DONE);
+        } else {
+            assert_int_equal(event, SR_EV_CHANGE);
+        }
+
+        /* get changes iter */
+        ret = sr_get_changes_iter(session, "/ietf-interfaces:*//.", &iter);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* 1st interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth52");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.100");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "24");
+
+        /* 2nd interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth53");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.101");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "24");
+
+        /* 3rd interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth54");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.102");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "16");
+
+        /* 4th interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth55");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.103");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "16");
+
+        /* no more changes */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_NOT_FOUND);
+
+        sr_free_change_iter(iter);
+        break;
+    case 2:
+    case 3:
+        if (ATOMIC_LOAD_RELAXED(st->cb_called) % 2) {
+            assert_int_equal(event, SR_EV_DONE);
+        } else {
+            assert_int_equal(event, SR_EV_CHANGE);
+        }
+
+        /* get changes iter */
+        ret = sr_get_changes_iter(session, "/ietf-interfaces:*//.", &iter);
+        assert_int_equal(ret, SR_ERR_OK);
+
+        /* 1st interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "description");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.100");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "24");
+
+        /* 2nd interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_MODIFIED);
+        assert_string_equal(prev_val, "24");
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "16");
+
+        /* 3rd interafce */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.102");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "16");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.122");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "8");
+
+        /* 4th interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth55");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ipv4");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "forwarding");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "address");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "ip");
+        assert_string_equal(lyd_get_value(node), "192.168.2.103");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_DELETED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "prefix-length");
+        assert_string_equal(lyd_get_value(node), "16");
+
+        /* 5th interface */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "interface");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "name");
+        assert_string_equal(lyd_get_value(node), "eth56");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "type");
+        assert_string_equal(lyd_get_value(node), "iana-if-type:ethernetCsmacd");
+
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_OK);
+        assert_int_equal(op, SR_OP_CREATED);
+        assert_null(prev_val);
+        assert_string_equal(node->schema->name, "enabled");
+        assert_true(node->flags & LYD_DEFAULT);
+
+        /* no more changes */
+        ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_val, NULL, NULL);
+        assert_int_equal(ret, SR_ERR_NOT_FOUND);
+
+        sr_free_change_iter(iter);
+        break;
+    default:
+        fail();
+    }
+
+    ATOMIC_INC_RELAXED(st->cb_called);
+    return SR_ERR_OK;
+}
+
+static void *
+apply_list_replace_thread(void *arg)
+{
+    struct state *st = (struct state *)arg;
+    sr_session_ctx_t *sess;
+    sr_data_t *data;
+    struct lyd_node *edit;
+    char *str1;
+    const char *str2;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth52']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth52']/ietf-ip:ipv4/address[ip='192.168.2.100']"
+            "/prefix-length", "24", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth53']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth53']/ietf-ip:ipv4/address[ip='192.168.2.101']"
+            "/prefix-length", "24", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth54']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth54']/ietf-ip:ipv4/address[ip='192.168.2.102']"
+            "/prefix-length", "16", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth55']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth55']/ietf-ip:ipv4/address[ip='192.168.2.103']"
+            "/prefix-length", "16", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* wait for subscription before applying changes */
+    pthread_barrier_wait(&st->barrier);
+
+    /* set initial data */
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+
+    /* change data effectively replacing or creating some list instances */
+    str2 = "{"
+            "\"ietf-interfaces:interfaces\": {"
+            "  \"interface\": ["
+            "    { \"name\": \"eth52\", \"@\": { \"ietf-netconf:operation\": \"remove\" } },"
+            "    { \"name\": \"eth53\", \"@\": { \"ietf-netconf:operation\": \"remove\" } },"
+            "    { \"name\": \"eth54\", \"@\": { \"ietf-netconf:operation\": \"remove\" } },"
+            "    { \"name\": \"eth55\", \"@\": { \"ietf-netconf:operation\": \"remove\" } },"
+            "    { \"name\": \"eth52\", \"type\": \"iana-if-type:ethernetCsmacd\", \"description\": \"this is eth52\" },"
+            "    { \"name\": \"eth53\", \"type\": \"iana-if-type:ethernetCsmacd\", \"ietf-ip:ipv4\": {"
+            "      \"address\": [ { \"ip\": \"192.168.2.101\", \"prefix-length\": 16 } ]"
+            "    } },"
+            "    { \"name\": \"eth54\", \"type\": \"iana-if-type:ethernetCsmacd\", \"ietf-ip:ipv4\": {"
+            "      \"address\": [ { \"ip\": \"192.168.2.122\", \"prefix-length\": 8 } ]"
+            "    } },"
+            "    { \"name\": \"eth56\", \"type\": \"iana-if-type:ethernetCsmacd\" }"
+            "  ]"
+            "}}";
+    ret = lyd_parse_data_mem(sr_acquire_context(st->conn), str2, LYD_JSON, LYD_PARSE_ONLY, 0, &edit);
+    assert_int_equal(ret, LY_SUCCESS);
+    ret = sr_edit_batch(sess, edit, "merge");
+    assert_int_equal(ret, SR_ERR_OK);
+    lyd_free_siblings(edit);
+    sr_release_context(st->conn);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
+
+    /* check current data tree */
+    ret = sr_get_data(sess, "/ietf-interfaces:interfaces", 0, 0, 0, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS | LYD_PRINT_SHRINK);
+    sr_release_data(data);
+    assert_int_equal(ret, LY_SUCCESS);
+
+    str2 = "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\">"
+            "<interface><name>eth52</name><description>this is eth52</description>"
+            "<type xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type></interface>"
+            "<interface><name>eth53</name>"
+            "<type xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type>"
+            "<ipv4 xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ip\">"
+            "<address><ip>192.168.2.101</ip><prefix-length>16</prefix-length></address></ipv4></interface>"
+            "<interface><name>eth54</name>"
+            "<type xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type>"
+            "<ipv4 xmlns=\"urn:ietf:params:xml:ns:yang:ietf-ip\">"
+            "<address><ip>192.168.2.122</ip><prefix-length>8</prefix-length></address></ipv4></interface>"
+            "<interface><name>eth56</name>"
+            "<type xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type></interface>"
+            "</interfaces>";
+    assert_string_equal(str1, str2);
+    free(str1);
+
+    /* signal that we have finished */
+    pthread_barrier_wait(&st->barrier);
+
+    sr_session_stop(sess);
+    return NULL;
+}
+
+static void *
+subscribe_list_replace_thread(void *arg)
+{
+    struct state *st = (struct state *)arg;
+    sr_session_ctx_t *sess;
+    sr_subscription_ctx_t *subscr = NULL;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_list_replace_cb, st, 0, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* signal that subscription was created */
+    pthread_barrier_wait(&st->barrier);
+
+    /* wait for the other thread to finish */
+    pthread_barrier_wait(&st->barrier);
+
+    sr_unsubscribe(subscr);
+    sr_session_stop(sess);
+    return NULL;
+}
+
+static void
+test_list_replace(void **state)
+{
+    pthread_t tid[2];
+
+    pthread_create(&tid[0], NULL, apply_list_replace_thread, *state);
+    pthread_create(&tid[1], NULL, subscribe_list_replace_thread, *state);
+
+    pthread_join(tid[0], NULL);
+    pthread_join(tid[1], NULL);
+}
+
 /* MAIN */
 int
 main(void)
@@ -7265,6 +7951,7 @@ main(void)
         cmocka_unit_test_setup_teardown(test_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update2, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update_fail, setup_f, teardown_f),
+        cmocka_unit_test_setup_teardown(test_update_foreign, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_fail, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_fail2, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_fail_priority, setup_f, teardown_f),
@@ -7287,6 +7974,7 @@ main(void)
         cmocka_unit_test_setup_teardown(test_write_starve, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_mult_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_done_timeout_priority, setup_f, teardown_f),
+        cmocka_unit_test_setup_teardown(test_list_replace, setup_f, teardown_f),
     };
 
     setenv("CMOCKA_TEST_ABORT", "1", 1);

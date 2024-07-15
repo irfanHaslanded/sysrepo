@@ -82,6 +82,9 @@ sr_modinfo_add(const struct lys_module *ly_mod, const char *xpath, int dup_xpath
 
         mod->ly_mod = ly_mod;
         mod->state |= MOD_INFO_NEW;
+    } else if (!(mod->state & MOD_INFO_REQ)) {
+        /* different type, re-add */
+        mod->state |= MOD_INFO_NEW;
     } else if (!mod->xpath_count) {
         /* mod is present with no xpaths (full data tree), nothing to add */
         return NULL;
@@ -1039,6 +1042,10 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
 cleanup:
     lyd_free_tree(parent_dup);
     free(parent_path);
+    if (err_info) {
+        lyd_free_all(*oper_data);
+        *oper_data = NULL;
+    }
     return err_info;
 }
 
@@ -1480,14 +1487,15 @@ sr_modinfo_module_data_load_yanglib(struct sr_mod_info_s *mod_info, struct sr_mo
 {
     sr_error_info_t *err_info = NULL;
     struct lyd_node *mod_data;
-    uint32_t content_id;
+    uint32_t content_id, i;
+    struct ly_set *set = NULL;
 
     /* get content-id */
     content_id = SR_CONN_MAIN_SHM(mod_info->conn)->content_id;
 
     /* get the data from libyang */
     if ((err_info = sr_ly_ctx_get_yanglib_data(mod_info->conn->ly_ctx, &mod_data, content_id))) {
-        return err_info;
+        goto cleanup;
     }
 
     if (!strcmp(mod->ly_mod->revision, "2019-01-04")) {
@@ -1496,19 +1504,19 @@ sr_modinfo_module_data_load_yanglib(struct sr_mod_info_s *mod_info, struct sr_mo
         /* add supported datastores */
         if ((err_info = sr_lyd_new_path(mod_data, NULL, "datastore[name='ietf-datastores:running']/schema", "complete",
                 0, NULL, NULL))) {
-            return err_info;
+            goto cleanup;
         }
         if ((err_info = sr_lyd_new_path(mod_data, NULL, "datastore[name='ietf-datastores:candidate']/schema", "complete",
                 0, NULL, NULL))) {
-            return err_info;
+            goto cleanup;
         }
         if ((err_info = sr_lyd_new_path(mod_data, NULL, "datastore[name='ietf-datastores:startup']/schema", "complete",
                 0, NULL, NULL))) {
-            return err_info;
+            goto cleanup;
         }
         if ((err_info = sr_lyd_new_path(mod_data, NULL, "datastore[name='ietf-datastores:operational']/schema", "complete",
                 0, NULL, NULL))) {
-            return err_info;
+            goto cleanup;
         }
     } else if (!strcmp(mod->ly_mod->revision, "2016-06-21")) {
         assert(!strcmp(mod_data->schema->name, "modules-state"));
@@ -1517,15 +1525,37 @@ sr_modinfo_module_data_load_yanglib(struct sr_mod_info_s *mod_info, struct sr_mo
     } else {
         /* no other revision is supported */
         SR_ERRINFO_INT(&err_info);
-        return err_info;
+        goto cleanup;
+    }
+
+    /* add missing 'location' and 'schema' nodes */
+    if ((err_info = sr_lyd_find_xpath(mod_data, "/ietf-yang-library:yang-library/module-set/module[not(location)] | "
+            "/ietf-yang-library:yang-library/module-set/import-only-module[not(location)]", &set))) {
+        goto cleanup;
+    }
+    for (i = 0; i < set->count; ++i) {
+        if ((err_info = sr_lyd_new_term(set->dnodes[i], NULL, "location", "file://@internal"))) {
+            goto cleanup;
+        }
+    }
+    ly_set_free(set, NULL);
+    if ((err_info = sr_lyd_find_xpath(mod_data, "/ietf-yang-library:modules-state/module[not(schema)]", &set))) {
+        goto cleanup;
+    }
+    for (i = 0; i < set->count; ++i) {
+        if ((err_info = sr_lyd_new_term(set->dnodes[i], NULL, "schema", "file://@internal"))) {
+            goto cleanup;
+        }
     }
 
     /* connect to the rest of data */
     if ((err_info = sr_lyd_merge(&mod_info->data, mod_data, 1, LYD_MERGE_DESTRUCT))) {
-        return err_info;
+        goto cleanup;
     }
 
-    return NULL;
+cleanup:
+    ly_set_free(set, NULL);
+    return err_info;
 }
 
 /**
@@ -2495,7 +2525,6 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
     sr_datastore_t ds;
     struct sr_mod_info_mod_s *mod = NULL;
     uint32_t i;
-    int new = 0;
 
     assert((mod_type == MOD_INFO_REQ) || (mod_type == MOD_INFO_DEP) || (mod_type == MOD_INFO_INV_DEP));
 
@@ -2504,15 +2533,11 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
         if (mod_info->mods[i].ly_mod == ly_mod) {
             /* already there, update module type if needed */
             mod = &mod_info->mods[i];
+            mod->state |= mod_type;
+
             if (mod->state & MOD_INFO_NEW) {
-                new = 1;
-            }
-            if ((mod->state & MOD_INFO_TYPE_MASK) < mod_type) {
-                mod->state &= ~MOD_INFO_TYPE_MASK;
-                mod->state |= mod_type;
-            }
-            if (new) {
                 /* new module, needs its members filled */
+                mod->state &= ~MOD_INFO_NEW;
                 break;
             }
             return NULL;
@@ -2575,7 +2600,6 @@ sr_modinfo_mod_new(const struct lys_module *ly_mod, uint32_t mod_type, struct sr
     mod->shm_mod = shm_mod;
     mod->ly_mod = ly_mod;
     memcpy(&mod->ds_handle, &ds_handle, sizeof ds_handle);
-    mod->state &= ~MOD_INFO_TYPE_MASK;
     mod->state |= mod_type;
 
     return NULL;
@@ -3190,6 +3214,51 @@ cleanup:
     return err_info;
 }
 
+/**
+ * @brief Check whether an updated edit includes data from modules not in mod info.
+ *
+ * @param[in] mod_info Mod info to use.
+ * @param[in] update_edit Updated edit to check.
+ * @return 0 if there are no foreign module data.
+ * @return non-zero if there are foreign module data.
+ */
+static int
+sr_modinfo_update_is_foreign(const struct sr_mod_info_s *mod_info, const struct lyd_node *update_edit)
+{
+    struct sr_mod_info_mod_s *mod;
+    const struct lyd_node *iter;
+    const struct lys_module *ly_mod = NULL;
+    uint32_t i;
+
+    LY_LIST_FOR(update_edit, iter) {
+        if (lyd_owner_module(iter) == ly_mod) {
+            /* still the same module */
+            continue;
+        }
+        ly_mod = lyd_owner_module(iter);
+
+        /* check this node */
+        for (i = 0; i < mod_info->mod_count; ++i) {
+            mod = &mod_info->mods[i];
+            if (!(mod->state & MOD_INFO_REQ)) {
+                /* skip dependency modules */
+                continue;
+            }
+
+            if (mod->ly_mod == ly_mod) {
+                break;
+            }
+        }
+
+        if (i == mod_info->mod_count) {
+            /* foreign module data */
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 sr_error_info_t *
 sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session, uint32_t timeout_ms,
         sr_lock_mode_t *change_sub_lock, sr_error_info_t **cb_err_info)
@@ -3199,6 +3268,7 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
     uint32_t sid = 0;
     char *orig_name = NULL;
     void *orig_data = NULL;
+    uint32_t mi_opts;
 
     assert(mod_info->diff);
     assert(*change_sub_lock == SR_LOCK_READ);
@@ -3224,6 +3294,29 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
 
     /* create new diff if we have an update edit */
     if (update_edit) {
+        /* unlock so that we can lock after additonal modules were marked as changed */
+
+        /* CHANGE SUB READ UNLOCK */
+        sr_modinfo_changesub_rdunlock(mod_info);
+        *change_sub_lock = SR_LOCK_NONE;
+
+        if (sr_modinfo_update_is_foreign(mod_info, update_edit)) {
+            /* data of a foreign module, update mod info */
+            if ((err_info = sr_modinfo_collect_edit(update_edit, mod_info))) {
+                goto cleanup;
+            }
+
+            mi_opts = SR_MI_LOCK_UPGRADEABLE | SR_MI_PERM_NO;
+            if ((mod_info->ds != SR_DS_OPERATIONAL) && (mod_info->ds != SR_DS_CANDIDATE)) {
+                mi_opts |= SR_MI_INV_DEPS;
+            } /* else stored oper edit or candidate data are not validated so we do not need data from other modules */
+
+            /* add modules into mod_info with deps, locking, and their data */
+            if ((err_info = sr_modinfo_consolidate(mod_info, SR_LOCK_READ, mi_opts, sid, orig_name, orig_data, 0, 0, 0))) {
+                goto cleanup;
+            }
+        }
+
         /* backup the old diff */
         old_diff = mod_info->diff;
         mod_info->diff = NULL;
@@ -3238,17 +3331,11 @@ sr_modinfo_change_notify_update(struct sr_mod_info_s *mod_info, sr_session_ctx_t
             goto cleanup;
         }
 
-        /* unlock so that we can lock after additonal modules were marked as changed */
-
-        /* CHANGE SUB READ UNLOCK */
-        sr_modinfo_changesub_rdunlock(mod_info);
-        *change_sub_lock = SR_LOCK_NONE;
-
         /* validate updated data trees and finish new diff */
         switch (mod_info->ds) {
         case SR_DS_STARTUP:
         case SR_DS_RUNNING:
-            /* add new modules */
+            /* update the modules */
             if ((err_info = sr_modinfo_collect_deps(mod_info))) {
                 goto cleanup;
             }

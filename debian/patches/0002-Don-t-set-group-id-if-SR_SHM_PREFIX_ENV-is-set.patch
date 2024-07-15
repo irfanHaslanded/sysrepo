@@ -12,7 +12,7 @@ change the group of data files in this case.
  2 files changed, 60 insertions(+), 11 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 8f0b7bc..7367497 100644
+index 238336c..9e9223b 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,8 @@
@@ -80,7 +80,7 @@ index 8f0b7bc..7367497 100644
              SR_ERRINFO_SYSERRNO(&err_info, "chown");
              goto cleanup;
          }
-@@ -5560,3 +5566,20 @@ cleanup:
+@@ -5611,3 +5617,20 @@ cleanup:
  
      return err_info;
  }
