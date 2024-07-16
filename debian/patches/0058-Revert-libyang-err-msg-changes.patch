@@ -10,7 +10,7 @@ This reverts f04900891d17e3fd5a9634971c3a34a0c7c43b9f
  3 files changed, 9 insertions(+), 6 deletions(-)
 
 diff --git a/src/ly_wrap.c b/src/ly_wrap.c
-index ee867e2..fa56a5f 100644
+index 002faeb..5fd7342 100644
 --- a/src/ly_wrap.c
 +++ b/src/ly_wrap.c
 @@ -48,6 +48,7 @@ sr_errinfo_new_ly(sr_error_info_t **err_info, const struct ly_ctx *ly_ctx, const
@@ -64,7 +64,7 @@ index 90681df..38a7327 100644
      /* correct the instance-identifier */
      input[0].data.string_val = "/ops-ref:l2";
 diff --git a/tests/test_rpc_action.c b/tests/test_rpc_action.c
-index f56868c..1e5b8ec 100644
+index c7f0d28..ea91e9a 100644
 --- a/tests/test_rpc_action.c
 +++ b/tests/test_rpc_action.c
 @@ -358,7 +358,7 @@ test_rpc(void **state)

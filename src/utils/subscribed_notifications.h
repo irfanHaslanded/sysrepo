@@ -4,8 +4,8 @@
  * @brief multi-module notification subscription functions header
  *
  * @copyright
- * Copyright (c) 2023 - 2024 Deutsche Telekom AG.
- * Copyright (c) 2023 - 2024 CESNET, z.s.p.o.
+ * Copyright (c) 2023 Deutsche Telekom AG.
+ * Copyright (c) 2023 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -82,18 +82,6 @@ typedef struct {
  * @return Error code (::SR_ERR_OK on success).
  */
 int srsn_filter_subtree2xpath(const struct lyd_node *subtree, sr_session_ctx_t *session, char **xpath_filter);
-
-/**
- * @brief Collect modules to subscribe to.
- *
- * @param[in] stream Notification stream.
- * @param[in] xpath_filter XPath filter, if any.
- * @param[in] ly_ctx Context to use.
- * @param[out] mod_set Set with modules to subscribe to.
- * @return Error code (::SR_ERR_OK on success).
- */
-int srsn_stream_collect_mods(const char *stream, const char *xpath_filter, const struct ly_ctx *ly_ctx,
-        struct ly_set **mod_set);
 
 /**
  * @brief Increase the sent-notifications counter in case of additional manually-generated notifications
@@ -240,9 +228,7 @@ int srsn_resume(uint32_t sub_id);
 /**
  * @brief Terminate a subscribed-notifications subscription.
  *
- * Generates the 'subscription-terminated' notification. After this function returns,
- * in case the dispatch thread is running, ::srsn_notif_cb() will not be called for
- * notifications on this subscription.
+ * Generates the 'subscription-terminated' notification.
  *
  * @param[in] sub_id Subscription ID of the subscription to terminate.
  * @param[in] reason Reason for the termination as an identityref value. If not set, no notification is generated.
@@ -320,24 +306,21 @@ int srsn_poll(int fd, uint32_t timeout_ms);
 typedef void (*srsn_notif_cb)(const struct lyd_node *notif, const struct timespec *timestamp, void *cb_data);
 
 /**
- * @brief Init read dispatch for notifications, overwrites any previous parameters.
+ * @brief Dispatch a per-process thread for reading notifications.
  *
+ * Thread automatically terminates after all the @p fd subscriptions terminate by closing their pipes (more can be
+ * added using ::srsn_read_dispatch_add()). In that case all the FD read ends are also automatically closed.
+ *
+ * @param[in] fd File descriptor to read from.
  * @param[in] conn Connection that must not be terminated while the notifications are being processed.
  * @param[in] cb Callback to be called for each notification.
+ * @param[in] cb_data User @p cb callback data for the @p fd.
  * @return Error code (::SR_ERR_OK on success).
- */
-int srsn_read_dispatch_init(sr_conn_ctx_t *conn, srsn_notif_cb cb);
-
-/**
- * @brief Deprecated, came functionality as calling ::srsn_read_dispatch_init() and ::srsn_read_dispatch_add().
  */
 int srsn_read_dispatch_start(int fd, sr_conn_ctx_t *conn, srsn_notif_cb cb, void *cb_data);
 
 /**
  * @brief Add another subscription to be handled by the dispatched thread.
- *
- * The thread is automatically started on the first @p fd and terminated when the last
- * one is closed.
  *
  * @param[in] fd Subscription file descriptor to read from.
  * @param[in] cb_data User @p cb callback data for the @p fd.
@@ -351,13 +334,6 @@ int srsn_read_dispatch_add(int fd, void *cb_data);
  * @return Number of handled subscriptions, 0 means the dispatch thread is not running.
  */
 uint32_t srsn_read_dispatch_count(void);
-
-/**
- * @brief Stop the dispatched thread and clear all the used resources.
- *
- * @return Error code (::SR_ERR_OK on success).
- */
-int srsn_read_dispatch_destroy(void);
 
 #ifdef __cplusplus
 }

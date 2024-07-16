@@ -26,10 +26,10 @@ a "one shot" fashion where it is more performant to do so.
  4 files changed, 250 insertions(+), 4 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 9edb449..1a22d53 100644
+index 4f5e72a..18e6b61 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1246,10 +1246,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1239,10 +1239,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              /* nested data */
@@ -42,7 +42,7 @@ index 9edb449..1a22d53 100644
                      goto cleanup_opergetsub_ext_unlock;
                  }
  
-@@ -1258,6 +1258,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1251,6 +1251,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      lyd_free_all(oper_data);
                      goto cleanup_opergetsub_ext_unlock;
                  }
@@ -64,10 +64,10 @@ index 9edb449..1a22d53 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6016b0e..e7dadcf 100644
+index e30e930..b70e7cc 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7076,7 +7076,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -6999,7 +6999,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
@@ -77,10 +77,10 @@ index 6016b0e..e7dadcf 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 9f820b8..43b7663 100644
+index ceeb496..c08ae33 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
-@@ -454,7 +454,14 @@ typedef enum {
+@@ -451,7 +451,14 @@ typedef enum {
       * event handling but results in 0 filtered-out changes returned by ::sr_module_change_sub_get_info(). Accepted
       * only for ::sr_module_change_subscribe().
       */

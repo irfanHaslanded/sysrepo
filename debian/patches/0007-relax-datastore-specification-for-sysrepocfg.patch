@@ -12,10 +12,10 @@ the first letter will be checked for a match
  1 file changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index e034e7e..173a64c 100644
+index 2729609..86b8eda 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
-@@ -756,17 +756,23 @@ arg_is_file(const char *optarg)
+@@ -730,17 +730,23 @@ arg_is_file(const char *optarg)
  static int
  arg_get_ds(const char *optarg, sr_datastore_t *ds)
  {

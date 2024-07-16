@@ -127,11 +127,8 @@ struct srsn_state {
 
     /* notification dispatch */
     pthread_mutex_t dispatch_lock;
-    pthread_t tid;          /**< set only if the dispatch thread is running */
-    sr_conn_ctx_t *conn;
-    srsn_notif_cb cb;
-    struct pollfd *pfds;    /**< array of sub-ntf FDs to read notifications from */
-    void **cb_data;         /**< array connected with pfds providing cb_data for each sub-ntf */
+    struct pollfd *pfds;
+    void **cb_data;
     uint32_t pfd_count;
     uint32_t valid_pfds;    /**< count of current valid (fd > -1) pfd items */
 };
@@ -319,6 +316,14 @@ sr_error_info_t *srsn_modify_xpath(struct srsn_sub *sub, const char *xpath_filte
 sr_error_info_t *srsn_modify_stop(struct srsn_sub *sub, const struct timespec *stop_time);
 
 /**
+ * @brief Check whether a module defines any notifications.
+ *
+ * @param[in] mod Module to check.
+ * @return Whether the module defines any notifications.
+ */
+int srsn_ly_mod_has_notif(const struct lys_module *mod);
+
+/**
  * @brief Create all sysrepo subscriptions for a single sub-ntf subscription.
  *
  * @param[in] sess Session to use for sysrepo calls.
@@ -331,13 +336,13 @@ sr_error_info_t *srsn_sn_sr_subscribe(sr_session_ctx_t *sess, struct srsn_sub *s
         struct timespec *replay_start);
 
 /**
- * @brief Initialize notification dispatch.
+ * @brief Initialize notification dispatch with a single FD.
  *
- * @param[in] conn Connection to use.
- * @param[in] cb SN read dispatch callback.
+ * @param[in] fd Subscription FD.
+ * @param[in] cb_data Callback data for @p fd.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *srsn_dispatch_init(sr_conn_ctx_t *conn, srsn_notif_cb cb);
+sr_error_info_t *srsn_dispatch_init(int fd, void *cb_data);
 
 /**
  * @brief Add another FD handled by notification dispatch.
@@ -356,10 +361,8 @@ sr_error_info_t *srsn_dispatch_add(int fd, void *cb_data);
 uint32_t srsn_dispatch_count(void);
 
 /**
- * @brief Stop the thread and free all the used vars.
- *
- * @return err_info, NULL on success.
+ * @brief Thread reading notifications from subscriptions.
  */
-sr_error_info_t *srsn_dispatch_destroy(void);
+void *srsn_read_dispatch_thread(void *arg);
 
 #endif /* SN_COMMON_H_ */

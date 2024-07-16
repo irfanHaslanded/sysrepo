@@ -17,10 +17,10 @@ Add gnmi test yang modules to sysrepo for simpler debugging in future.
  create mode 100644 tests/files/gnmi-server-test.yang
 
 diff --git a/src/common.c b/src/common.c
-index 868c163..303d89a 100644
+index fe94bc5..a8b17fc 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5017,7 +5017,7 @@ sr_xpath_skip_predicate(const char *xpath)
+@@ -4966,7 +4966,7 @@ sr_xpath_skip_predicate(const char *xpath)
          } else if (!quot && ((xpath[0] == '\'') || (xpath[0] == '\"'))) {
              quot = xpath[0];
          }
@@ -199,7 +199,7 @@ index 0000000..613042b
 +  }
 +}
 diff --git a/tests/test_oper_edit.c b/tests/test_oper_edit.c
-index 5f9fdc2..4f9b941 100644
+index 7523160..e570b5b 100644
 --- a/tests/test_oper_edit.c
 +++ b/tests/test_oper_edit.c
 @@ -48,6 +48,8 @@ setup_f(void **state)
@@ -278,7 +278,7 @@ index 5f9fdc2..4f9b941 100644
  static void
  test_leafref_oper_data(void **arg)
  {
-@@ -273,6 +328,7 @@ int
+@@ -272,6 +327,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

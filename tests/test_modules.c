@@ -4,8 +4,8 @@
  * @brief test for adding/removing modules
  *
  * @copyright
- * Copyright (c) 2018 - 2024 Deutsche Telekom AG.
- * Copyright (c) 2018 - 2024 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2023 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2023 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -116,30 +116,11 @@ static void
 test_install_module(void **state)
 {
     struct state *st = (struct state *)*state;
-    int ret, fd;
-    size_t size;
-    char *data;
-    sr_install_mod_t mod = {0};
-    const char *nc_feats[] = {
-        "writable-running", "candidate", "rollback-on-error", "validate", "startup", "url",
-        "xpath", "confirmed-commit", NULL
-    };
+    int ret;
+    const char *en_feats[] = {"feat", NULL};
 
-    /* install test-module, from YANG data */
-    fd = open(TESTS_SRC_DIR "/files/test-module.yang", O_RDONLY);
-    assert_int_not_equal(fd, -1);
-    size = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET);
-    data = malloc(size + 1);
-    assert_non_null(data);
-    ret = read(fd, data, size);
-    assert_int_not_equal(ret, -1);
-    close(fd);
-    data[size] = '\0';
-
-    mod.schema_yang = data;
-    ret = sr_install_modules2(st->conn, &mod, 1, TESTS_SRC_DIR "/files", NULL, NULL, 0);
-    free(data);
+    /* install test-module */
+    ret = sr_install_module(st->conn, TESTS_SRC_DIR "/files/test-module.yang", TESTS_SRC_DIR "/files", NULL);
     assert_int_equal(ret, SR_ERR_OK);
 
     /* module should be installed with its dependency */
@@ -151,13 +132,14 @@ test_install_module(void **state)
     assert_int_equal(ret, SR_ERR_NOT_FOUND);
 
     /* install main-mod (includes sub-mod which imports sub-mod-types) */
-    ret = sr_install_module(st->conn, TESTS_SRC_DIR "/files/main-mod.yang", TESTS_SRC_DIR "/files", NULL);
+    ret = sr_install_module(st->conn, TESTS_SRC_DIR "/files/main-mod.yang", TESTS_SRC_DIR "/files", en_feats);
     assert_int_equal(ret, SR_ERR_OK);
 
     /* check current internal data */
     cmp_int_data(st->conn, "main-mod",
             "<module xmlns=\"http://www.sysrepo.org/yang/sysrepo\">"
             "<name>main-mod</name>"
+            "<enabled-feature>feat</enabled-feature>"
             "<plugin><datastore>ds:startup</datastore><name>" SR_DEFAULT_STARTUP_DS "</name></plugin>"
             "<plugin><datastore>ds:running</datastore><name>" SR_DEFAULT_RUNNING_DS "</name></plugin>"
             "<plugin><datastore>ds:candidate</datastore><name>" SR_DEFAULT_CANDIDATE_DS "</name></plugin>"
@@ -169,45 +151,6 @@ test_install_module(void **state)
     /* install another module (test) to see if imports in sub-mod were correctly processed */
     ret = sr_install_module(st->conn, TESTS_SRC_DIR "/files/test.yang", TESTS_SRC_DIR "/files", NULL);
     assert_int_equal(ret, SR_ERR_OK);
-
-    /* enable features in ietf-netconf */
-    ret = sr_install_module(st->conn, TESTS_SRC_DIR "/../modules/ietf-netconf@2013-09-29.yang",
-            TESTS_SRC_DIR "/../modules", nc_feats);
-    assert_int_equal(ret, SR_ERR_OK);
-
-    /* check current internal data */
-    cmp_int_data(st->conn, "ietf-netconf",
-            "<module xmlns=\"http://www.sysrepo.org/yang/sysrepo\">"
-            "<name>ietf-netconf</name>"
-            "<revision>2013-09-29</revision>"
-            "<enabled-feature>writable-running</enabled-feature>"
-            "<enabled-feature>candidate</enabled-feature>"
-            "<enabled-feature>confirmed-commit</enabled-feature>"
-            "<enabled-feature>rollback-on-error</enabled-feature>"
-            "<enabled-feature>validate</enabled-feature>"
-            "<enabled-feature>startup</enabled-feature>"
-            "<enabled-feature>url</enabled-feature>"
-            "<enabled-feature>xpath</enabled-feature>"
-            "<plugin><datastore>ds:startup</datastore><name>" SR_DEFAULT_STARTUP_DS "</name></plugin>"
-            "<plugin><datastore>ds:running</datastore><name>" SR_DEFAULT_RUNNING_DS "</name></plugin>"
-            "<plugin><datastore>ds:candidate</datastore><name>" SR_DEFAULT_CANDIDATE_DS "</name></plugin>"
-            "<plugin><datastore>ds:operational</datastore><name>" SR_DEFAULT_OPERATIONAL_DS "</name></plugin>"
-            "<plugin><datastore>fd:factory-default</datastore><name>" SR_DEFAULT_FACTORY_DEFAULT_DS "</name></plugin>"
-            "<plugin><datastore>notification</datastore><name>" SR_DEFAULT_NOTIFICATION_DS "</name></plugin>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:get-config</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:edit-config</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:copy-config</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:delete-config</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:lock</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:unlock</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:get</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:close-session</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:kill-session</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:commit</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:discard-changes</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:cancel-commit</path></rpc>"
-            "<rpc><path xmlns:nc=\"urn:ietf:params:xml:ns:netconf:base:1.0\">/nc:validate</path></rpc>"
-            "</module>");
 
     ret = sr_remove_module(st->conn, "main-mod", 0);
     assert_int_equal(ret, SR_ERR_OK);
@@ -350,36 +293,55 @@ test_op_deps(void **state)
             "<plugin><datastore>ds:operational</datastore><name>" SR_DEFAULT_OPERATIONAL_DS "</name></plugin>"
             "<plugin><datastore>fd:factory-default</datastore><name>" SR_DEFAULT_FACTORY_DEFAULT_DS "</name></plugin>"
             "<plugin><datastore>notification</datastore><name>" SR_DEFAULT_NOTIFICATION_DS "</name></plugin>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1</path>"
             "<out>"
-            "<lref><target-path>../../../../l12</target-path><target-module>ops</target-module></lref>"
+            "<lref>"
+            "<target-path>../../../../l12</target-path>"
+            "<target-module>ops</target-module>"
+            "</lref>"
             "<inst-id>"
             "<source-path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1/o:l8</source-path>"
             "<default-target-path xmlns:o=\"urn:ops\">/o:cont/o:list1[o:k='key']/o:k</default-target-path>"
             "</inst-id>"
             "</out>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc1</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc1</path>"
             "<in>"
-            "<lref><target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path><target-module>ops-ref</target-module></lref>"
+            "<lref>"
+            "<target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path>"
+            "<target-module>ops-ref</target-module>"
+            "</lref>"
             "</in>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc2</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc2</path>"
             "<out>"
-            "<lref><target-path xmlns:or=\"urn:ops-ref\">/or:l2</target-path><target-module>ops-ref</target-module></lref>"
+            "<lref>"
+            "<target-path xmlns:or=\"urn:ops-ref\">/or:l2</target-path>"
+            "<target-module>ops-ref</target-module>"
+            "</lref>"
             "</out>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc3</path></rpc>"
-            "<notification><path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc3</path>"
+            "</rpc>"
+            "<notification>"
+            "<path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2</path>"
             "<deps>"
-            "<inst-id><source-path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2/o:l13</source-path></inst-id>"
+            "<inst-id>"
+            "<source-path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2/o:l13</source-path>"
+            "</inst-id>"
             "<xpath>"
             "<expression xmlns:or=\"urn:ops-ref\">starts-with(/or:l1,'l1')</expression>"
             "<target-module>ops-ref</target-module>"
             "</xpath>"
             "</deps>"
             "</notification>"
-            "<notification><path xmlns:o=\"urn:ops\">/o:notif4</path></notification>"
+            "<notification>"
+            "<path xmlns:o=\"urn:ops\">/o:notif4</path>"
+            "</notification>"
             "</module>");
 
     /* enable feature that should enable 2 more operations */
@@ -395,46 +357,71 @@ test_op_deps(void **state)
             "<plugin><datastore>ds:operational</datastore><name>" SR_DEFAULT_OPERATIONAL_DS "</name></plugin>"
             "<plugin><datastore>fd:factory-default</datastore><name>" SR_DEFAULT_FACTORY_DEFAULT_DS "</name></plugin>"
             "<plugin><datastore>notification</datastore><name>" SR_DEFAULT_NOTIFICATION_DS "</name></plugin>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:act2</path></rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1</path>"
             "<out>"
-            "<lref><target-path>../../../../l12</target-path><target-module>ops</target-module></lref>"
+            "<lref>"
+            "<target-path>../../../../l12</target-path>"
+            "<target-module>ops</target-module>"
+            "</lref>"
             "<inst-id>"
             "<source-path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:cont2/o:act1/o:l8</source-path>"
             "<default-target-path xmlns:o=\"urn:ops\">/o:cont/o:list1[o:k='key']/o:k</default-target-path>"
             "</inst-id>"
             "</out>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc1</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc1</path>"
             "<in>"
-            "<lref><target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path><target-module>ops-ref</target-module></lref>"
+            "<lref>"
+            "<target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path>"
+            "<target-module>ops-ref</target-module>"
+            "</lref>"
             "</in>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc2</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc2</path>"
             "<out>"
-            "<lref><target-path xmlns:or=\"urn:ops-ref\">/or:l2</target-path><target-module>ops-ref</target-module></lref>"
+            "<lref>"
+            "<target-path xmlns:or=\"urn:ops-ref\">/or:l2</target-path>"
+            "<target-module>ops-ref</target-module>"
+            "</lref>"
             "</out>"
             "</rpc>"
-            "<rpc><path xmlns:o=\"urn:ops\">/o:rpc3</path></rpc>"
-            "<notification><path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2</path>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:rpc3</path>"
+            "</rpc>"
+            "<rpc>"
+            "<path xmlns:o=\"urn:ops\">/o:cont/o:list1/o:act2</path>"
+            "</rpc>"
+            "<notification>"
+            "<path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2</path>"
             "<deps>"
-            "<inst-id><source-path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2/o:l13</source-path></inst-id>"
+            "<inst-id>"
+            "<source-path xmlns:o=\"urn:ops\">/o:cont/o:cont3/o:notif2/o:l13</source-path>"
+            "</inst-id>"
             "<xpath>"
             "<expression xmlns:or=\"urn:ops-ref\">starts-with(/or:l1,'l1')</expression>"
             "<target-module>ops-ref</target-module>"
             "</xpath>"
             "</deps>"
             "</notification>"
-            "<notification><path xmlns:o=\"urn:ops\">/o:notif3</path>"
+            "<notification>"
+            "<path xmlns:o=\"urn:ops\">/o:notif4</path>"
+            "</notification>"
+            "<notification>"
+            "<path xmlns:o=\"urn:ops\">/o:notif3</path>"
             "<deps>"
-            "<lref><target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path><target-module>ops-ref</target-module></lref>"
+            "<lref>"
+            "<target-path xmlns:or=\"urn:ops-ref\">/or:l1</target-path>"
+            "<target-module>ops-ref</target-module>"
+            "</lref>"
             "<inst-id>"
             "<source-path xmlns:o=\"urn:ops\">/o:notif3/o:list2/o:l15</source-path>"
             "<default-target-path xmlns:o=\"urn:ops\">/o:cont/o:list1[o:k='key']/o:cont2</default-target-path>"
             "</inst-id>"
             "</deps>"
             "</notification>"
-            "<notification><path xmlns:o=\"urn:ops\">/o:notif4</path></notification>"
             "</module>");
 
     /* cleanup */

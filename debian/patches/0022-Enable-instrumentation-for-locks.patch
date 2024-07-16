@@ -7,19 +7,18 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  src/common.c       | 152 ++++++++++++++++++++++++++++++++++++++++++++++-------
  src/common.h       |  11 +++-
  src/common_types.h |   1 +
- src/modinfo.c      |   2 +-
  src/shm_ext.c      |  78 ++++++++++++++++-----------
- src/shm_main.c     |   4 +-
- src/shm_mod.c      |  42 ++++++++-------
+ src/shm_main.c     |   5 +-
+ src/shm_mod.c      |  78 +++++++++++++++------------
  src/shm_mod.h      |   4 +-
  src/shm_sub.c      |   4 +-
  src/shm_sub.h      |   2 +-
  src/shm_types.h    |   1 +
  src/sysrepo.c      |  27 +++++-----
- 12 files changed, 240 insertions(+), 88 deletions(-)
+ 11 files changed, 260 insertions(+), 103 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 4bfdf97..c8d90a1 100644
+index c3065b4..dfc1449 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -63,6 +63,41 @@
@@ -309,7 +308,7 @@ index 4bfdf97..c8d90a1 100644
      ++conn->oper_cache_count;
  
  cleanup:
-@@ -5646,3 +5750,15 @@ sr_is_priviliged(void)
+@@ -5595,3 +5699,15 @@ sr_is_priviliged(void)
      }
      return is_priviliged;
  }
@@ -326,7 +325,7 @@ index 4bfdf97..c8d90a1 100644
 +    }
 +}
 diff --git a/src/common.h b/src/common.h
-index 3a1e39c..cea6cc1 100644
+index f652008..e5bbd4e 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -60,6 +60,15 @@ struct srplg_ntf_s;
@@ -345,7 +344,7 @@ index 3a1e39c..cea6cc1 100644
  /** all ext SHM item sizes will be aligned to this number; also represents the allocation unit (B) */
  #define SR_SHM_MEM_ALIGN 8
  
-@@ -785,7 +794,7 @@ void sr_munlock(pthread_mutex_t *lock);
+@@ -774,7 +783,7 @@ void sr_munlock(pthread_mutex_t *lock);
   * @param[in] shared Whether the RW lock will be shared between processes or not.
   * @return err_info, NULL on success.
   */
@@ -366,21 +365,8 @@ index f7f35d7..2c6ae14 100644
  } sr_rwlock_t;
  
  /**
-diff --git a/src/modinfo.c b/src/modinfo.c
-index 1a22d53..7f8d308 100644
---- a/src/modinfo.c
-+++ b/src/modinfo.c
-@@ -1269,7 +1269,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
-                     /* merge into one data tree */
-                     if ((err_info = sr_lyd_merge(data, oper_data, 1, LYD_MERGE_DESTRUCT))) {
-                         lyd_free_all(oper_data);
--                        goto cleanup;
-+                        goto cleanup_opergetsub_ext_unlock;
-                     }
-                 }
-             }
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 2797cf9..b1a7400 100644
+index 824c760..e674033 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,19 @@
@@ -422,7 +408,7 @@ index 2797cf9..b1a7400 100644
      free(msg);
  
      /* fail on an assert if something is wrong */
-@@ -535,7 +551,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -534,7 +550,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
          }
      }
  
@@ -431,7 +417,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -558,12 +574,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -557,12 +573,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -443,10 +429,10 @@ index 2797cf9..b1a7400 100644
          /* create the sub SHM while still holding the locks */
 -        if ((err_info = sr_shmsub_create(conn->mod_shm.addr + shm_mod->name, sr_ds2str(ds), -1,
 +        if ((err_info = sr_shmsub_create(conn, conn->mod_shm.addr + shm_mod->name, sr_ds2str(ds), -1,
-                 sizeof(sr_sub_shm_t)))) {
+                 sizeof(sr_multi_sub_shm_t)))) {
              goto cleanup_unlock;
          }
-@@ -613,7 +629,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -612,7 +628,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
      }
      SR_CHECK_INT_GOTO(i == shm_mod->change_sub[ds].sub_count, err_info, cleanup_changesub_ext_unlock);
  
@@ -455,7 +441,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate memory for the new xpath, if any */
-@@ -630,7 +646,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -629,7 +645,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
          shm_sub[i].xpath = 0;
      }
  
@@ -464,7 +450,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* success */
-@@ -663,14 +679,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -662,14 +678,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
  
      shm_sub = &((sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs))[del_idx];
  
@@ -481,7 +467,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->change_sub[ds].sub_count) {
-@@ -877,7 +893,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -876,7 +892,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          /* use starting priority 1 */
          *prio = 1;
  
@@ -490,7 +476,7 @@ index 2797cf9..b1a7400 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
          /* allocate new subscription and its xpath */
-@@ -893,11 +909,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -892,11 +908,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          shm_sub->xpath_subs = 0;
          shm_sub->xpath_sub_count = 0;
  
@@ -504,7 +490,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new XPath subscription */
-@@ -914,11 +930,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -913,11 +929,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      ATOMIC_STORE_RELAXED(xpath_sub->suspended, 0);
      xpath_sub->cid = conn->cid;
  
@@ -518,7 +504,7 @@ index 2797cf9..b1a7400 100644
              sizeof(sr_sub_shm_t)))) {
          goto cleanup_unlock;
      }
-@@ -968,25 +984,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
+@@ -967,25 +983,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
          goto cleanup;
      }
  
@@ -548,7 +534,7 @@ index 2797cf9..b1a7400 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
      }
  
-@@ -1169,7 +1185,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1168,7 +1184,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
          }
      }
  
@@ -557,7 +543,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its path */
-@@ -1187,7 +1203,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1186,7 +1202,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -566,7 +552,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
  cleanup_unlock:
-@@ -1212,14 +1228,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
+@@ -1211,14 +1227,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
  
      shm_sub = &((sr_mod_oper_poll_sub_t *)(conn->ext_shm.addr + shm_mod->oper_poll_subs))[del_idx];
  
@@ -583,7 +569,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      return NULL;
-@@ -1310,7 +1326,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+@@ -1309,7 +1325,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
          return err_info;
      }
  
@@ -592,7 +578,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -1331,12 +1347,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+@@ -1330,12 +1346,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -607,7 +593,7 @@ index 2797cf9..b1a7400 100644
              goto cleanup_unlock;
          }
  
-@@ -1372,14 +1388,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
+@@ -1371,14 +1387,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
  
      shm_sub = &((sr_mod_notif_sub_t *)(conn->ext_shm.addr + shm_mod->notif_subs))[del_idx];
  
@@ -624,7 +610,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->notif_sub_count) {
-@@ -1573,7 +1589,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+@@ -1572,7 +1588,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
          goto cleanup_unlock;
      }
  
@@ -633,7 +619,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* add new subscription with its xpath */
-@@ -1592,13 +1608,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+@@ -1591,13 +1607,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = sub_cid;
  
@@ -644,12 +630,12 @@ index 2797cf9..b1a7400 100644
      if (!path_found && sub_cid) {
          /* create the sub SHM while still holding the locks */
          mod_name = sr_get_first_ns(path);
--        if ((err_info = sr_shmsub_create(mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_sub_shm_t)))) {
-+        if ((err_info = sr_shmsub_create(conn, mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_sub_shm_t)))) {
+-        if ((err_info = sr_shmsub_create(mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_multi_sub_shm_t)))) {
++        if ((err_info = sr_shmsub_create(conn, mod_name, "rpc", sr_str_hash(path, 0), sizeof(sr_multi_sub_shm_t)))) {
              goto cleanup_unlock;
          }
  
-@@ -1640,14 +1656,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
+@@ -1639,14 +1655,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
  
      shm_subs = (sr_mod_rpc_sub_t *)(conn->ext_shm.addr + *subs);
  
@@ -667,10 +653,10 @@ index 2797cf9..b1a7400 100644
  
      for (i = 0; i < *sub_count; ++i) {
 diff --git a/src/shm_main.c b/src/shm_main.c
-index 060252c..4b6a365 100644
+index eac63fd..22e3283 100644
 --- a/src/shm_main.c
 +++ b/src/shm_main.c
-@@ -496,15 +496,17 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+@@ -496,10 +496,11 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
      if (creat) {
          /* init the memory */
          main_shm->shm_ver = SR_SHM_VER;
@@ -683,81 +669,121 @@ index 060252c..4b6a365 100644
              goto cleanup;
          }
          if ((err_info = sr_mutex_init(&main_shm->lydmods_lock, 1))) {
-             goto cleanup;
-         }
-+        ATOMIC_STORE_RELAXED(main_shm->new_rwlock_id, SR_RWLOCK_RESERVED_ID_MAX);
-         ATOMIC_STORE_RELAXED(main_shm->new_sr_cid, 1);
+@@ -509,7 +510,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
          ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
          ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
+         ATOMIC_STORE_RELAXED(main_shm->new_evpipe_num, 1);
+-
++        ATOMIC_STORE_RELAXED(main_shm->new_rwlock_id, SR_RWLOCK_RESERVED_ID_MAX);
+         /* remove leftover event pipes */
+         sr_remove_evpipes();
+     } else {
 diff --git a/src/shm_mod.c b/src/shm_mod.c
-index d56cb74..b6c313a 100644
+index a55db2f..2d4e4a1 100644
 --- a/src/shm_mod.c
 +++ b/src/shm_mod.c
-@@ -143,38 +143,45 @@ sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path)
+@@ -145,8 +145,9 @@ sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path)
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
--sr_shmmod_init(sr_shm_t *shm_mod, size_t shm_mod_idx)
-+sr_shmmod_init(sr_conn_ctx_t *conn, size_t shm_mod_idx)
+-sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, const sr_mod_t *old_smod)
++sr_shmmod_fill(sr_conn_ctx_t *conn, size_t shm_mod_idx, const struct lyd_node *sr_mod, const sr_mod_t *old_smod)
  {
 +    sr_shm_t *shm_mod = &conn->mod_shm;
      sr_error_info_t *err_info = NULL;
--    sr_mod_t *smod;
+     sr_mod_t *smod;
+     struct lyd_node *sr_child;
+@@ -155,36 +156,11 @@ sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_
+     char *shm_end;
+     size_t feat_i, feat_names_len, ds_plugin_names_len, old_shm_size;
      sr_datastore_t ds;
 -
--    smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
 +    char buf[256];
-+    sr_mod_t *smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
-+    const char *name = conn->mod_shm.addr + smod->name;
+     smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
  
      /* init SHM module structure */
-     for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+     memset(smod, 0, sizeof *smod);
+-    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
 -        if ((err_info = sr_rwlock_init(&smod->data_lock_info[ds].data_lock, 1))) {
-+        snprintf(buf, sizeof(buf), "mod data[ds=%u] %s", ds, name);
-+        if ((err_info = sr_rwlock_init(&smod->data_lock_info[ds].data_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-             return err_info;
-         }
-         if ((err_info = sr_mutex_init(&smod->data_lock_info[ds].ds_lock, 1))) {
-             return err_info;
-         }
-     }
+-            return err_info;
+-        }
+-        if ((err_info = sr_mutex_init(&smod->data_lock_info[ds].ds_lock, 1))) {
+-            return err_info;
+-        }
+-    }
 -    if ((err_info = sr_rwlock_init(&smod->replay_lock, 1))) {
-+    snprintf(buf, sizeof(buf), "mod replay %s", name);
-+    if ((err_info = sr_rwlock_init(&smod->replay_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-         return err_info;
-     }
-     for (ds = 0; ds < SR_DS_COUNT; ++ds) {
+-        return err_info;
+-    }
+-    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
 -        if ((err_info = sr_rwlock_init(&smod->change_sub[ds].lock, 1))) {
-+        snprintf(buf, sizeof(buf), "mod change_sub[ds=%u] %s", ds, name);
-+        if ((err_info = sr_rwlock_init(&smod->change_sub[ds].lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-             return err_info;
-         }
-     }
+-            return err_info;
+-        }
+-    }
 -    if ((err_info = sr_rwlock_init(&smod->oper_get_lock, 1))) {
-+    snprintf(buf, sizeof(buf), "mod oper %s", name);
-+    if ((err_info = sr_rwlock_init(&smod->oper_get_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-         return err_info;
-     }
+-        return err_info;
+-    }
 -    if ((err_info = sr_rwlock_init(&smod->oper_poll_lock, 1))) {
-+    snprintf(buf, sizeof(buf), "mod oper_poll %s", name);
-+    if ((err_info = sr_rwlock_init(&smod->oper_poll_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-         return err_info;
-     }
+-        return err_info;
+-    }
 -    if ((err_info = sr_rwlock_init(&smod->notif_lock, 1))) {
-+    snprintf(buf, sizeof(buf), "mod notif %s", name);
-+    if ((err_info = sr_rwlock_init(&smod->notif_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
-         return err_info;
-     }
+-        return err_info;
+-    }
  
-@@ -231,6 +238,7 @@ sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_
+     /* remember name, set fields from sr_mod, and count enabled features */
+     name = NULL;
+@@ -209,8 +185,40 @@ sr_shmmod_fill(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_
              ds_plugin_names_len += sr_strshmlen(lyd_get_value(lyd_child(sr_child)->next));
          }
      }
 +
      assert(name);
  
++    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
++        snprintf(buf, sizeof(buf), "mod data[ds=%u] %s", ds, name);
++        if ((err_info = sr_rwlock_init(&smod->data_lock_info[ds].data_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++            return err_info;
++        }
++        if ((err_info = sr_mutex_init(&smod->data_lock_info[ds].ds_lock, 1))) {
++            return err_info;
++        }
++    }
++    snprintf(buf, sizeof(buf), "mod replay %s", name);
++    if ((err_info = sr_rwlock_init(&smod->replay_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    for (ds = 0; ds < SR_DS_COUNT; ++ds) {
++        snprintf(buf, sizeof(buf), "mod change_sub[ds=%u] %s", ds, name);
++        if ((err_info = sr_rwlock_init(&smod->change_sub[ds].lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++            return err_info;
++        }
++    }
++    snprintf(buf, sizeof(buf), "mod oper %s", name);
++    if ((err_info = sr_rwlock_init(&smod->oper_get_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    snprintf(buf, sizeof(buf), "mod oper_poll %s", name);
++    if ((err_info = sr_rwlock_init(&smod->oper_poll_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
++    snprintf(buf, sizeof(buf), "mod notif %s", name);
++    if ((err_info = sr_rwlock_init(&smod->notif_lock, 1, SR_RWLOCK_NEW_ID(conn), buf))) {
++        return err_info;
++    }
      /* remember mod SHM size */
-@@ -539,6 +547,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+     old_shm_size = shm_mod->size;
+ 
+@@ -507,8 +515,9 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
++sr_shmmod_add_rpcs(sr_conn_ctx_t *conn, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
+ {
++    sr_shm_t *shm_mod = &conn->mod_shm;
+     sr_error_info_t *err_info = NULL;
+     struct lyd_node *sr_child, *sr_dep, *sr_op, *sr_op_dep;
+     sr_mod_t *smod;
+@@ -517,6 +526,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
      sr_mod_shm_t *mod_shm;
      char *shm_end;
      size_t paths_len, in_out_deps_len, dep_i, rpc_i, old_shm_size;
@@ -765,7 +791,7 @@ index d56cb74..b6c313a 100644
  
      smod = SR_SHM_MOD_IDX(shm_mod->addr, shm_mod_idx);
  
-@@ -555,7 +564,8 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+@@ -533,7 +543,8 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
              LY_LIST_FOR(lyd_child(sr_child), sr_op_dep) {
                  if (!strcmp(sr_op_dep->schema->name, "path")) {
                      /* operation path (a string) */
@@ -775,19 +801,16 @@ index d56cb74..b6c313a 100644
                  } else if (!strcmp(sr_op_dep->schema->name, "in") || !strcmp(sr_op_dep->schema->name, "out")) {
                      dep_i = 0;
                      LY_LIST_FOR(lyd_child(sr_op_dep), sr_dep) {
-@@ -592,11 +602,6 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
- 
+@@ -571,7 +582,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
      LY_LIST_FOR(lyd_child(sr_mod), sr_child) {
          if (!strcmp(sr_child->schema->name, "rpc")) {
--            /* init lock */
+             /* init lock */
 -            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1))) {
--                return err_info;
--            }
--
-             old_shm_rpc = NULL;
-             LY_LIST_FOR(lyd_child(sr_child), sr_op) {
-                 if (!strcmp(sr_op->schema->name, "path")) {
-@@ -767,7 +772,7 @@ sr_shmmod_add_notifs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_nod
++            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1, SR_RWLOCK_NEW_ID(conn), path_name))) {
+                 return err_info;
+             }
+ 
+@@ -745,13 +756,14 @@ sr_shmmod_add_notifs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_nod
  }
  
  sr_error_info_t *
@@ -795,24 +818,32 @@ index d56cb74..b6c313a 100644
 +sr_shmmod_store_modules(sr_conn_ctx_t *conn, const struct lyd_node *sr_mods)
  {
      sr_error_info_t *err_info = NULL;
-     struct ly_set *set = NULL;
-@@ -775,6 +780,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+     const struct lyd_node *sr_mod;
      sr_mod_t *smod;
      char *shm_mod_old = NULL;
-     uint32_t i;
+     uint32_t i, mod_count;
 +    sr_shm_t *shm_mod = &conn->mod_shm;
  
      /* backup current SHM mod */
      shm_mod_old = malloc(shm_mod->size);
-@@ -834,7 +840,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
-     for (i = 0; i < set->count; ++i) {
-         sr_mod = set->dnodes[i];
+@@ -783,7 +795,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+             smod = sr_shmmod_find_module((sr_mod_shm_t *)shm_mod_old, lyd_get_value(lyd_child(sr_mod)));
  
--        if ((err_info = sr_shmmod_init(shm_mod, i))) {
-+        if ((err_info = sr_shmmod_init(conn, i))) {
-             goto cleanup;
-         }
-     }
+             /* fill the new module */
+-            if ((err_info = sr_shmmod_fill(shm_mod, i, sr_mod, smod))) {
++            if ((err_info = sr_shmmod_fill(conn, i, sr_mod, smod))) {
+                 goto cleanup;
+             }
+ 
+@@ -809,7 +821,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+             if ((err_info = sr_shmmod_add_deps(shm_mod, i, sr_mod))) {
+                 goto cleanup;
+             }
+-            if ((err_info = sr_shmmod_add_rpcs(shm_mod, i, sr_mod, shm_mod_old))) {
++            if ((err_info = sr_shmmod_add_rpcs(conn, i, sr_mod, shm_mod_old))) {
+                 goto cleanup;
+             }
+             if ((err_info = sr_shmmod_add_notifs(shm_mod, i, sr_mod))) {
 diff --git a/src/shm_mod.h b/src/shm_mod.h
 index da9e7df..7906276 100644
 --- a/src/shm_mod.h
@@ -832,7 +863,7 @@ index da9e7df..7906276 100644
  /**
   * @brief Load modules stored in mod SHM into a context.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 132885c..45baece 100644
+index 35edc71..7b02b07 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -854,7 +885,7 @@ index 132885c..45baece 100644
      }
  
 diff --git a/src/shm_sub.h b/src/shm_sub.h
-index c46231e..0cee3e6 100644
+index 3056e4c..76cbb11 100644
 --- a/src/shm_sub.h
 +++ b/src/shm_sub.h
 @@ -47,7 +47,7 @@ struct sr_mod_info_s;
@@ -867,19 +898,19 @@ index c46231e..0cee3e6 100644
  /**
   * @brief Open and map an existing subscription SHM.
 diff --git a/src/shm_types.h b/src/shm_types.h
-index bd48960..a16fef5 100644
+index d64ddb0..04a55a1 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -183,6 +183,7 @@ typedef struct {
-     pthread_mutex_t lydmods_lock;   /**< Process-shared lock for modifying SR internal module data. */
-     uint32_t content_id;        /**< Context content ID of the latest context. */
- 
-+    ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
-     ATOMIC_T new_sr_cid;        /**< Connection ID for a new connection. */
+@@ -187,6 +187,7 @@ typedef struct {
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
+     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
++    ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
+ } sr_main_shm_t;
+ 
+ /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 00d1ccc..359e5ce 100644
+index 06b3c6e..6efeb31 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -948,7 +979,7 @@ index 00d1ccc..359e5ce 100644
          goto error;
      }
  
-@@ -1541,7 +1542,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
+@@ -1510,7 +1511,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
      }
  
      /* update SHM modules */
@@ -957,7 +988,7 @@ index 00d1ccc..359e5ce 100644
          goto error;
      }
      mod_shm_changed = 1;
-@@ -1585,7 +1586,7 @@ error:
+@@ -1544,7 +1545,7 @@ error:
      lyd_free_siblings(sr_del_mods);
  
      /* revert SHM module changes */
@@ -966,7 +997,7 @@ index 00d1ccc..359e5ce 100644
          sr_errinfo_merge(&err_info, tmp_err);
      }
  
-@@ -1852,7 +1853,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
+@@ -1785,7 +1786,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
      }
  
      /* update SHM modules */
@@ -975,7 +1006,7 @@ index 00d1ccc..359e5ce 100644
          goto cleanup;
      }
  
-@@ -2097,7 +2098,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
+@@ -2029,7 +2030,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
      }
  
      /* update SHM modules */
@@ -984,7 +1015,7 @@ index 00d1ccc..359e5ce 100644
          goto cleanup;
      }
  
-@@ -2604,7 +2605,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
+@@ -2536,7 +2537,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
      }
  
      /* update SHM modules */
@@ -993,7 +1024,7 @@ index 00d1ccc..359e5ce 100644
          goto cleanup;
      }
  
-@@ -5213,7 +5214,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5145,7 +5146,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);
