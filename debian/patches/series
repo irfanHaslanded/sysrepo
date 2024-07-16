@@ -57,5 +57,4 @@
 0058-Revert-libyang-err-msg-changes.patch
 0058-sr_unsubscribe-without-change_sub-WRITE-lock.patch
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
-0060-shm-sub-UPDATE-wait-a-bit-for-a-lock-after-event-tim.patch
-0061-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
+0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch

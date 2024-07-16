@@ -1,25 +1,17 @@
 From: Michal Vasko <mvasko@cesnet.cz>
-Date: Thu, 6 Jun 2024 11:48:06 +0200
+Date: Thu, 6 Jun 2024 10:42:36 +0200
 Subject: shm sub BUGFIX do not store error, which is never cleared
 
 (cherry picked from commit 73ec45d7184c7a5216dd8e609a68423188eb3018)
 ---
- src/shm_sub.c | 6 ++++--
- 1 file changed, 4 insertions(+), 2 deletions(-)
+ src/shm_sub.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index a5a018f..c51e751 100644
+index 550f0d3..15b2071 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -485,7 +485,6 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
-     int ret, write_lock = 0;
-     struct timespec timeout_abs2;
-     char buf[64] = "";
--    struct timespec timeout_abs2;
- 
-     assert((expected_ev == SR_SUB_EV_NONE) || SR_IS_NOTIFY_EVENT(expected_ev));
-     assert(shm_data_sub->fd > -1);
-@@ -559,9 +558,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -558,9 +558,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              /* event failed */
              if (clear_ev_on_err) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);

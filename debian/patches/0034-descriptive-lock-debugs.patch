@@ -266,7 +266,7 @@ index d7c3896..2ecd805 100644
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index acf3783..302ca9f 100644
+index d65df9c..1af1bff 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@
