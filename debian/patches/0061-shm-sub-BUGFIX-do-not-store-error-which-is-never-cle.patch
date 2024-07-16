@@ -4,52 +4,32 @@ Subject: shm sub BUGFIX do not store error, which is never cleared
 
 (cherry picked from commit 73ec45d7184c7a5216dd8e609a68423188eb3018)
 ---
- src/shm_sub.c | 21 +++++++++++++++++++--
- 1 file changed, 19 insertions(+), 2 deletions(-)
+ src/shm_sub.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index aab083a..6ba8f45 100644
+index a5a018f..c51e751 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -323,7 +323,11 @@ sr_shmsub_recover(sr_sub_shm_t *sub_shm)
-         sub_shm->orig_cid = 0;
-     } else if (ev && (ev != SR_SUB_EV_NOTIF)) {
-         /* if there is an event except SR_SUB_EV_NOTIF, orig_cid must always exist */
--        assert(sub_shm->orig_cid);
-+        if (!sub_shm->orig_cid) {
-+            SR_LOG_WRN("Cleared abandoned event \"%s\" ID %" PRIu32, sr_ev2str(ev),
-+                    (uint32_t)ATOMIC_LOAD_RELAXED(sub_shm->request_id));
-+            ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
-+        }
-     }
- }
+@@ -485,7 +485,6 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+     int ret, write_lock = 0;
+     struct timespec timeout_abs2;
+     char buf[64] = "";
+-    struct timespec timeout_abs2;
  
-@@ -524,7 +528,6 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+     assert((expected_ev == SR_SUB_EV_NONE) || SR_IS_NOTIFY_EVENT(expected_ev));
+     assert(shm_data_sub->fd > -1);
+@@ -559,9 +558,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              /* event failed */
              if (clear_ev_on_err) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
--                SR_LOG_INF("Clearing event ID %" PRIu32 " after timeout", request_id);
-             } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
-                 ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_ERROR);
-             }
-@@ -540,6 +543,20 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
-             /* set the WRITE lock back */
-             sub_shm->lock.writer = cid;
-         }
-+
-+        if ((event == last_event) && (request_id == last_request_id)) {
-+            /* event failed */
-+            if (clear_ev_on_err) {
-+                ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
 +                SR_LOG_DBG("Clearing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
-+            } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
-+                /* do not store SR_SUB_EV_ERROR if abort event is not generated (it is not on lock_lost) */
+             } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
+                 /* do not store SR_SUB_EV_ERROR if abort event is not generated (it is not on lock_lost) */
+-                ATOMIC_STORE_RELAXED(sub_shm->event, *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR);
 +                event = *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR;
 +                ATOMIC_STORE_RELAXED(sub_shm->event, event);
 +                SR_LOG_DBG("Storing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
-+            }
-+        }
-+
-         return err_info;
-     }
+             }
+         }
  

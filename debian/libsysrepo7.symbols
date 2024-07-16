@@ -187,11 +187,14 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  srsn_poll@Base 2.2.161
  srsn_read_dispatch_add@Base 2.2.161
  srsn_read_dispatch_count@Base 2.2.161
+ srsn_read_dispatch_destroy@Base 2.8.0
+ srsn_read_dispatch_init@Base 2.8.0
  srsn_read_dispatch_start@Base 2.2.161
  srsn_read_notif@Base 2.2.161
  srsn_resume@Base 2.2.161
  srsn_subscribe@Base 2.2.161
  srsn_suspend@Base 2.2.161
+ srsn_stream_collect_mods@Base 2.10.0
  srsn_terminate@Base 2.2.161
  srsn_yang_push_modify_on_change@Base 2.2.161
  srsn_yang_push_modify_periodic@Base 2.2.161

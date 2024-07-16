@@ -9,7 +9,7 @@ Subject: rwlock with retry for better visibility
  3 files changed, 84 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 05485c1..1b50d7e 100644
+index e8d6de0..2a6ab9c 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -147,6 +147,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
@@ -150,10 +150,10 @@ index 05485c1..1b50d7e 100644
              /* make it consistent */
              ret = pthread_mutex_consistent(&rwlock->mutex);
 diff --git a/src/common.h b/src/common.h
-index 656c3aa..38021a9 100644
+index 5ded494..5c9738f 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1395,4 +1395,7 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
+@@ -1407,4 +1407,7 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
  const char * sr_shm_dir_get(void);
  
@@ -162,18 +162,18 @@ index 656c3aa..38021a9 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 29b2be0..5eb60c6 100644
+index 302ca9f..628b6e2 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -344,6 +344,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -351,6 +351,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      sr_sub_event_t last_event;
-     uint32_t request_id, last_request_id;
+     uint32_t last_request_id;
      int ret;
 +    char buf[64] = "";
  
-     /* WRITE LOCK */
-     if ((err_info = sr_rwlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_WRITE, cid, __func__, NULL, NULL))) {
-@@ -368,7 +369,13 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+     /* it is only possible to lock with none or error */
+     assert(!lock_event || (SR_SUB_EV_ERROR == lock_event));
+@@ -375,7 +376,13 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      while (!ret && (sub_shm->lock.readers[0] || (ATOMIC_LOAD_RELAXED(sub_shm->event) &&
              (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event)))) {
          /* COND WAIT */
@@ -188,15 +188,15 @@ index 29b2be0..5eb60c6 100644
      }
  
      last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
-@@ -461,6 +468,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
-     sr_sub_event_t last_event;
+@@ -477,6 +484,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
      uint32_t last_request_id, i, err_count;
      int ret, write_lock = 0;
+     struct timespec timeout_abs2;
 +    char buf[64] = "";
  
      assert((expected_ev == SR_SUB_EV_NONE) || SR_IS_NOTIFY_EVENT(expected_ev));
      assert(shm_data_sub->fd > -1);
-@@ -476,7 +484,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -492,7 +500,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
      while (!ret && (sub_shm->lock.readers[0] || sub_shm->lock.writer ||
              (ATOMIC_LOAD_RELAXED(sub_shm->event) && !SR_IS_NOTIFY_EVENT(ATOMIC_LOAD_RELAXED(sub_shm->event))))) {
          /* COND WAIT */

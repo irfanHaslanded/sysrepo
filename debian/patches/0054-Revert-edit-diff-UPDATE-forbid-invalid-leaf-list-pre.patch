@@ -14,10 +14,10 @@ Closes: ENG-5693
  2 files changed, 11 insertions(+), 18 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 8f884cf..6b9bcb9 100644
+index 2e90ae7..ce41c8e 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3466,24 +3466,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
+@@ -3548,24 +3548,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
              /* find dup-inst list with this position, if exists */
              inst_pos = 1;
              *match = NULL;
@@ -53,10 +53,10 @@ index 8f884cf..6b9bcb9 100644
  
              if (*match) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index eb86dd8..5e4a279 100644
+index fa32251..a96c661 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -1443,7 +1443,7 @@ test_state_list(void **state)
+@@ -1446,7 +1446,7 @@ test_state_list(void **state)
  
      /* invalid predicate type */
      ret = sr_delete_item(st->sess, "/mixed-config:test-state/ll[.='val3']", 0);

@@ -637,9 +637,12 @@ test_subtree2xpath(void **state)
     char *filter_str, *get_str;
     const char *str, *exp;
     int ret;
-    const struct ly_ctx *ly_ctx = sr_acquire_context(st->conn);
+    const struct ly_ctx *ly_ctx;
     struct lyd_node *filter_tree, *edit_tree;
     sr_data_t *get_tree;
+
+    ly_ctx = sr_acquire_context(st->conn);
+    sr_release_context(st->conn);
 
     /* load some data */
     str =
@@ -712,7 +715,6 @@ main(void)
         cmocka_unit_test(test_cached_datastore),
         cmocka_unit_test(test_cached_thread),
         cmocka_unit_test(test_enable_cached_get),
-        cmocka_unit_test(test_no_read_access),
         cmocka_unit_test(test_no_read_access),
         cmocka_unit_test(test_explicit_default),
         cmocka_unit_test(test_union),

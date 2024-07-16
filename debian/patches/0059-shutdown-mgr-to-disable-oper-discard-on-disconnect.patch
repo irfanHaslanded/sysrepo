@@ -36,14 +36,14 @@ ENG-6495
  src/common.h                           |   3 +-
  src/executables/sysrepo-shutdown-mgr.c | 100 +++++++++++++++++++++++++++++++++
  src/modinfo.c                          |   8 ++-
- src/shm_types.h                        |   6 +-
+ src/shm_types.h                        |   7 ++-
  src/sysrepo.c                          |   5 +-
  tests/test_sysrepocfg_oper.sh          |  94 +++++++++++++++++++++++++------
- 8 files changed, 211 insertions(+), 22 deletions(-)
+ 8 files changed, 212 insertions(+), 22 deletions(-)
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 23cc986..749d359 100644
+index 5958480..cda886e 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -94,6 +94,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -54,7 +54,7 @@ index 23cc986..749d359 100644
  option(BUILD_SHARED_LIBS "By default, shared libs are enabled. Turn off for a static build." ON)
  option(INSTALL_SYSCTL_CONF "Install sysctl conf file to allow shared access to SHM files." OFF)
  set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/sysrepo" CACHE STRING "Directory where to copy the YANG modules to.")
-@@ -480,6 +481,12 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -482,6 +483,12 @@ if(ENABLE_SYSREPO_PLUGIND)
      target_link_libraries(sysrepo-plugind sysrepo)
  endif()
  
@@ -67,7 +67,7 @@ index 23cc986..749d359 100644
  # include repository files with highest priority
  include_directories("${PROJECT_SOURCE_DIR}/src")
  include_directories("${PROJECT_SOURCE_DIR}/src/plugins")
-@@ -582,6 +589,9 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -584,6 +591,9 @@ if(ENABLE_SYSREPO_PLUGIND)
      install(FILES ${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
      install(DIRECTORY DESTINATION ${SRPD_PLUGINS_PATH})
  endif()
@@ -78,10 +78,10 @@ index 23cc986..749d359 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index 69c723d..91f0217 100644
+index 9b0a5fe..519aed0 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5684,7 +5684,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5735,7 +5735,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
  }
  
  sr_error_info_t *
@@ -90,7 +90,7 @@ index 69c723d..91f0217 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *root, *elem;
-@@ -5699,6 +5699,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5750,6 +5750,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
          return err_info;
      }
  
@@ -103,10 +103,10 @@ index 69c723d..91f0217 100644
      if (dead_cid) {
          /* this connection is dead, remove its stored edit */
 diff --git a/src/common.h b/src/common.h
-index b3a39fb..12f9b75 100644
+index 1973303..71cf991 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1336,10 +1336,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
+@@ -1348,10 +1348,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
   * @brief Load operational data (edit) loaded from a SHM for a specific module.
   *
   * @param[in] mod Mod info mod.
@@ -226,10 +226,10 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index de1d4c5..04fe223 100644
+index e0235f9..abef5e2 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1160,9 +1160,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1167,9 +1167,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
      size_t oper_get_sub_count = 0, count = 0;
  
@@ -241,7 +241,7 @@ index de1d4c5..04fe223 100644
              return err_info;
          }
      }
-@@ -2845,6 +2846,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+@@ -2869,6 +2870,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
          }
      }
  
@@ -254,31 +254,39 @@ index de1d4c5..04fe223 100644
      for (i = 0; i < mod_info->mod_count; ++i) {
          mod = &mod_info->mods[i];
 diff --git a/src/shm_types.h b/src/shm_types.h
-index 86f735a..47fd1e3 100644
+index c921365..85db8c8 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
 @@ -25,7 +25,9 @@
  #include "common_types.h"
  #include "sysrepo_types.h"
  
--#define SR_SHM_VER 16   /**< Main, mod, and ext SHM version of their expected content structures. */
+-#define SR_SHM_VER 17   /**< Main, mod, and ext SHM version of their expected content structures. */
 +#define SR_DEBIAN_SHM_VER 1 /**< shm version to track debian changes to shm */
 +
-+#define SR_SHM_VER ((10000*SR_DEBIAN_SHM_VER) + 16)   /**< Main, mod, and ext SHM version of their expected content structures. */
++#define SR_SHM_VER ((10000*SR_DEBIAN_SHM_VER) + 17)   /**< Main, mod, and ext SHM version of their expected content structures. */
  #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
  
  /**
-@@ -189,6 +191,8 @@ typedef struct {
-     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+@@ -183,6 +185,8 @@ typedef struct {
+     pthread_mutex_t lydmods_lock;   /**< Process-shared lock for modifying SR internal module data. */
+     uint32_t content_id;        /**< Context content ID of the latest context. */
+ 
++    ATOMIC_T oper_keep_on_disconnect;   /**< Do not discard pushed operational data on sr_disconnect */
++
      ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
      ATOMIC_T new_xpath_id;      /**< New rwlock ID to track sr_rwlock_t locks */
+     ATOMIC_T new_sr_cid;        /**< Connection ID for a new connection. */
+@@ -191,6 +195,7 @@ typedef struct {
+     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+ 
+     char repo_path[256];        /**< Repository path used when main SHM was created. */
 +
-+    ATOMIC_T oper_keep_on_disconnect;   /**< Do not discard pushed operational data on sr_disconnect */
  } sr_main_shm_t;
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 9dfdf9d..3e5086a 100644
+index c39e00f..fd8b5c9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)

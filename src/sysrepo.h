@@ -493,6 +493,8 @@ const sr_module_ds_t *sr_get_module_ds_default(void);
 /**
  * @brief Install a new schema (module) into sysrepo with all the available options.
  *
+ * If a libyang import callback is set for @p conn context, it will be used when installing the modules.
+ *
  * Any initial data are used as `running`, `startup`, and `factory-default` datastore data. If not set,
  * the datastore plugin will be used to get the initial data for each datastore, which should generally be empty
  * but may not be for custom DS plugins.
@@ -1711,12 +1713,12 @@ int sr_notif_sub_modify_stop_time(sr_subscription_ctx_t *subscription, uint32_t 
  * @brief Register for providing operational data at the given path.
  *
  * Usual behaviour is only ONE subscription for ONE XPath. When subscribing to the same XPath that was used in some
- * previous subscription, ::SR_SUBSCR_OPER_MERGE flag has to be used. Every subscription has its internal priority
- * based on the order in which they were subscribed. Priority influences merging the operational data from multiple
- * subscriptions with the same XPath. Operational data returned by later subscriptions overwrite the same data from any
- * previous subscriptions. When retrieving data all subscription callbacks with the same XPath are called
- * simultaneously (to achieve this, @p subscription should be different for each subscription so that there are
- * separate threads listening for each of the events).
+ * previous subscription, ::SR_SUBSCR_OPER_MERGE flag has to be used. Every such subscription (for the same XPath) has
+ * its internal priority based on the order in which it was subscribed. This priority influences merging the operational
+ * data from multiple subscriptions with the same XPath. Operational data returned by later subscriptions overwrite the
+ * same data from any previous subscriptions. When retrieving data all subscription callbacks with the same XPath are
+ * called simultaneously (to actually achieve this, @p subscription should be different for each subscription so that
+ * there are separate threads listening for each of the events, otherwise the thread will call the callback sequentially).
  *
  * Required WRITE access.
  *
@@ -1796,7 +1798,7 @@ int sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, c
  *
  * @param[in,out] err_info Empty or an exisiting error info to add to.
  * @param[in] plg_name Plugin name to print.
- * @param[in] error_format Optional arbitrary error format identifier, set its error data using
+ * @param[in] err_format_name Optional arbitrary error format identifier, set its error data using
  * ::srplg_errinfo_push_error_data(). More details in ::sr_session_set_error_format().
  * @param[in] err_code Error code of the error.
  * @param[in] format Error message format.

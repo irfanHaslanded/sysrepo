@@ -42,10 +42,10 @@ index 4faad2e..3611c70 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 39b178e..f7603d7 100644
+index 5b54e09..45a2380 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -4978,6 +4978,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5048,6 +5048,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
  
      assert(subscription);
  
@@ -55,7 +55,7 @@ index 39b178e..f7603d7 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(subscription->conn, SR_LOCK_READ, 0, __func__))) {
          return err_info;
-@@ -5043,6 +5046,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5113,6 +5116,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
      return sr_api_ret(NULL, err_info);
  }
  
@@ -78,7 +78,7 @@ index 39b178e..f7603d7 100644
  API int
  sr_module_change_set_order(sr_conn_ctx_t *conn, const char *module_name, sr_datastore_t ds, uint32_t priority)
  {
-@@ -5262,7 +5281,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5332,7 +5351,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
              goto error;
          }
      }
@@ -88,7 +88,7 @@ index 39b178e..f7603d7 100644
      free(path);
      return NULL;
  
-@@ -5294,7 +5314,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5364,7 +5384,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      uint32_t xpath_id = 0;
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
@@ -97,7 +97,7 @@ index 39b178e..f7603d7 100644
  
      /* xpath = "" is invalid, implicitly convert it to NULL to avoid errors */
      if (xpath && !xpath[0]) {
-@@ -5337,6 +5357,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5407,6 +5427,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), module_name);
      SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
  
@@ -108,7 +108,7 @@ index 39b178e..f7603d7 100644
      if (!*subscription) {
          /* create a new subscription */
          if ((err_info = sr_subscr_new(conn, opts, subscription))) {
-@@ -5919,8 +5943,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
+@@ -5998,8 +6022,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
      sr_mod_t *shm_mod = NULL;
      int is_ext;
  
@@ -119,7 +119,7 @@ index 39b178e..f7603d7 100644
  
      conn = session->conn;
  
-@@ -6593,7 +6617,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+@@ -6672,7 +6696,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
              (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
              (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
              (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
@@ -128,7 +128,7 @@ index 39b178e..f7603d7 100644
      conn = session->conn;
  
      /* CONTEXT LOCK */
-@@ -7091,8 +7115,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7170,8 +7194,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      uint32_t prio = 0;
      uint32_t xpath_id = 0;
  
@@ -139,7 +139,7 @@ index 39b178e..f7603d7 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -7213,7 +7237,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7292,7 +7316,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_mod_t *shm_mod;
      struct modsub_operpoll_s *oper_poll_subs;
  
@@ -150,10 +150,10 @@ index 39b178e..f7603d7 100644
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 4a8a6dd..dcc4a64 100644
+index f3d8eab..263fbb8 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1306,6 +1306,11 @@ int sr_subscription_thread_resume(sr_subscription_ctx_t *subscription);
+@@ -1308,6 +1308,11 @@ int sr_subscription_thread_resume(sr_subscription_ctx_t *subscription);
   */
  int sr_unsubscribe(sr_subscription_ctx_t *subscription);
  

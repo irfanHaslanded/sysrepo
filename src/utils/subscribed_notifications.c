@@ -4,8 +4,8 @@
  * @brief multi-module notification subscription functions
  *
  * @copyright
- * Copyright (c) 2023 Deutsche Telekom AG.
- * Copyright (c) 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2023 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2023 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -40,6 +40,8 @@ srsn_filter_subtree2xpath(const struct lyd_node *subtree, sr_session_ctx_t *sess
     sr_error_info_t *err_info = NULL;
     struct srsn_filter filter = {0};
 
+    SR_CHECK_ARG_APIRET(!subtree || !xpath_filter, session, err_info);
+
     *xpath_filter = NULL;
 
     /* create a filter structure first */
@@ -55,6 +57,111 @@ srsn_filter_subtree2xpath(const struct lyd_node *subtree, sr_session_ctx_t *sess
 cleanup:
     srsn_filter_erase(&filter);
     return sr_api_ret(session, err_info);
+}
+
+static LY_ERR
+srsn_lysc_has_notif_clb(struct lysc_node *node, void *UNUSED(data), ly_bool *UNUSED(dfs_continue))
+{
+    LY_ARRAY_COUNT_TYPE u;
+    const struct lysc_ext *ext;
+
+    if (node->nodetype == LYS_NOTIF) {
+        return LY_EEXIST;
+    } else {
+        LY_ARRAY_FOR(node->exts, u) {
+            ext = node->exts[u].def;
+            if (!strcmp(ext->name, "mount-point") && !strcmp(ext->module->name, "ietf-yang-schema-mount")) {
+                /* any data including notifications could be mounted */
+                return LY_EEXIST;
+            }
+        }
+    }
+
+    return LY_SUCCESS;
+}
+
+/**
+ * @brief Check whether a module defines any notifications.
+ *
+ * @param[in] mod Module to check.
+ * @return Whether the module defines any notifications.
+ */
+static int
+srsn_ly_mod_has_notif(const struct lys_module *mod)
+{
+    if (lysc_module_dfs_full(mod, srsn_lysc_has_notif_clb, NULL) == LY_EEXIST) {
+        return 1;
+    }
+    return 0;
+}
+
+API int
+srsn_stream_collect_mods(const char *stream, const char *xpath_filter, const struct ly_ctx *ly_ctx,
+        struct ly_set **mod_set)
+{
+    int rc = SR_ERR_OK;
+    const struct lys_module *ly_mod;
+    struct ly_set *set = NULL;
+    uint32_t idx;
+
+    if (!stream || !ly_ctx || !mod_set) {
+        return SR_ERR_INVAL_ARG;
+    }
+
+    if (ly_set_new(mod_set)) {
+        return SR_ERR_NO_MEMORY;
+    }
+
+    if (strcmp(stream, "NETCONF")) {
+        /* subscribing to a specific module */
+        ly_mod = ly_ctx_get_module_implemented(ly_ctx, stream);
+        if (!ly_mod) {
+            rc = SR_ERR_NOT_FOUND;
+            goto cleanup;
+        }
+
+        if (ly_set_add(*mod_set, (void *)ly_mod, 1, NULL)) {
+            rc = SR_ERR_INTERNAL;
+            goto cleanup;
+        }
+    } else if (xpath_filter) {
+        /* collect only modules selected by the filter */
+        if (lys_find_xpath_atoms(ly_ctx, NULL, xpath_filter, 0, &set)) {
+            rc = SR_ERR_LY;
+            goto cleanup;
+        }
+
+        for (idx = 0; idx < set->count; ++idx) {
+            /* handles duplicates */
+            if (ly_set_add(*mod_set, lysc_owner_module(set->snodes[idx]), 0, NULL)) {
+                rc = SR_ERR_INTERNAL;
+                goto cleanup;
+            }
+        }
+    } else {
+        /* collect all modules with notifications */
+        idx = 0;
+        while ((ly_mod = ly_ctx_get_module_iter(ly_ctx, &idx))) {
+            if (!ly_mod->implemented) {
+                continue;
+            }
+
+            if (srsn_ly_mod_has_notif(ly_mod)) {
+                if (ly_set_add(*mod_set, (void *)ly_mod, 1, NULL)) {
+                    rc = SR_ERR_INTERNAL;
+                    goto cleanup;
+                }
+            }
+        }
+    }
+
+cleanup:
+    ly_set_free(set, NULL);
+    if (rc) {
+        ly_set_free(*mod_set, NULL);
+        *mod_set = NULL;
+    }
+    return rc;
 }
 
 API int
@@ -788,39 +895,34 @@ srsn_poll(int fd, uint32_t timeout_ms)
 }
 
 API int
-srsn_read_dispatch_start(int fd, sr_conn_ctx_t *conn, srsn_notif_cb cb, void *cb_data)
+srsn_read_dispatch_init(sr_conn_ctx_t *conn, srsn_notif_cb cb)
 {
     sr_error_info_t *err_info = NULL;
-    struct srsn_dispatch_arg *arg = NULL;
-    int r;
-    pthread_t tid;
 
-    SR_CHECK_ARG_APIRET(!fd || !conn || !cb, NULL, err_info);
+    SR_CHECK_ARG_APIRET(!conn || !cb, NULL, err_info);
 
-    /* prepare the pollfd structure */
-    if ((err_info = srsn_dispatch_init(fd, cb_data))) {
-        goto cleanup;
-    }
+    /* store conn and cb */
+    err_info = srsn_dispatch_init(conn, cb);
 
-    /* prepare the argument */
-    arg = malloc(sizeof *arg);
-    SR_CHECK_MEM_GOTO(!arg, err_info, cleanup);
-
-    arg->conn = conn;
-    arg->cb = cb;
-
-    /* create the thread */
-    if ((r = pthread_create(&tid, NULL, srsn_read_dispatch_thread, arg))) {
-        sr_errinfo_new(&err_info, SR_ERR_SYS, "Failed to create a thread (%s).", strerror(r));
-        goto cleanup;
-    }
-
-    /* arg is freed by the thread */
-    arg = NULL;
-
-cleanup:
-    free(arg);
     return sr_api_ret(NULL, err_info);
+}
+
+API int
+srsn_read_dispatch_start(int fd, sr_conn_ctx_t *conn, srsn_notif_cb cb, void *cb_data)
+{
+    int rc;
+
+    /* init */
+    if ((rc = srsn_read_dispatch_init(conn, cb))) {
+        return rc;
+    }
+
+    /* add */
+    if ((rc = srsn_read_dispatch_add(fd, cb_data))) {
+        return rc;
+    }
+
+    return SR_ERR_OK;
 }
 
 API int
@@ -828,7 +930,7 @@ srsn_read_dispatch_add(int fd, void *cb_data)
 {
     sr_error_info_t *err_info = NULL;
 
-    SR_CHECK_ARG_APIRET(!fd, NULL, err_info);
+    SR_CHECK_ARG_APIRET(fd < 0, NULL, err_info);
 
     /* add into the pollfd structure */
     err_info = srsn_dispatch_add(fd, cb_data);
@@ -840,4 +942,15 @@ API uint32_t
 srsn_read_dispatch_count(void)
 {
     return srsn_dispatch_count();
+}
+
+API int
+srsn_read_dispatch_destroy(void)
+{
+    sr_error_info_t *err_info = NULL;
+
+    /* destroy the dispatch thread and the user variables */
+    err_info = srsn_dispatch_destroy();
+
+    return sr_api_ret(NULL, err_info);
 }
