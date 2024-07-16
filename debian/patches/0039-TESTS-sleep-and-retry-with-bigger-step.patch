@@ -6,9 +6,9 @@ Subject: TESTS sleep and retry with bigger step
  not always get around scheduling the correct thread, when busy.
 ---
  tests/CMakeLists.txt       |  2 +-
- tests/test_apply_changes.c | 30 ++++++++++++++++--------------
+ tests/test_apply_changes.c | 73 ++++++++++++++++++++++++----------------------
  tests/test_lock_log.c      |  2 +-
- 3 files changed, 18 insertions(+), 16 deletions(-)
+ 3 files changed, 40 insertions(+), 37 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
 index c80db1e..03af25a 100644
@@ -24,7 +24,7 @@ index c80db1e..03af25a 100644
          set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 6ec90ed..d9128ce 100644
+index 3b0df8a..375f4b9 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -34,6 +34,9 @@
@@ -48,15 +48,117 @@ index 6ec90ed..d9128ce 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
-@@ -4998,7 +5001,6 @@ subscribe_change_done_when_thread(void *arg)
+@@ -518,8 +521,8 @@ subscribe_change_done_thread(void *arg)
+     assert_int_equal(ret, SR_ERR_OK);
  
-     /* signal that subscription was created */
-     pthread_barrier_wait(&st->barrier);
--
-     /* wait for the other thread to finish */
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 5) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 5) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 5);
+@@ -832,8 +835,8 @@ subscribe_update_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
-@@ -5580,12 +5582,12 @@ apply_change_timeout_thread(void *arg)
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
+@@ -1362,8 +1365,8 @@ subscribe_update_fail_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 1) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 1) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
+@@ -2807,8 +2810,8 @@ subscribe_change_any_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
+@@ -3450,8 +3453,8 @@ subscribe_change_dflt_leaf_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
+@@ -4165,8 +4168,8 @@ subscribe_change_dflt_leaflist_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 10) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 10);
+@@ -4410,8 +4413,8 @@ subscribe_change_dflt_choice_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
+@@ -4948,8 +4951,8 @@ subscribe_change_done_when_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while (((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) || (ATOMIC_LOAD_RELAXED(st->cb_called2) < 6)) && (count < 1500)) {
+-        usleep(10000);
++    while (((ATOMIC_LOAD_RELAXED(st->cb_called) < 6) || (ATOMIC_LOAD_RELAXED(st->cb_called2) < 6)) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
+@@ -5347,8 +5350,8 @@ subscribe_change_done_xpath_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 8) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 8) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 8);
+@@ -5460,8 +5463,8 @@ subscribe_change_unlocked_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 2) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 2) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
+@@ -5545,12 +5548,12 @@ apply_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      /* perform the change, time out but give it some time so that the callback is at least called) */
@@ -71,7 +173,7 @@ index 6ec90ed..d9128ce 100644
      assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
      pthread_barrier_wait(&st->barrier2);
  
-@@ -5633,8 +5635,8 @@ subscribe_change_timeout_thread(void *arg)
+@@ -5598,8 +5601,8 @@ subscribe_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -82,7 +184,7 @@ index 6ec90ed..d9128ce 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-@@ -5643,8 +5645,8 @@ subscribe_change_timeout_thread(void *arg)
+@@ -5608,8 +5611,8 @@ subscribe_change_timeout_thread(void *arg)
      pthread_barrier_wait(&st->barrier);
  
      count = 0;
@@ -93,7 +195,7 @@ index 6ec90ed..d9128ce 100644
          ++count;
      }
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
-@@ -5731,7 +5733,7 @@ apply_done_timeout_thread(void *arg)
+@@ -5696,7 +5699,7 @@ apply_done_timeout_thread(void *arg)
      /* try again, time out again (callback is called but gets stuck) */
      ret = sr_set_item_str(sess, "/test:test-leaf", "31", NULL, 0);
      assert_int_equal(ret, SR_ERR_OK);
@@ -102,7 +204,7 @@ index 6ec90ed..d9128ce 100644
      assert_int_equal(ret, SR_ERR_OK);
  
      /* unstuck the callback so it finishes */
-@@ -5776,11 +5778,11 @@ subscribe_done_timeout_thread(void *arg)
+@@ -5741,11 +5744,11 @@ subscribe_done_timeout_thread(void *arg)
  
      /* keep handling events */
      count = 0;
@@ -116,7 +218,7 @@ index 6ec90ed..d9128ce 100644
          ++count;
      }
  
-@@ -5789,11 +5791,11 @@ subscribe_done_timeout_thread(void *arg)
+@@ -5754,11 +5757,11 @@ subscribe_done_timeout_thread(void *arg)
  
      /* keep handling events */
      count = 0;
@@ -130,6 +232,17 @@ index 6ec90ed..d9128ce 100644
          ++count;
      }
  
+@@ -6509,8 +6512,8 @@ subscribe_change_userord_thread(void *arg)
+     pthread_barrier_wait(&st->barrier);
+ 
+     count = 0;
+-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < 1500)) {
+-        usleep(10000);
++    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < RETRY_COUNT)) {
++        usleep(SLEEP_STEP_MS);
+         ++count;
+     }
+     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 diff --git a/tests/test_lock_log.c b/tests/test_lock_log.c
 index 4e75154..40725d0 100644
 --- a/tests/test_lock_log.c

@@ -1101,7 +1101,7 @@ sr_edit_find_match(const struct lyd_node *data_sibling, const struct lyd_node *e
         lyd_find_sibling_val(data_sibling, edit_node->schema, NULL, 0, match_p);
         inst_pos = 1;
         while (pos && *match_p && ((*match_p)->schema == edit_node->schema)) {
-            m2 = lyd_find_meta((*match_p)->meta, NULL, "sysrepo:dup-inst-list-position");
+            m2 = lyd_find_meta(data_sibling->meta, NULL, "sysrepo:dup-inst-list-position");
             if (m2) {
                 /* actually merging edits, try to find an instance with the same position */
                 if (pos == strtoul(lyd_get_meta_value(m2), NULL, 10)) {
@@ -1542,65 +1542,13 @@ sr_edit_diff_set_origin(struct lyd_node *node, const char *origin, int overwrite
 }
 
 /**
- * @brief Find a possibly matching node instance in data tree for a diff node.
- *
- * @param[in] diff_sibling First sibling in the diff tree.
- * @param[in] diff_node Diff node to match.
- * @param[out] match_p Matching node.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_diff_find_match(const struct lyd_node *diff_sibling, const struct lyd_node *diff_node, struct lyd_node **match_p)
-{
-    sr_error_info_t *err_info = NULL;
-    struct lyd_meta *m1, *m2;
-    uint32_t pos;
-    int found = 0;
-
-    assert(diff_node->schema);
-
-    if (lysc_is_dup_inst_list(diff_node->schema)) {
-        /* absolute position on the edit node */
-        m1 = lyd_find_meta(diff_node->meta, NULL, "yang:position");
-        assert(m1);
-        pos = strtoul(lyd_get_meta_value(m1), NULL, 10);
-
-        /* iterate over all the instances */
-        if ((err_info = sr_lyd_find_sibling_val(diff_sibling, diff_node->schema, NULL, match_p))) {
-            return err_info;
-        }
-        while (pos && *match_p && ((*match_p)->schema == diff_node->schema)) {
-            m2 = lyd_find_meta((*match_p)->meta, NULL, "yang:position");
-            assert(m2);
-            if (pos == strtoul(lyd_get_meta_value(m2), NULL, 10)) {
-                found = 1;
-                break;
-            }
-
-            *match_p = (*match_p)->next;
-        }
-
-        if (!found) {
-            *match_p = NULL;
-        }
-    } else if (diff_node->schema->nodetype & (LYS_LIST | LYS_LEAFLIST)) {
-        /* exact (leaf-)list instance */
-        err_info = sr_lyd_find_sibling_first(diff_sibling, diff_node, match_p);
-    } else {
-        /* any existing instance */
-        err_info = sr_lyd_find_sibling_val(diff_sibling, diff_node->schema, NULL, match_p);
-    }
-
-    return err_info;
-}
-
-/**
  * @brief Add a node from data tree/edit into sysrepo diff.
  *
  * @param[in] node Changed node to be added to the diff.
  * @param[in] meta_val Metadata value (meaning depends on the nodetype).
  * @param[in] prev_meta_value Previous metadata value (meaning depends on the nodetype).
  * @param[in] op Diff operation.
+ * @param[in] subtree Add the whole subtree into diff, not just the node.
  * @param[in] diff_parent Current sysrepo diff parent.
  * @param[in,out] diff_root Current sysrepo diff root node.
  * @param[out] diff_node Optional created diff node.
@@ -1608,10 +1556,11 @@ sr_diff_find_match(const struct lyd_node *diff_sibling, const struct lyd_node *d
  */
 static sr_error_info_t *
 sr_edit_diff_add(const struct lyd_node *node, const char *meta_val, const char *prev_meta_val, enum edit_op op,
-        struct lyd_node *diff_parent, struct lyd_node **diff_root, struct lyd_node **diff_node)
+        int subtree, struct lyd_node *diff_parent, struct lyd_node **diff_root, struct lyd_node **diff_node)
 {
     sr_error_info_t *err_info = NULL;
-    struct lyd_node *node_dup = NULL, *diff_match;
+    struct lyd_node *node_dup = NULL, *elem;
+    const struct lyd_node *sibling_before;
     char *sibling_before_val = NULL;
 
     assert((op == EDIT_NONE) || (op == EDIT_CREATE) || (op == EDIT_DELETE) || (op == EDIT_REPLACE));
@@ -1623,7 +1572,7 @@ sr_edit_diff_add(const struct lyd_node *node, const char *meta_val, const char *
     }
 
     /* duplicate node */
-    if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &node_dup))) {
+    if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META | (subtree ? LYD_DUP_RECURSIVE : 0), 0, &node_dup))) {
         goto cleanup;
     }
 
@@ -1632,12 +1581,38 @@ sr_edit_diff_add(const struct lyd_node *node, const char *meta_val, const char *
         goto cleanup;
     }
 
-    /* check whether the new diff node is not already in the diff */
-    if ((err_info = sr_diff_find_match(diff_parent ? lyd_child(diff_parent) : *diff_root, node_dup, &diff_match))) {
-        goto cleanup;
+    if (subtree) {
+        assert(op == EDIT_DELETE);
+
+        /* add attributes for all nodes in the subtree */
+        LYD_TREE_DFS_BEGIN(node_dup, elem) {
+            if (elem == node_dup) {
+                /* meta values are relevant for this node only */
+                if ((err_info = sr_diff_add_meta(elem, meta_val, prev_meta_val, op))) {
+                    goto cleanup;
+                }
+            } else if (lysc_is_userordered(elem->schema)) {
+                /* only add information about previous instance for userord lists, nothing else is needed */
+                sibling_before = sr_edit_find_previous_instance(elem);
+                if (sibling_before) {
+                    sibling_before_val = sr_edit_create_userord_predicate(sibling_before);
+                }
+
+                /* add metadata */
+                if ((err_info = sr_diff_add_meta(elem, NULL, sibling_before_val, op))) {
+                    goto cleanup;
+                }
+                free(sibling_before_val);
+                sibling_before_val = NULL;
+            }
+
+            LYD_TREE_DFS_END(node_dup, elem);
+        }
     }
-    if (diff_match) {
-        /* merge the new diff node with the one in the diff */
+
+    if ((node_dup->schema->nodetype == LYS_LEAFLIST) && ((struct lysc_node_leaflist *)node_dup->schema)->dflts &&
+            (op == EDIT_CREATE)) {
+        /* default leaf-list with the same value may have been removed, so we need to merge these 2 diffs */
         if ((err_info = sr_lyd_diff_merge_tree(diff_root, diff_parent, node_dup))) {
             goto cleanup;
         }
@@ -1648,7 +1623,7 @@ sr_edit_diff_add(const struct lyd_node *node, const char *meta_val, const char *
                 goto cleanup;
             }
         }
-    } else {
+    } else if (lyd_find_sibling_first(diff_parent ? lyd_child(diff_parent) : *diff_root, node_dup, diff_node)) {
         /* insert node into diff, not there */
         if (diff_parent) {
             if (node_dup->flags & LYD_EXT) {
@@ -1796,7 +1771,7 @@ sr_edit_apply_none(struct lyd_node *data_match, const struct lyd_node *edit_node
 
     if (data_match->schema->nodetype & (LYS_LIST | LYS_CONTAINER)) {
         /* update diff, we may need this node */
-        if ((err_info = sr_edit_diff_add(data_match, NULL, NULL, EDIT_NONE, diff_parent, diff_root, diff_node))) {
+        if ((err_info = sr_edit_diff_add(data_match, NULL, NULL, EDIT_NONE, 0, diff_parent, diff_root, diff_node))) {
             return err_info;
         }
     } /* else the node exists (possibly with different value/dflt flag) so ignore it */
@@ -1836,7 +1811,7 @@ sr_edit_apply_remove(struct lyd_node *data_match, struct lyd_node *diff_parent, 
         }
 
         /* update diff, whole subtree removed */
-        if ((err_info = sr_edit_diff_add(data_match, NULL, sibling_before_val, EDIT_DELETE, diff_parent, diff_root,
+        if ((err_info = sr_edit_diff_add(data_match, NULL, sibling_before_val, EDIT_DELETE, 1, diff_parent, diff_root,
                 diff_node))) {
             goto cleanup;
         }
@@ -1918,7 +1893,7 @@ sr_edit_apply_move(struct lyd_node **data_root, struct lyd_node *data_parent, co
     if (sibling_before) {
         sibling_before_val = sr_edit_create_userord_predicate(sibling_before);
     }
-    err_info = sr_edit_diff_add(*data_match, sibling_before_val, old_sibling_before_val, diff_op, diff_parent,
+    err_info = sr_edit_diff_add(*data_match, sibling_before_val, old_sibling_before_val, diff_op, 0, diff_parent,
             diff_root, diff_node);
 
     free(old_sibling_before_val);
@@ -2019,7 +1994,7 @@ sr_edit_apply_replace(struct lyd_node *data_match, int val_equal, const struct l
             }
 
             /* add the updated node into diff */
-            err_info = sr_edit_diff_add(data_match, prev_val, (char *)prev_dflt, EDIT_REPLACE, diff_parent,
+            err_info = sr_edit_diff_add(data_match, prev_val, (char *)prev_dflt, EDIT_REPLACE, 0, diff_parent,
                     diff_root, diff_node);
             free(prev_val);
             if (err_info) {
@@ -2046,7 +2021,7 @@ sr_edit_apply_replace(struct lyd_node *data_match, int val_equal, const struct l
             }
 
             /* add the updated node into diff */
-            err_info = sr_edit_diff_add(data_match, prev_val, NULL, EDIT_REPLACE, diff_parent, diff_root, diff_node);
+            err_info = sr_edit_diff_add(data_match, prev_val, NULL, EDIT_REPLACE, 0, diff_parent, diff_root, diff_node);
             free(prev_val);
             if (err_info) {
                 return err_info;
@@ -2131,7 +2106,7 @@ sr_edit_apply_create(struct lyd_node **data_root, struct lyd_node *data_parent, 
         return err_info;
     }
 
-    if ((err_info = sr_edit_diff_add(*data_match, NULL, NULL, EDIT_CREATE, diff_parent, diff_root, diff_node))) {
+    if ((err_info = sr_edit_diff_add(*data_match, NULL, NULL, EDIT_CREATE, 0, diff_parent, diff_root, diff_node))) {
         return err_info;
     }
 
@@ -2242,7 +2217,7 @@ sr_edit_apply_dflt_change(struct lyd_node *data_match, const struct lyd_node *ed
     data_match->flags |= edit_node->flags & LYD_DEFAULT;
 
     /* default flag changed, we need the node in the diff */
-    if ((err_info = sr_edit_diff_add(data_match, NULL, (char *)prev_dflt, EDIT_NONE, diff_parent, diff_root,
+    if ((err_info = sr_edit_diff_add(data_match, NULL, (char *)prev_dflt, EDIT_NONE, 0, diff_parent, diff_root,
             diff_node))) {
         return err_info;
     }
@@ -2253,62 +2228,6 @@ sr_edit_apply_dflt_change(struct lyd_node *data_match, const struct lyd_node *ed
     }
 
     return NULL;
-}
-
-/**
- * @brief Add recursive diff of a deleted subtree. Normally, it is processed recursively but in some cases,
- * when the removal may be repeated, we need to do this manually.
- *
- * @param[in] data_del Deleted subtree from data.
- * @param[in] diff_node Diff node for @p data_del without its descendants.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_edit_apply_remove_diff_subtree_add(struct lyd_node *data_del, struct lyd_node *diff_node)
-{
-    sr_error_info_t *err_info = NULL;
-    struct lyd_node *child, *next, *first;
-    const struct lyd_node *sibling_before;
-    char *sibling_before_val = NULL;
-
-    /* get all the descendants of the deleted node */
-    first = lyd_child_no_keys(data_del);
-    if (!first) {
-        goto cleanup;
-    }
-
-    /* unlink them */
-    lyd_unlink_siblings(first);
-
-    /* add diff metadata for all the new nodes */
-    LY_LIST_FOR(first, next) {
-        LYD_TREE_DFS_BEGIN(next, child) {
-            if (lysc_is_userordered(child->schema)) {
-                /* only add information about previous instance for userord lists, nothing else is needed */
-                sibling_before = sr_edit_find_previous_instance(child);
-                if (sibling_before) {
-                    sibling_before_val = sr_edit_create_userord_predicate(sibling_before);
-                }
-
-                /* add metadata */
-                if ((err_info = sr_diff_add_meta(child, NULL, sibling_before_val, EDIT_DELETE))) {
-                    goto cleanup;
-                }
-                free(sibling_before_val);
-                sibling_before_val = NULL;
-            }
-
-            LYD_TREE_DFS_END(next, child);
-        }
-    }
-
-    /* insert into diff */
-    if ((err_info = sr_lyd_insert_child(diff_node, first))) {
-        goto cleanup;
-    }
-
-cleanup:
-    return err_info;
 }
 
 /**
@@ -2470,11 +2389,6 @@ reapply:
     }
 
     if ((prev_op == EDIT_AUTO_REMOVE) || ((prev_op == EDIT_PURGE) && data_del)) {
-        /* avoid recursive remove by manually adding all the descendants into the diff */
-        if (diff_root && (err_info = sr_edit_apply_remove_diff_subtree_add(data_del, diff_node))) {
-            goto cleanup;
-        }
-
         /* we have removed one subtree of data from another case/one default leaf-list instance/one purged instance,
          * try this whole edit again */
         prev_op = 0;
@@ -2493,9 +2407,13 @@ reapply:
         diff_parent = diff_node;
     }
 
-    if (flags & (EDIT_APPLY_REPLACE_R | EDIT_APPLY_DELETE_R)) {
+    if (flags & EDIT_APPLY_REPLACE_R) {
         /* remove all non-default children that are not in the edit, recursively */
         LY_LIST_FOR_SAFE(lyd_child_no_keys(data_match), next, child) {
+            if (child->flags & LYD_DEFAULT) {
+                continue;
+            }
+
             if ((err_info = sr_edit_find(lyd_child_no_keys(edit_node), child, EDIT_REMOVE, 0, NULL, 0, 0,
                     &edit_match, NULL))) {
                 goto cleanup;

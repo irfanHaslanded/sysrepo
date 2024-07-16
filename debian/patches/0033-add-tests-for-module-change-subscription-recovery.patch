@@ -11,7 +11,7 @@ filtering.
  1 file changed, 107 insertions(+)
 
 diff --git a/tests/test_process.c b/tests/test_process.c
-index 87d9a9d..9b52d9a 100644
+index b1c26f0..effa6c1 100644
 --- a/tests/test_process.c
 +++ b/tests/test_process.c
 @@ -28,6 +28,8 @@
@@ -23,7 +23,7 @@ index 87d9a9d..9b52d9a 100644
  #include "tests/tcommon.h"
  
  #define sr_assert(cond) if (!(cond)) { TLOG_ERR("\"%s\" not true", #cond); sr_assert_line(); abort(); }
-@@ -1189,6 +1191,110 @@ test_sub(int rp, int wp)
+@@ -1065,6 +1067,110 @@ test_sub(int rp, int wp)
      return 0;
  }
  
@@ -134,7 +134,7 @@ index 87d9a9d..9b52d9a 100644
  int
  main(void)
  {
-@@ -1202,6 +1308,7 @@ main(void)
+@@ -1077,6 +1183,7 @@ main(void)
          {"context change", test_context_change, test_context_change_sub, setup, teardown},
          {"conn create", test_conn_create, test_conn_create, setup, teardown},
          {"sub apply", test_sub, test_apply, setup, teardown},

@@ -52,7 +52,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 071ce66..6da6e5d 100644
+index 57fef18..2dfb29c 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -72,10 +72,10 @@ index 071ce66..6da6e5d 100644
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
  elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
 diff --git a/src/common.c b/src/common.c
-index 53f4b8b..4bfdf97 100644
+index e7f4586..c3065b4 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5636,9 +5636,10 @@ cleanup:
+@@ -5585,9 +5585,10 @@ cleanup:
   * This function caches the result of the environment variable check to improve performance.
   * @return 1 if the process has privileged access to default shared memory, 0 otherwise.
   * */
@@ -89,10 +89,10 @@ index 53f4b8b..4bfdf97 100644
      if (is_priviliged < 0) {
          is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5b2e021..00d1ccc 100644
+index 5940ae9..06b3c6e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7327,7 +7327,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7250,7 +7250,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -101,7 +101,7 @@ index 5b2e021..00d1ccc 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7337,8 +7337,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7260,8 +7260,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -112,7 +112,7 @@ index 5b2e021..00d1ccc 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7352,6 +7353,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7275,6 +7276,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;

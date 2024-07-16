@@ -10,10 +10,10 @@ ignore isolate for set items in oper
  2 files changed, 58 insertions(+), 2 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 0c5fed6..5b54e09 100644
+index 73b1346..39b178e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3378,10 +3378,16 @@ sr_free_values(sr_val_t *values, size_t count)
+@@ -3308,10 +3308,16 @@ sr_free_values(sr_val_t *values, size_t count)
  }
  
  API int
@@ -31,7 +31,7 @@ index 0c5fed6..5b54e09 100644
  
      SR_CHECK_ARG_APIRET(!session || (!path && (!value || !value->xpath)) || SR_EDIT_DS_API_CHECK(session->ds, opts),
              session, err_info);
-@@ -3406,10 +3412,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
+@@ -3336,10 +3342,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
  
  API int
  sr_set_item_str(sr_session_ctx_t *session, const char *path, const char *value, const char *origin,
@@ -49,7 +49,7 @@ index 0c5fed6..5b54e09 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
-@@ -3457,6 +3469,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3387,6 +3399,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
      uint32_t temp_lo = 0;
@@ -62,10 +62,10 @@ index 0c5fed6..5b54e09 100644
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index f5c26a4..fa32251 100644
+index 82819a2..eb86dd8 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -162,6 +162,44 @@ clear_up(void **state)
+@@ -159,6 +159,44 @@ clear_up(void **state)
      return 0;
  }
  
@@ -110,7 +110,7 @@ index f5c26a4..fa32251 100644
  static int
  dummy_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
          uint32_t request_id, void *private_data)
-@@ -4211,6 +4249,7 @@ int
+@@ -4076,6 +4114,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

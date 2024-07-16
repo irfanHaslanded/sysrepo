@@ -25,7 +25,7 @@ Closes: ENG-6050
  2 files changed, 93 insertions(+), 6 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ae2d6d5..664f436 100644
+index 85308f0..8471c36 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -33,6 +33,7 @@
@@ -36,7 +36,7 @@ index ae2d6d5..664f436 100644
  
  #include <libyang/hash_table.h>
  #include <libyang/libyang.h>
-@@ -3469,7 +3470,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3399,7 +3400,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
      uint32_t temp_lo = 0;
@@ -46,7 +46,7 @@ index ae2d6d5..664f436 100644
      sr_edit_options_t opts = in_opts;
  
      if (session && session->ds == SR_DS_OPERATIONAL) {
-@@ -3491,11 +3493,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3421,11 +3423,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
          }
      }
  
@@ -78,7 +78,7 @@ index ae2d6d5..664f436 100644
          operation = "purge";
      } else if (opts & SR_EDIT_STRICT) {
          operation = "delete";
-@@ -3507,6 +3527,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3437,6 +3457,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      /* add the operation into edit */
      err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
              NULL, opts & SR_EDIT_ISOLATE);
@@ -94,10 +94,10 @@ index ae2d6d5..664f436 100644
  cleanup:
      if (session->dt[session->ds].edit && !session->dt[session->ds].edit->tree) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index 4ded8b4..8935cf7 100644
+index 3ce0acd..283573e 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
-@@ -1258,6 +1258,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+@@ -1255,6 +1255,31 @@ stored_state_list_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
          ret = sr_get_change_tree_next(session, iter, &op, &node, &prev_value, NULL, NULL);
          assert_int_equal(ret, SR_ERR_NOT_FOUND);
  
@@ -129,7 +129,7 @@ index 4ded8b4..8935cf7 100644
          sr_free_change_iter(iter);
          break;
      default:
-@@ -1474,12 +1499,17 @@ test_state_list(void **state)
+@@ -1471,12 +1496,17 @@ test_state_list(void **state)
      assert_string_equal(str1, str2);
      free(str1);
  
@@ -150,7 +150,7 @@ index 4ded8b4..8935cf7 100644
      sr_unsubscribe(subscr);
  }
  
-@@ -4043,6 +4073,15 @@ test_oper_set_del_leaflist(void **state)
+@@ -3908,6 +3938,15 @@ test_oper_set_del_leaflist(void **state)
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);
  
@@ -166,7 +166,7 @@ index 4ded8b4..8935cf7 100644
      ret = sr_get_data(st->sess, xp_base, 0, 0, 0, &data);
      assert_int_equal(ret, SR_ERR_OK);
      sr_release_data(data);
-@@ -4051,6 +4090,26 @@ test_oper_set_del_leaflist(void **state)
+@@ -3916,6 +3955,26 @@ test_oper_set_del_leaflist(void **state)
      assert_int_equal(ret, SR_ERR_OK);
      ret = sr_apply_changes(st->sess, 0);
      assert_int_equal(ret, SR_ERR_OK);

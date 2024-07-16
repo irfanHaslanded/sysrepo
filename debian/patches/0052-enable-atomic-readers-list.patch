@@ -17,7 +17,7 @@ Subject: enable atomic readers list
  7 files changed, 289 insertions(+), 147 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 2a6ab9c..9b0a5fe 100644
+index 1b50d7e..69c723d 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -92,11 +92,16 @@ sr_log_rwlock_details(sr_log_level_t log_level, sr_rwlock_t *rwlock, sr_lock_mod
@@ -589,7 +589,7 @@ index 2a6ab9c..9b0a5fe 100644
  }
  
 diff --git a/src/common.h b/src/common.h
-index 5c9738f..44df98e 100644
+index 38021a9..e822069 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -63,9 +63,6 @@ struct srplg_ntf_s;
@@ -642,10 +642,10 @@ index d363bfb..4faad2e 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index bf54268..e0235f9 100644
+index 8d6fd83..de1d4c5 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1687,7 +1687,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1657,7 +1657,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
  
  #define PATH_LEN 128
      char path[PATH_LEN];
@@ -654,7 +654,7 @@ index bf54268..e0235f9 100644
  
      /* unlocked access to the lock, possible wrong/stale values should not matter */
  
-@@ -1705,9 +1705,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1675,9 +1675,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
      memcpy(reader_cids, rwlock->readers, sizeof reader_cids);
  
      for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && reader_cids[i]; ++i) {
@@ -665,7 +665,7 @@ index bf54268..e0235f9 100644
              continue;
          }
  
-@@ -1716,12 +1715,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1686,12 +1685,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
@@ -678,7 +678,7 @@ index bf54268..e0235f9 100644
      }
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
-@@ -1791,12 +1784,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
+@@ -1761,12 +1754,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
          }
      }
  
@@ -694,10 +694,10 @@ index bf54268..e0235f9 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 628b6e2..1dac58f 100644
+index 5eb60c6..2b9d619 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -373,7 +373,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -366,7 +366,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      /* wait until there is no event and there are no readers (just like write lock) */
      sr_timeouttime_get(&timeout_abs, SR_SUBSHM_LOCK_TIMEOUT);
      ret = 0;
@@ -706,7 +706,7 @@ index 628b6e2..1dac58f 100644
              (ATOMIC_LOAD_RELAXED(sub_shm->event) != lock_event)))) {
          /* COND WAIT */
          ret = sr_cond_clockwait_retry(&sub_shm->lock.cond, &sub_shm->lock.mutex, &timeout_abs);
-@@ -386,7 +386,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -379,7 +379,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      }
  
      last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
@@ -715,16 +715,16 @@ index 628b6e2..1dac58f 100644
          /* FAKE WRITE LOCK */
          assert(!sub_shm->lock.writer);
          sub_shm->lock.writer = cid;
-@@ -407,7 +407,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+@@ -400,7 +400,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
      last_request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
  
      if (ret) {
--        if ((ret == ETIMEDOUT) && !sub_shm->lock.readers[0] &&
+-        if ((ret == ETIMEDOUT) && (!sub_shm->lock.readers[0]) &&
 +        if ((ret == ETIMEDOUT) && (!SR_RWLOCK_READERS(&sub_shm->lock)) &&
-                 (!last_event || (last_event == lock_event) || (last_event == SR_SUB_EV_NOTIF))) {
-             /* even though the timeout has elapsed, the event was handled so continue normally (if there are no readers) */
-             if (last_event == SR_SUB_EV_NOTIF) {
-@@ -427,7 +427,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+                 (!last_event || (last_event == lock_event)) && (request_id == last_request_id)) {
+             /* even though the timeout has elapsed, the event was handled so continue normally */
+             /* ensure that there are no readers left, otherwise we don't have the write lock */
+@@ -416,7 +416,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
              SR_ERRINFO_COND(&err_info, __func__, ret);
          }
  
@@ -733,7 +733,7 @@ index 628b6e2..1dac58f 100644
              /* WRITE UNLOCK */
              sr_rwunlock(&sub_shm->lock, 0, SR_LOCK_WRITE, cid, __func__);
          } else {
-@@ -497,7 +497,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -481,7 +481,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
  
      /* wait until this event was processed and there are no readers or another writer (just like a write lock) */
      ret = 0;
@@ -742,7 +742,7 @@ index 628b6e2..1dac58f 100644
              (ATOMIC_LOAD_RELAXED(sub_shm->event) && !SR_IS_NOTIFY_EVENT(ATOMIC_LOAD_RELAXED(sub_shm->event))))) {
          /* COND WAIT */
          ret = sr_cond_clockwait_retry(&sub_shm->lock.cond, &sub_shm->lock.mutex, timeout_abs);
-@@ -545,7 +545,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -530,7 +530,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
  
          if (write_lock) {
              /* we already have the write lock */
