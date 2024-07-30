@@ -36,6 +36,7 @@ elseif("${BUILD_TYPE_UPPER}" STREQUAL "DEBUG")
     set(CMAKE_C_FLAGS "-g -O0 ${CMAKE_C_FLAGS}")
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBINFO")
     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
+    set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
     set(CMAKE_BUILD_TYPE "RelWithDebug" CACHE STRING "Build Type" FORCE)
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
@@ -52,8 +53,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # minor version changes with added functionality (new tool, functionality of the tool or library, ...) and
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
-set(SYSREPO_MINOR_VERSION 10)
-set(SYSREPO_MICRO_VERSION 4)
+set(SYSREPO_MINOR_VERSION 11)
+set(SYSREPO_MICRO_VERSION 0)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
@@ -61,7 +62,7 @@ set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
 set(SYSREPO_MINOR_SOVERSION 27)
-set(SYSREPO_MICRO_SOVERSION 4)
+set(SYSREPO_MICRO_SOVERSION 7)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
@@ -227,6 +228,11 @@ if(NOT SRPD_PLUGINS_PATH)
         "Sysrepo plugin daemon plugins path.")
 endif()
 message(STATUS "SRPD plugins path:  ${SRPD_PLUGINS_PATH}")
+
+if(NOT SYSREPOCFG_DEFAULT_LYD_FORMAT)
+    set(SYSREPOCFG_DEFAULT_LYD_FORMAT LYD_XML)
+endif()
+message(STATUS "sysrepocfg default data format: ${SYSREPOCFG_DEFAULT_LYD_FORMAT}")
 
 #
 # sources
@@ -439,6 +445,12 @@ if(LIBHIREDIS_FOUND AND REDIS_CLI)
     endif()
 else()
     message(STATUS "Datastore plugin ds_redis not supported.")
+endif()
+
+# common database utility functions - optional
+if((TARGET mongo::mongoc_shared AND MONGOSH) OR (LIBHIREDIS_FOUND AND REDIS_CLI))
+    # common utilities added if at least one library exists
+    list(APPEND LIB_SRC src/plugins/common_db.c)
 endif()
 
 # sysrepo

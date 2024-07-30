@@ -411,6 +411,7 @@ sr_disconnect(sr_conn_ctx_t *conn)
         return sr_api_ret(NULL, err_info);
     }
 
+    SR_LOG_INF("Connection %" PRIu32 " destroyed", conn->cid);
     /* free attributes */
     sr_conn_free(conn);
 
@@ -438,12 +439,20 @@ sr_acquire_context(sr_conn_ctx_t *conn)
 API const struct ly_ctx *
 sr_session_acquire_context(sr_session_ctx_t *session)
 {
+    if (!session) {
+        return NULL;
+    }
+
     return sr_acquire_context(session->conn);
 }
 
 API void
 sr_release_context(sr_conn_ctx_t *conn)
 {
+    if (!conn) {
+        return;
+    }
+
     /* CONTEXT UNLOCK */
     sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
 }
@@ -451,6 +460,10 @@ sr_release_context(sr_conn_ctx_t *conn)
 API void
 sr_session_release_context(sr_session_ctx_t *session)
 {
+    if (!session) {
+        return;
+    }
+
     sr_release_context(session->conn);
 }
 
@@ -721,11 +734,6 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
     }
     if ((err_info = sr_rwlock_init(&(*session)->notif_buf.lock, 0))) {
         goto error;
-    }
-
-    if (!event) {
-        SR_LOG_INF("Session %" PRIu32 " (user \"%s\", CID %" PRIu32 ") created.", (*session)->sid, (*session)->user,
-                conn->cid);
     }
 
     return NULL;
@@ -6578,6 +6586,9 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char 
     ly_mod = ly_ctx_get_module_implemented(conn->ly_ctx, mod_name);
     if (!ly_mod) {
         sr_errinfo_new(&err_info, SR_ERR_NOT_FOUND, "Module \"%s\" was not found in sysrepo.", mod_name);
+        goto cleanup;
+    } else if (!strcmp(ly_mod->name, "sysrepo")) {
+        sr_errinfo_new(&err_info, SR_ERR_UNSUPPORTED, "Notifications of internal module \"sysrepo\" cannot be subscribed to.");
         goto cleanup;
     }
 

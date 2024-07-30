@@ -420,7 +420,7 @@ setup_subscribe_oper(struct test_state *state)
     if ((r = sr_connect(SR_CONN_DEFAULT, &state->conn))) {
         return r;
     }
-    if ((r = sr_session_start(state->conn, SR_DS_RUNNING, &state->sess))) {
+    if ((r = sr_session_start(state->conn, SR_DS_OPERATIONAL, &state->sess))) {
         return r;
     }
     if ((r = sr_oper_get_subscribe(state->sess, "perf", "/perf:cont", oper_cb, state, 0, &state->sub))) {
@@ -838,14 +838,6 @@ sysrepo_init(const char *plg_name, struct test_state *state, uint32_t count)
         mod_ds.plugin_name[i] = plg_name;
     }
     mod_ds.plugin_name[5] = "JSON notif";
-
-    /* setup env */
-    if ((ret = setenv("SYSREPO_REPOSITORY_PATH", TESTS_REPO_DIR "/test_repositories/sr_perf", 1))) {
-        return ret;
-    }
-    if ((ret = setenv("SYSREPO_SHM_PREFIX", "_tests_sr_sr_perf", 1))) {
-        return ret;
-    }
 
     /* turn on logging */
     sr_log_stderr(SR_LL_WRN);
