@@ -10,7 +10,7 @@ before we can downgrade to a read lock.
  2 files changed, 8 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.h b/src/common.h
-index 42f5b70..5ded494 100644
+index 44c6374..d2b0966 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -123,10 +123,10 @@ struct srplg_ntf_s;

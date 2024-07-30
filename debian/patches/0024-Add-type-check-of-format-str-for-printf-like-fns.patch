@@ -23,10 +23,10 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  5 files changed, 13 insertions(+), 29 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 6da6e5d..5958480 100644
+index a24c3ef..647cc6e 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -76,7 +76,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
+@@ -77,7 +77,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
  # generate only version header, it is needed for docs
  configure_file("${PROJECT_SOURCE_DIR}/src/version.h.in" "${PROJECT_BINARY_DIR}/include/sysrepo/version.h" ESCAPE_QUOTES @ONLY)
  
@@ -126,10 +126,10 @@ index 7f8d308..4262312 100644
          }
      }
 diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 28c65d0..05725ac 100644
+index 169b242..01d6649 100644
 --- a/src/plugins/common_json.c
 +++ b/src/plugins/common_json.c
-@@ -129,7 +129,7 @@ sr_error_info_t *
+@@ -125,7 +125,7 @@ sr_error_info_t *
  srpjson_shm_prefix(const char *plg_name, const char **prefix)
  {
      sr_error_info_t *err_info = NULL;

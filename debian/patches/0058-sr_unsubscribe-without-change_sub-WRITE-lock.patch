@@ -67,7 +67,7 @@ Closes: ENG-6692
  7 files changed, 452 insertions(+), 76 deletions(-)
 
 diff --git a/src/common.h b/src/common.h
-index 44df98e..1973303 100644
+index 9130de8..f9a4fb5 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -116,6 +116,9 @@ struct srplg_ntf_s;
@@ -506,10 +506,10 @@ index 5d1b58c..27d1cce 100644
      if (subs_lock != has_subs_lock) {
          if (subs_lock == SR_LOCK_NONE) {
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index de49580..c39e00f 100644
+index 24376d9..aee1fc7 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7595,11 +7595,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -7609,11 +7609,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
      size_t i = 0;
      sr_error_info_t *err_info = NULL;
      sr_mod_change_sub_t *change_subs;
@@ -523,7 +523,7 @@ index de49580..c39e00f 100644
  
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -7612,8 +7613,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -7626,8 +7627,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
          goto cleanup;
      }
  
@@ -534,7 +534,7 @@ index de49580..c39e00f 100644
          goto cleanup;
      }
  
-@@ -7630,12 +7631,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -7644,12 +7645,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
  
      change_subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
  

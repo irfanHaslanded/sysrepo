@@ -20,13 +20,13 @@ index f1c5274..d363bfb 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e870af8..cbcb179 100644
+index ad3358d..2448703 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -441,7 +441,11 @@ sr_acquire_context(sr_conn_ctx_t *conn)
- API const struct ly_ctx *
- sr_session_acquire_context(sr_session_ctx_t *session)
- {
+@@ -444,7 +444,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)
+         return NULL;
+     }
+ 
 -    return sr_acquire_context(session->conn);
 +    const struct ly_ctx * ctx = sr_acquire_context(session->conn);
 +    if (ctx) {
@@ -36,15 +36,15 @@ index e870af8..cbcb179 100644
  }
  
  API void
-@@ -455,6 +459,7 @@ API void
- sr_session_release_context(sr_session_ctx_t *session)
- {
+@@ -466,6 +470,7 @@ sr_session_release_context(sr_session_ctx_t *session)
+     }
+ 
      sr_release_context(session->conn);
 +    ATOMIC_DEC_RELAXED(session->lyctx_lock_rdcount);
  }
  
  API uint32_t
-@@ -838,6 +843,7 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -849,6 +854,7 @@ _sr_session_stop(sr_session_ctx_t *session)
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      sr_datastore_t ds;
@@ -52,7 +52,7 @@ index e870af8..cbcb179 100644
  
      /* subscriptions need to be freed before, with a WRITE lock */
      assert(!session->subscription_count && !session->subscriptions);
-@@ -860,7 +866,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -871,7 +877,13 @@ _sr_session_stop(sr_session_ctx_t *session)
      sr_shmmod_release_locks(session->conn, session->sid);
  
      /* CONTEXT UNLOCK */

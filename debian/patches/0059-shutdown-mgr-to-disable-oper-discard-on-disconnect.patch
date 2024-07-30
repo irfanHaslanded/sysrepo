@@ -43,10 +43,10 @@ ENG-6495
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 5958480..cda886e 100644
+index 647cc6e..e8d8a82 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -94,6 +94,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
+@@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
  option(ENABLE_SYSREPOCTL "Build binary tool 'sysrepoctl'" ON)
  option(ENABLE_SYSREPOCFG "Build binary tool 'sysrepocfg'" ON)
  option(ENABLE_SYSREPO_PLUGIND "Build binary daemon 'sysrepo-plugind'" ON)
@@ -54,7 +54,7 @@ index 5958480..cda886e 100644
  option(BUILD_SHARED_LIBS "By default, shared libs are enabled. Turn off for a static build." ON)
  option(INSTALL_SYSCTL_CONF "Install sysctl conf file to allow shared access to SHM files." OFF)
  set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/sysrepo" CACHE STRING "Directory where to copy the YANG modules to.")
-@@ -482,6 +483,12 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -494,6 +495,12 @@ if(ENABLE_SYSREPO_PLUGIND)
      target_link_libraries(sysrepo-plugind sysrepo)
  endif()
  
@@ -67,7 +67,7 @@ index 5958480..cda886e 100644
  # include repository files with highest priority
  include_directories("${PROJECT_SOURCE_DIR}/src")
  include_directories("${PROJECT_SOURCE_DIR}/src/plugins")
-@@ -584,6 +591,9 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -596,6 +603,9 @@ if(ENABLE_SYSREPO_PLUGIND)
      install(FILES ${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
      install(DIRECTORY DESTINATION ${SRPD_PLUGINS_PATH})
  endif()
@@ -78,10 +78,10 @@ index 5958480..cda886e 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index 9b0a5fe..519aed0 100644
+index bc38fdf..b83dc25 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5735,7 +5735,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5744,7 +5744,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
  }
  
  sr_error_info_t *
@@ -90,7 +90,7 @@ index 9b0a5fe..519aed0 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *root, *elem;
-@@ -5750,6 +5750,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5759,6 +5759,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
          return err_info;
      }
  
@@ -103,7 +103,7 @@ index 9b0a5fe..519aed0 100644
      if (dead_cid) {
          /* this connection is dead, remove its stored edit */
 diff --git a/src/common.h b/src/common.h
-index 1973303..71cf991 100644
+index f9a4fb5..49edd00 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -1348,10 +1348,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
@@ -286,7 +286,7 @@ index c921365..85db8c8 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index c39e00f..fd8b5c9 100644
+index aee1fc7..1624b70 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)

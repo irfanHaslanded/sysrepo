@@ -11,10 +11,10 @@ Subject: TESTS sleep and retry with bigger step
  3 files changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index c80db1e..03af25a 100644
+index a110777..db9002a 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -125,7 +125,7 @@ endif()
+@@ -131,7 +131,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)
@@ -24,7 +24,7 @@ index c80db1e..03af25a 100644
          set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 6ec90ed..d9128ce 100644
+index ca99002..3cffd73 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -34,6 +34,9 @@

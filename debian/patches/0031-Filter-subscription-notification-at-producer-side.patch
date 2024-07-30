@@ -27,9 +27,9 @@ Add tests
  src/subscr.h                  |    3 +-
  src/sysrepo.c                 |   29 +-
  src/sysrepo_types.h           |    8 +-
- tests/test_apply_changes.c    |    5 +-
+ tests/test_apply_changes.c    |    1 -
  tests/test_subscr_filtering.c | 1182 +++++++++++++++++++++++++++++++++++++++++
- 15 files changed, 1646 insertions(+), 119 deletions(-)
+ 15 files changed, 1645 insertions(+), 116 deletions(-)
  create mode 100644 tests/test_subscr_filtering.c
 
 diff --git a/src/common_types.h b/src/common_types.h
@@ -1206,10 +1206,10 @@ index 710287e..4645820 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index d73fe7d..228c898 100644
+index 2b57e2e..ad90674 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3765,6 +3765,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3776,6 +3776,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      uint32_t sid = 0;
      char *orig_name = NULL;
      void *orig_data = NULL;
@@ -1217,7 +1217,7 @@ index d73fe7d..228c898 100644
  
      *cb_err_info = NULL;
  
-@@ -3856,7 +3857,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3867,7 +3868,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
      change_sub_lock = SR_LOCK_READ;
  
      /* first publish "update" event for the diff to be updated */
@@ -1226,7 +1226,7 @@ index d73fe7d..228c898 100644
              *cb_err_info) {
          goto cleanup;
      }
-@@ -3866,8 +3867,12 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
+@@ -3877,8 +3878,12 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
          goto store;
      }
  
@@ -1240,7 +1240,7 @@ index d73fe7d..228c898 100644
          goto cleanup;
      }
      if (*cb_err_info) {
-@@ -3916,6 +3921,7 @@ cleanup:
+@@ -3927,6 +3932,7 @@ cleanup:
      }
  
      free(denied.rule_name);
@@ -1248,7 +1248,7 @@ index d73fe7d..228c898 100644
      return err_info;
  }
  
-@@ -5285,10 +5291,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5296,10 +5302,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      sr_conn_ctx_t *conn;
      uint32_t sub_id;
      sr_subscr_options_t sub_opts;
@@ -1261,7 +1261,7 @@ index d73fe7d..228c898 100644
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
              !callback || !subscription, session, err_info);
-@@ -5298,12 +5305,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5309,12 +5316,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
          xpath = NULL;
      }
  
@@ -1276,7 +1276,7 @@ index d73fe7d..228c898 100644
  
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -5368,11 +5374,14 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5379,11 +5385,14 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
       */
  
      /* add module subscription into ext SHM and create separate specific SHM segment */
@@ -1292,7 +1292,7 @@ index d73fe7d..228c898 100644
      /* SUBS WRITE LOCK */
      if ((err_info = sr_rwlock(&(*subscription)->subs_lock, SR_SUBSCR_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
              __func__, NULL, NULL))) {
-@@ -5381,7 +5390,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5392,7 +5401,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      subs_lock_held = 1;
  
      /* add subscription into structure */
@@ -1301,7 +1301,7 @@ index d73fe7d..228c898 100644
              priority, sub_opts, SR_LOCK_WRITE, &is_event_pending))) {
          goto error1;
      }
-@@ -5419,6 +5428,7 @@ cleanup:
+@@ -5430,6 +5439,7 @@ cleanup:
      }
  
      if (chsub_lock_mode != SR_LOCK_NONE) {
@@ -1309,7 +1309,7 @@ index d73fe7d..228c898 100644
          /* CHANGE SUB UNLOCK */
          sr_rwunlock(&shm_mod->change_sub[session->ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, chsub_lock_mode, conn->cid, __func__);
      }
-@@ -7092,6 +7102,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7106,6 +7116,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_subscr_options_t sub_opts;
      sr_mod_t *shm_mod;
      uint32_t prio = 0;
@@ -1317,7 +1317,7 @@ index d73fe7d..228c898 100644
  
      SR_CHECK_ARG_APIRET(!session || SR_IS_EVENT_SESS(session) || !module_name || !path || !callback || !subscription,
              session, err_info);
-@@ -7151,7 +7162,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7165,7 +7176,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      }
  
      /* add oper get subscription into ext SHM and create separate specific SHM segment */
@@ -1346,29 +1346,10 @@ index 1daadc5..2d4ccc4 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 9a78136..97c9d35 100644
+index 8facfc9..e94e07a 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7080,9 +7080,8 @@ test_write_starve(void **state)
- static void *
- apply_when1_thread(void *arg)
- {
--    sr_conn_ctx_t *conn;
--
-     (void)arg;
-+    sr_conn_ctx_t *conn;
-     sr_session_ctx_t *sess;
-     int ret;
- 
-@@ -7121,7 +7120,6 @@ static void *
- apply_when2_thread(void *arg)
- {
-     sr_conn_ctx_t *conn;
--
-     (void)arg;
-     sr_session_ctx_t *sess;
-     int ret;
-@@ -7175,7 +7173,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
+@@ -7179,7 +7179,6 @@ module_yield_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_n
      (void)event;
      (void)request_id;
      (void)private_data;

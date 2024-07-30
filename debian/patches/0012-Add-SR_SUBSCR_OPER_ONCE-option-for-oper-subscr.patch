@@ -64,10 +64,10 @@ index 9edb449..1a22d53 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6016b0e..e7dadcf 100644
+index 7a90c1b..bb3b88f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7076,7 +7076,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7090,7 +7090,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
@@ -97,10 +97,10 @@ index 9f820b8..43b7663 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_oper_pull.c b/tests/test_oper_pull.c
-index c185275..5c75d7d 100644
+index 49eaf7b..25d3089 100644
 --- a/tests/test_oper_pull.c
 +++ b/tests/test_oper_pull.c
-@@ -3728,6 +3728,230 @@ test_cache_diff(void **state)
+@@ -3739,6 +3739,230 @@ test_cache_diff(void **state)
  
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
  }
@@ -331,7 +331,7 @@ index c185275..5c75d7d 100644
  
  int
  main(void)
-@@ -3759,6 +3983,7 @@ main(void)
+@@ -3770,6 +3994,7 @@ main(void)
          cmocka_unit_test_teardown(test_cache, clear_up),
          cmocka_unit_test_teardown(test_cache_no_sub, clear_up),
          cmocka_unit_test_teardown(test_cache_diff, clear_up),

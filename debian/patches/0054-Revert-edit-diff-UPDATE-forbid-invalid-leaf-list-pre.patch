@@ -14,10 +14,10 @@ Closes: ENG-5693
  2 files changed, 11 insertions(+), 18 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 2e90ae7..ce41c8e 100644
+index 248592b..24000fd 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3548,24 +3548,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
+@@ -3562,24 +3562,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
              /* find dup-inst list with this position, if exists */
              inst_pos = 1;
              *match = NULL;

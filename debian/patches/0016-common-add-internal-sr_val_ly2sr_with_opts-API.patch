@@ -10,10 +10,10 @@ libyang data into a sysrepo value.
  2 files changed, 20 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index 9e9223b..19037bc 100644
+index eaf48e1..0742275 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3978,6 +3978,12 @@ sr_ev2api(sr_sub_event_t ev)
+@@ -3970,6 +3970,12 @@ sr_ev2api(sr_sub_event_t ev)
  
  sr_error_info_t *
  sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)
@@ -27,12 +27,12 @@ index 9e9223b..19037bc 100644
      sr_error_info_t *err_info = NULL;
      char *ptr, *origin;
 diff --git a/src/common.h b/src/common.h
-index e9ed71d..f4c7420 100644
+index e7a0abd..7d7272f 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1372,4 +1372,18 @@ sr_error_info_t *sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_
+@@ -1378,4 +1378,18 @@ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_
   */
- sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name);
+ int sr_is_prod_env(void);
  
 +typedef enum sr_val_ly2sr_opts_e {
 +    SR_VAL_LY2SR_DEFAULT = 0,             /**< Standard behaviour */
