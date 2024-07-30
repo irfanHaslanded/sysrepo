@@ -1,3 +1,24 @@
+sysrepo (2.11.0-1) unstable; urgency=medium
+  [ IrfanMohammad ]
+  * sysrepocfg: add -s/--no-subs export argument
+  * sysrepocfg: build-time select default LYD_FORMAT
+  * tests BUGFIX test_mult_update sync threads
+  [ Irfan ]
+  * sysrepo UPDATE remove new sess log, add del conn log (#3359)
+  [ Irfan Mohammad ]
+  * Don't set group id if SR_ENV_RUN_TESTS is set
+  * update debian packaging to enable tests
+  * test headers bugfix check_includes.sh
+  * add missing include compat.h to common_db.c
+  * tests UPDATE oper get xpath filtering with or
+
+  [ Michal Vasko ]
+  * common UPDATE logical op in oper get predicate
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.11.0
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Tue, 30 Jul 2024 09:53:34 +0000
+
 sysrepo (2.10.5-1) unstable; urgency=medium
 
   [ IrfanMohammad ]
