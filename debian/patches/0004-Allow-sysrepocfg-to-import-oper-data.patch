@@ -4,14 +4,14 @@ Subject: Allow sysrepocfg to import oper data
 
 sysrepocfg: Add simple ut for oper import
 ---
- src/executables/sysrepocfg.c  | 47 +++++++++++++++++++++++++++++++++++--------
- tests/CMakeLists.txt          |  7 +++++++
+ src/executables/sysrepocfg.c  | 48 +++++++++++++++++++++++++++++++++++--------
+ tests/CMakeLists.txt          |  8 ++++++++
  tests/test_sysrepocfg_oper.sh | 31 ++++++++++++++++++++++++++++
- 3 files changed, 77 insertions(+), 8 deletions(-)
+ 3 files changed, 78 insertions(+), 9 deletions(-)
  create mode 100755 tests/test_sysrepocfg_oper.sh
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index c6b20a9..5abdb3e 100644
+index f1dde1a..e0593fb 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
 @@ -20,6 +20,7 @@
@@ -30,7 +30,16 @@ index c6b20a9..5abdb3e 100644
  
  #include <libyang/libyang.h>
  #include <libyang/plugins_exts.h>
-@@ -208,7 +208,8 @@ enum data_type {
+@@ -57,7 +57,7 @@ help_print(void)
+             "Available operations:\n"
+             "  -h, --help                   Print usage help.\n"
+             "  -V, --version                Print only information about sysrepo version.\n"
+-            "  -I, --import[=<path>]        Import the configuration from a file or STDIN.\n"
++            "  -I, --import[=<path>]        Replace the configuration from a file or STDIN.\n"
+             "  -X, --export[=<path>]        Export configuration to a file or STDOUT.\n"
+             "  -E, --edit[=<path>/<editor>]\n"
+             "                               Edit configuration data by merging (applying) configuration (edit) data from\n"
+@@ -222,7 +222,8 @@ enum data_type {
      DATA_CONFIG,
      DATA_EDIT,
      DATA_RPC,
@@ -40,7 +49,7 @@ index c6b20a9..5abdb3e 100644
  };
  
  static int
-@@ -276,6 +277,9 @@ step_load_data(const struct ly_ctx *ly_ctx, const char *file_path, LYD_FORMAT fo
+@@ -270,6 +271,9 @@ step_load_data(const struct ly_ctx *ly_ctx, const char *file_path, LYD_FORMAT fo
      case DATA_NOTIF:
          lyrc = lyd_parse_op(ly_ctx, NULL, in, format, LYD_TYPE_NOTIF_YANG, data, NULL);
          break;
@@ -50,7 +59,7 @@ index c6b20a9..5abdb3e 100644
      }
      ly_in_free(in, 1);
  
-@@ -333,18 +337,34 @@ op_import(sr_session_ctx_t *sess, const char *file_path, const char *module_name
+@@ -325,19 +329,35 @@ op_import(sr_session_ctx_t *sess, const char *file_path, const char *module_name
      const struct ly_ctx *ly_ctx;
      struct lyd_node *data;
      int r, rc = EXIT_SUCCESS;
@@ -85,21 +94,21 @@ index c6b20a9..5abdb3e 100644
 +
 +error_cleanup:
      if (r) {
+         error_sr_print(sess);
 -        error_print(r, "Replace config failed");
 +        error_print(r, "Import failed");
          rc = EXIT_FAILURE;
          goto cleanup;
      }
-@@ -738,6 +758,8 @@ main(int argc, char **argv)
-     char *ptr;
+@@ -765,6 +785,7 @@ main(int argc, char **argv)
      int r, rc = EXIT_FAILURE, opt, operation = 0, lock = 0, not_strict = 0, opaq = 0, timeout = 0, wd_opt = 0;
      uint32_t max_depth = 0;
+     int no_subs = 0;
 +    int forever = 0;
-+
+ 
      struct option options[] = {
          {"help",            no_argument,       NULL, 'h'},
-         {"version",         no_argument,       NULL, 'V'},
-@@ -1004,7 +1026,10 @@ main(int argc, char **argv)
+@@ -1036,7 +1057,10 @@ main(int argc, char **argv)
      if (ds == SR_DS_OPERATIONAL) {
          switch (operation) {
          case 'I':
@@ -111,7 +120,7 @@ index c6b20a9..5abdb3e 100644
              break;
          case 'E':
              op_str = "Edit";
-@@ -1076,6 +1101,12 @@ main(int argc, char **argv)
+@@ -1112,6 +1136,12 @@ main(int argc, char **argv)
      }
  
  cleanup:
@@ -125,10 +134,10 @@ index c6b20a9..5abdb3e 100644
      sr_disconnect(conn);
      return rc;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index d2b3141..ea45402 100644
+index f5df713..179efaa 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -92,6 +92,13 @@ if(ENABLE_TESTS)
+@@ -93,6 +93,14 @@ if(ENABLE_TESTS)
              set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
          endif()
      endforeach()
@@ -136,6 +145,7 @@ index d2b3141..ea45402 100644
 +    set_property(TEST test_sysrepocfg_oper_import APPEND PROPERTY ENVIRONMENT
 +        "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 +        "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
++        "SR_ENV_RUN_TESTS=1"
 +        "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
 +    )
 +

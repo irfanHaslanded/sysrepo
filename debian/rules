@@ -16,8 +16,7 @@ NPROCS:=$(shell grep -c ^processor /proc/cpuinfo)
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_BUILD_TYPE:String="Package" \
-		-DGEN_LANGUAGE_BINDINGS=ON \
-		-DGEN_PYTHON_BINDINGS=OFF \
+		-DSYSREPOCFG_DEFAULT_LYD_FORMAT=LYD_JSON \
 		-DINSTALL_SYSCTL_CONF=ON \
 		-DREPO_PATH="/run/sysrepo" \
 		-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \

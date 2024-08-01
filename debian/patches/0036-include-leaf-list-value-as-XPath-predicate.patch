@@ -30,10 +30,10 @@ cherry-picked from libyang1 patch
  3 files changed, 41 insertions(+), 41 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index da7dac0..5bf36c6 100644
+index ad90674..ad3358d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5611,7 +5611,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
+@@ -5699,7 +5699,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
      } else if (node->schema->nodetype == LYS_LEAFLIST) {
          /* do not include the value predicate */
          free(sr_val->xpath);
@@ -43,10 +43,10 @@ index da7dac0..5bf36c6 100644
      }
  
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index e72f7ff..3b0df8a 100644
+index e94e07a..ca99002 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -3626,7 +3626,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3676,7 +3676,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(old_val);
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
@@ -55,7 +55,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3638,7 +3638,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3688,7 +3688,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(old_val);
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
@@ -64,7 +64,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3650,7 +3650,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3700,7 +3700,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(old_val);
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
@@ -73,7 +73,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3674,7 +3674,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3724,7 +3724,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(old_val);
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
@@ -82,7 +82,7 @@ index e72f7ff..3b0df8a 100644
          assert_int_equal(new_val->data.uint16_val, 4);
  
          sr_free_val(new_val);
-@@ -3686,11 +3686,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3736,11 +3736,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
          assert_int_equal(old_val->dflt, 1);
@@ -96,7 +96,7 @@ index e72f7ff..3b0df8a 100644
          assert_int_equal(new_val->data.uint16_val, 5);
  
          sr_free_val(old_val);
-@@ -3703,11 +3703,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3753,11 +3753,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
          assert_int_equal(old_val->dflt, 1);
@@ -110,7 +110,7 @@ index e72f7ff..3b0df8a 100644
          assert_int_equal(new_val->data.uint16_val, 6);
  
          sr_free_val(old_val);
-@@ -3740,7 +3740,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3790,7 +3790,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 0);
          assert_int_equal(new_val->data.uint16_val, 4);
@@ -119,7 +119,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3753,7 +3753,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3803,7 +3803,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(new_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 1);
@@ -128,7 +128,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3766,7 +3766,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3816,7 +3816,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(new_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 3);
@@ -137,7 +137,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3794,11 +3794,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3844,11 +3844,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(old_val);
          assert_int_equal(old_val->dflt, 0);
          assert_int_equal(old_val->data.uint16_val, 4);
@@ -151,7 +151,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -3812,7 +3812,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3862,7 +3862,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(new_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 5);
@@ -160,7 +160,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3825,7 +3825,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3875,7 +3875,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_null(new_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 6);
@@ -169,7 +169,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3855,7 +3855,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3905,7 +3905,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(old_val);
          assert_null(new_val);
          assert_int_equal(old_val->data.uint16_val, 4);
@@ -178,7 +178,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3868,7 +3868,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3918,7 +3918,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
          assert_int_equal(new_val->data.uint16_val, 1);
@@ -187,7 +187,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3881,7 +3881,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3931,7 +3931,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(new_val);
          assert_int_equal(new_val->dflt, 1);
          assert_int_equal(new_val->data.uint16_val, 3);
@@ -196,7 +196,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -3893,7 +3893,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3943,7 +3943,7 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(old_val);
          assert_null(new_val);
          assert_int_equal(old_val->data.uint16_val, 8);
@@ -205,7 +205,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -3905,11 +3905,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3955,11 +3955,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(old_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 4);
@@ -219,7 +219,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -3922,11 +3922,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -3972,11 +3972,11 @@ module_change_dflt_leaflist_cb(sr_session_ctx_t *session, uint32_t sub_id, const
          assert_non_null(old_val);
          assert_int_equal(old_val->dflt, 1);
          assert_int_equal(old_val->data.uint16_val, 5);
@@ -233,7 +233,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -5121,7 +5121,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+@@ -5168,7 +5168,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
          assert_int_equal(op, SR_OP_CREATED);
          assert_null(old_val);
          assert_non_null(new_val);
@@ -242,7 +242,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -5258,7 +5258,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
+@@ -5305,7 +5305,7 @@ module_change_done_xpath_cb(sr_session_ctx_t *session, uint32_t sub_id, const ch
          assert_int_equal(op, SR_OP_DELETED);
          assert_non_null(old_val);
          assert_null(new_val);
@@ -251,7 +251,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
  
-@@ -6191,7 +6191,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -6216,7 +6216,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
          assert_int_equal(op, SR_OP_CREATED);
          assert_null(old_val);
          assert_non_null(new_val);
@@ -260,7 +260,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -6237,7 +6237,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -6262,7 +6262,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
          assert_int_equal(op, SR_OP_CREATED);
          assert_null(old_val);
          assert_non_null(new_val);
@@ -269,7 +269,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -6330,7 +6330,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -6355,7 +6355,7 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
          assert_int_equal(op, SR_OP_CREATED);
          assert_null(old_val);
          assert_non_null(new_val);
@@ -278,7 +278,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(new_val);
  
-@@ -6340,9 +6340,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -6365,9 +6365,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
  
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
@@ -290,7 +290,7 @@ index e72f7ff..3b0df8a 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -6353,9 +6353,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -6378,9 +6378,9 @@ module_change_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
  
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
@@ -303,10 +303,10 @@ index e72f7ff..3b0df8a 100644
          sr_free_val(old_val);
          sr_free_val(new_val);
 diff --git a/tests/test_copy_config.c b/tests/test_copy_config.c
-index be1fa9f..f30a063 100644
+index 643f7b5..360fbef 100644
 --- a/tests/test_copy_config.c
 +++ b/tests/test_copy_config.c
-@@ -1011,10 +1011,10 @@ module_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
+@@ -1015,10 +1015,10 @@ module_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
  
          assert_int_equal(op, SR_OP_MOVED);
          assert_non_null(old_val);
@@ -319,7 +319,7 @@ index be1fa9f..f30a063 100644
          assert_int_equal(new_val->data.uint16_val, 1);
  
          sr_free_val(old_val);
-@@ -1290,7 +1290,7 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -1294,7 +1294,7 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
          assert_int_equal(op, SR_OP_CREATED);
          assert_null(old_val);
          assert_non_null(new_val);
@@ -328,7 +328,7 @@ index be1fa9f..f30a063 100644
  
          sr_free_val(new_val);
  
-@@ -1300,9 +1300,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -1304,9 +1304,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
  
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
@@ -340,7 +340,7 @@ index be1fa9f..f30a063 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -1313,9 +1313,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
+@@ -1317,9 +1317,9 @@ module_replace_userord_cb(sr_session_ctx_t *session, uint32_t sub_id, const char
  
          assert_int_equal(op, SR_OP_CREATED);
          assert_non_null(old_val);
@@ -352,7 +352,7 @@ index be1fa9f..f30a063 100644
  
          sr_free_val(old_val);
          sr_free_val(new_val);
-@@ -1659,7 +1659,7 @@ module_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
+@@ -1663,7 +1663,7 @@ module_replace_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module
          assert_int_equal(op, SR_OP_MOVED);
          assert_null(old_val);
          assert_non_null(new_val);

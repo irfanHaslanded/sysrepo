@@ -2,12 +2,9 @@
 0002-Don-t-set-group-id-if-SR_SHM_PREFIX_ENV-is-set.patch
 0003-Accept-empty-xpath-as-NULL.patch
 0004-Allow-sysrepocfg-to-import-oper-data.patch
-0005-sysrepocfg-change-default-export-format-to-JSON.patch
-0006-sysrepocfg-add-s-no-subs-export-argument.patch
 0007-relax-datastore-specification-for-sysrepocfg.patch
 0008-Increase-rwlock-reader-limit-to-20.patch
 0009-Improve-test-log-debugs-and-readability.patch
-0010-sysrepo-log-on-connection-session-destroy.patch
 0011-more-descriptive-debugs-for-no-datastore-changes.patch
 0012-Add-SR_SUBSCR_OPER_ONCE-option-for-oper-subscr.patch
 0013-Add-typedefs-for-compatibility.patch
@@ -57,5 +54,4 @@
 0058-Revert-libyang-err-msg-changes.patch
 0058-sr_unsubscribe-without-change_sub-WRITE-lock.patch
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
-0060-shm-sub-UPDATE-wait-a-bit-for-a-lock-after-event-tim.patch
-0061-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
+0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch

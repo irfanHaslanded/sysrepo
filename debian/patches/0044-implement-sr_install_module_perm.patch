@@ -3,14 +3,14 @@ Date: Tue, 15 Aug 2023 10:45:23 +0000
 Subject: implement sr_install_module_perm
 
 ---
- src/lyd_mods.c       |  7 ------
- src/sysrepo.c        | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+ src/lyd_mods.c       |  6 -----
+ src/sysrepo.c        | 72 +++++++++++++++++++++++++++++++++++++++++++++++++++-
  src/sysrepo.h        | 16 ++++++++++++
- tests/test_modules.c | 40 ++++++++++++++++++++++++++++++
- 4 files changed, 125 insertions(+), 8 deletions(-)
+ tests/test_modules.c | 40 +++++++++++++++++++++++++++++
+ 4 files changed, 127 insertions(+), 7 deletions(-)
 
 diff --git a/src/lyd_mods.c b/src/lyd_mods.c
-index 9fe6762..bec16f2 100644
+index aaf5df2..5f874b5 100644
 --- a/src/lyd_mods.c
 +++ b/src/lyd_mods.c
 @@ -946,7 +946,6 @@ sr_lydmods_create(sr_conn_ctx_t *conn, struct ly_ctx *ly_ctx, struct lyd_node **
@@ -39,11 +39,7 @@ index 9fe6762..bec16f2 100644
      }
  
      /* install ietf-yang-library */
-@@ -1154,11 +1149,9 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
-                 (*new_mods)[i].owner, (*new_mods)[i].group, (*new_mods)[i].perm, new_mods, new_mod_count))) {
-             goto cleanup;
-         }
--        SR_LOG_INF("Module \"%s\" was installed.", (*new_mods)[i].ly_mod->name);
+@@ -1185,7 +1180,6 @@ sr_lydmods_change_add_modules(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn,
      }
      for ( ; i < *new_mod_count; ++i) {
          /* all dependencies already installed */
@@ -52,7 +48,7 @@ index 9fe6762..bec16f2 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 68d0229..d09688f 100644
+index 2448703..e1e4a02 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@
@@ -65,8 +61,8 @@ index 68d0229..d09688f 100644
  
  /**
   * @brief Allocate a new connection structure.
-@@ -1327,6 +1330,32 @@ sr_install_modules_check_features(const struct lys_module *ly_mod, const char **
-     return NULL;
+@@ -1361,6 +1364,32 @@ cleanup:
+     return err_info;
  }
  
 +static sr_error_info_t *
@@ -98,23 +94,24 @@ index 68d0229..d09688f 100644
  /**
   * @brief Prepare members of a new module to be installed.
   *
-@@ -1360,8 +1389,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
-             /* module installed with different features */
-             goto cleanup;
-         }
--        SR_LOG_WRN("Module \"%s\" is already in sysrepo.", mod_name);
-         *installed = 1;
+@@ -1390,7 +1419,15 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
+     /* try to find the module */
+     if ((new_mod->ly_mod = ly_ctx_get_module_implemented(new_ctx, mod_name))) {
+         /* module installed, check whether with all the features */
+-        err_info = sr_install_modules_check_features(new_mod, no_changes);
++        if ((err_info = sr_install_modules_check_features(new_mod, no_changes))) {
++            goto cleanup;
++        }
 +        if (!strcmp(mod_name, "sysrepo")) {
 +            goto cleanup;
 +        }
 +        /* check and install permissions */
-+        new_mod->ly_mod = ly_mod;
 +        sr_update_access(conn, new_mod);
 +
          goto cleanup;
      }
  
-@@ -7359,3 +7394,36 @@ cleanup:
+@@ -7450,3 +7487,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  
@@ -152,10 +149,10 @@ index 68d0229..d09688f 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index e166098..3895df5 100644
+index 21216ae..311632b 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -550,6 +550,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
+@@ -552,6 +552,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
  int sr_install_modules2(sr_conn_ctx_t *conn, const sr_install_mod_t *modules, uint32_t module_count,
          const char *search_dirs, const char *data, const char *data_path, LYD_FORMAT format);
  
@@ -179,10 +176,10 @@ index e166098..3895df5 100644
   * @brief Remove an installed module from sysrepo.
   *
 diff --git a/tests/test_modules.c b/tests/test_modules.c
-index 7769288..515324f 100644
+index 979b84f..a3419bf 100644
 --- a/tests/test_modules.c
 +++ b/tests/test_modules.c
-@@ -1556,10 +1556,50 @@ test_running_disabled(void **state)
+@@ -1569,10 +1569,50 @@ test_running_disabled(void **state)
      assert_int_equal(ret, SR_ERR_OK);
  }
  

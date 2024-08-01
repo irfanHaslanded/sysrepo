@@ -8,10 +8,10 @@ Subject: Enable tests in package build
  2 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index a4c60a2..57fef18 100644
+index 0bc5c06..69f4296 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -78,7 +78,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
+@@ -79,7 +79,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
  #
  # options
  #
@@ -21,13 +21,13 @@ index a4c60a2..57fef18 100644
      option(ENABLE_VALGRIND_TESTS "Build tests with valgrind" ON)
  else()
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 66cc0df..d2b3141 100644
+index 89501e1..f5df713 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -77,12 +77,15 @@ if(ENABLE_TESTS)
-             "MALLOC_CHECK_=3"
+@@ -78,12 +78,15 @@ if(ENABLE_TESTS)
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
              "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
+             "SR_ENV_RUN_TESTS=1"
 +            "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
          )
  
@@ -41,10 +41,10 @@ index 66cc0df..d2b3141 100644
          endif()
  
          if(${CMAKE_VERSION} VERSION_GREATER "3.7")
-@@ -114,12 +117,15 @@ if(ENABLE_VALGRIND_TESTS)
-         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
+@@ -120,12 +123,15 @@ if(ENABLE_VALGRIND_TESTS)
              "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
              "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
+             "SR_ENV_RUN_TESTS=1"
 +            "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
          )
  

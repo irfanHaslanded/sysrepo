@@ -753,8 +753,10 @@ void
 srsn_sub_free(struct srsn_sub *sub)
 {
     sr_error_info_t *err_info = NULL;
+    struct pollfd pfd = {0};
+    struct timespec timeout_ts, cur_ts;
     uint32_t i;
-    int r;
+    int r, dispatch_thread;
 
     if (!sub) {
         return;
@@ -801,6 +803,42 @@ srsn_sub_free(struct srsn_sub *sub)
     /* close the pipe as last, poll can be waiting for it to signal the subscription fully terminated */
     if (sub->wfd > -1) {
         close(sub->wfd);
+
+        /* DISPATCH LOCK */
+        pthread_mutex_lock(&snstate.dispatch_lock);
+
+        dispatch_thread = snstate.tid ? 1 : 0;
+
+        /* DISPATCH UNLOCK */
+        pthread_mutex_unlock(&snstate.dispatch_lock);
+
+        if (dispatch_thread) {
+            /* wait until the dispatch thread closes the read end */
+            sr_timeouttime_get(&timeout_ts, SR_SN_READ_DISPATCH_CLOSE_TIMEOUT);
+            pfd.fd = sub->rfd;
+            while (1) {
+                if (poll(&pfd, 1, 0) == -1) {
+                    sr_errinfo_new(&err_info, SR_ERR_SYS, "Polling failed (%s).", strerror(errno));
+                    sr_errinfo_free(&err_info);
+                    break;
+                } else if (!(pfd.revents & POLLHUP)) {
+                    /* we expect POLLNVAL but the FD can have already been reused, but we know POLLHUP
+                     * is returned before the read end is closed */
+                    break;
+                }
+
+                /* check for timeout */
+                sr_timeouttime_get(&cur_ts, 0);
+                if (sr_time_cmp(&cur_ts, &timeout_ts) > 0) {
+                    sr_errinfo_new(&err_info, SR_ERR_SYS, "Waiting for SN read dispatch thread close failed (timed out).");
+                    sr_errinfo_free(&err_info);
+                    break;
+                }
+
+                /* sleep */
+                sr_msleep(20);
+            }
+        }
     }
     free(sub);
 
@@ -810,7 +848,10 @@ srsn_sub_free(struct srsn_sub *sub)
             break;
         }
     }
-    assert(i < snstate.count);
+    if (i == snstate.count) {
+        /* was not yet in the array, fine */
+        return;
+    }
 
     /* remove from the array */
     if (i < snstate.count - 1) {
@@ -1153,15 +1194,6 @@ wait:
     } while (!r);
     assert(r == ETIMEDOUT);
 
-    /* prepare the next trigger ahead of the callback */
-    if (sntimer->interval.tv_sec || sntimer->interval.tv_nsec) {
-        interval_ms = sntimer->interval.tv_sec * 1000;
-        interval_ms += sntimer->interval.tv_nsec / 1000000;
-
-        /* add the interval */
-        sntimer->trigger = sr_time_ts_add(&sntimer->trigger, interval_ms);
-    }
-
     /* call the callback */
     sntimer->cb(sntimer->arg, &freed);
     if (freed) {
@@ -1169,7 +1201,17 @@ wait:
         return NULL;
     }
 
+    /* prepare the next trigger after the callback */
     if (sntimer->interval.tv_sec || sntimer->interval.tv_nsec) {
+        /* update the trigger to the current time */
+        sr_realtime_get(&sntimer->trigger);
+
+        interval_ms = sntimer->interval.tv_sec * 1000;
+        interval_ms += sntimer->interval.tv_nsec / 1000000;
+
+        /* add the interval */
+        sntimer->trigger = sr_time_ts_add(&sntimer->trigger, interval_ms);
+
         /* wait until the next trigger */
         goto wait;
     }
@@ -1474,36 +1516,6 @@ srsn_sn_rpc_subscribe_cb(sr_session_ctx_t *session, uint32_t UNUSED(sub_id), con
     }
 }
 
-static LY_ERR
-srsn_lysc_has_notif_clb(struct lysc_node *node, void *UNUSED(data), ly_bool *UNUSED(dfs_continue))
-{
-    LY_ARRAY_COUNT_TYPE u;
-    const struct lysc_ext *ext;
-
-    if (node->nodetype == LYS_NOTIF) {
-        return LY_EEXIST;
-    } else {
-        LY_ARRAY_FOR(node->exts, u) {
-            ext = node->exts[u].def;
-            if (!strcmp(ext->name, "mount-point") && !strcmp(ext->module->name, "ietf-yang-schema-mount")) {
-                /* any data including notifications could be mounted */
-                return LY_EEXIST;
-            }
-        }
-    }
-
-    return LY_SUCCESS;
-}
-
-int
-srsn_ly_mod_has_notif(const struct lys_module *mod)
-{
-    if (lysc_module_dfs_full(mod, srsn_lysc_has_notif_clb, NULL) == LY_EEXIST) {
-        return 1;
-    }
-    return 0;
-}
-
 sr_error_info_t *
 srsn_sn_sr_subscribe(sr_session_ctx_t *sess, struct srsn_sub *sub, int sub_no_thread, struct timespec *replay_start)
 {
@@ -1513,79 +1525,41 @@ srsn_sn_sr_subscribe(sr_session_ctx_t *sess, struct srsn_sub *sub, int sub_no_th
     const struct lys_module *ly_mod;
     int rc = SR_ERR_OK, enabled;
     struct timespec ts;
-    struct ly_set mod_set = {0};
+    struct ly_set *mod_set = NULL;
     uint32_t idx;
 
     memset(replay_start, 0, sizeof *replay_start);
     ly_ctx = sr_session_acquire_context(sess);
 
-    if (!strcmp(sub->stream, "NETCONF")) {
-        /* collect all modules with notifications */
-        idx = 0;
-        while ((ly_mod = ly_ctx_get_module_iter(ly_ctx, &idx))) {
-            if (!ly_mod->implemented) {
-                continue;
-            }
+    /* collect modules to subscribe to */
+    if ((rc = srsn_stream_collect_mods(sub->stream, sub->xpath_filter, ly_ctx, &mod_set))) {
+        sr_errinfo_new(&err_info, rc, "Failed to collect modules to subscribe to, invalid stream and/or XPath filter (%s).", sr_strerror(rc));
+        goto error;
+    }
 
-            if (srsn_ly_mod_has_notif(ly_mod)) {
-                if (ly_set_add(&mod_set, (void *)ly_mod, 1, NULL)) {
-                    SR_ERRINFO_INT(&err_info);
-                    goto error;
-                }
-            }
-        }
+    /* allocate all sub IDs */
+    sub->sr_sub_ids = calloc(mod_set->count, sizeof *sub->sr_sub_ids);
+    SR_CHECK_MEM_GOTO(!sub->sr_sub_ids, err_info, error);
 
-        /* allocate all sub IDs */
-        sub->sr_sub_ids = calloc(mod_set.count, sizeof *sub->sr_sub_ids);
-        SR_CHECK_MEM_GOTO(!sub->sr_sub_ids, err_info, error);
+    /* set subscription and replayed count */
+    sub->sr_sub_id_count = mod_set->count;
+    sub->replay_complete_count = sub->start_time.tv_sec ? 0 : mod_set->count;
 
-        /* set subscription and replayed count */
-        sub->sr_sub_id_count = mod_set.count;
-        sub->replay_complete_count = sub->start_time.tv_sec ? 0 : mod_set.count;
-
-        for (idx = 0; idx < mod_set.count; ++idx) {
-            ly_mod = mod_set.objs[idx];
-
-            /* learn earliest stored notif */
-            if ((rc = sr_get_module_replay_support(sr_session_get_connection(sess), ly_mod->name, &ts, &enabled))) {
-                sr_session_get_error(sess, &tmp_err);
-                sr_errinfo_new(&err_info, tmp_err->err[0].err_code, "%s", tmp_err->err[0].message);
-                goto error;
-            }
-            if (sr_time_cmp(replay_start, &ts) > 0) {
-                *replay_start = ts;
-            }
-
-            /* subscribe to the module */
-            if ((rc = sr_notif_subscribe_tree(sess, ly_mod->name, sub->xpath_filter,
-                    sub->start_time.tv_sec ? &sub->start_time : NULL, NULL, srsn_sn_rpc_subscribe_cb, sub,
-                    sub_no_thread ? SR_SUBSCR_NO_THREAD : 0, &sub->sr_sub))) {
-                sr_session_get_error(sess, &tmp_err);
-                sr_errinfo_new(&err_info, tmp_err->err[0].err_code, "%s", tmp_err->err[0].message);
-                goto error;
-            }
-
-            /* add new sub ID */
-            sub->sr_sub_ids[idx] = sr_subscription_get_last_sub_id(sub->sr_sub);
-        }
-    } else {
-        /* allocate a new single sub ID */
-        sub->sr_sub_ids = calloc(1, sizeof *sub->sr_sub_ids);
-        SR_CHECK_MEM_GOTO(!sub->sr_sub_ids, err_info, error);
-
-        /* set subscription and replayed count */
-        sub->sr_sub_id_count = 1;
-        sub->replay_complete_count = sub->start_time.tv_sec ? 0 : 1;
+    for (idx = 0; idx < mod_set->count; ++idx) {
+        ly_mod = mod_set->objs[idx];
 
         /* learn earliest stored notif */
-        if ((rc = sr_get_module_replay_support(sr_session_get_connection(sess), sub->stream, replay_start, &enabled))) {
+        if ((rc = sr_get_module_replay_support(sr_session_get_connection(sess), ly_mod->name, &ts, &enabled))) {
             sr_session_get_error(sess, &tmp_err);
             sr_errinfo_new(&err_info, tmp_err->err[0].err_code, "%s", tmp_err->err[0].message);
             goto error;
         }
+        if (sr_time_cmp(replay_start, &ts) > 0) {
+            *replay_start = ts;
+        }
 
-        /* subscribe to the specific module (stream) */
-        if ((rc = sr_notif_subscribe_tree(sess, sub->stream, sub->xpath_filter,
+        /* subscribe to the module */
+        if ((rc = sr_notif_subscribe_tree(sess, ly_mod->name, sub->xpath_filter,
                 sub->start_time.tv_sec ? &sub->start_time : NULL, NULL, srsn_sn_rpc_subscribe_cb, sub,
                 sub_no_thread ? SR_SUBSCR_NO_THREAD : 0, &sub->sr_sub))) {
             sr_session_get_error(sess, &tmp_err);
@@ -1593,8 +1567,8 @@ srsn_sn_sr_subscribe(sr_session_ctx_t *sess, struct srsn_sub *sub, int sub_no_th
             goto error;
         }
 
-        /* add the sub ID */
-        sub->sr_sub_ids[0] = sr_subscription_get_last_sub_id(sub->sr_sub);
+        /* add new sub ID */
+        sub->sr_sub_ids[idx] = sr_subscription_get_last_sub_id(sub->sr_sub);
     }
 
     if (sub->start_time.tv_sec && (sr_time_cmp(replay_start, &sub->start_time) <= 0)) {
@@ -1617,12 +1591,12 @@ error:
 
 cleanup:
     sr_session_release_context(sess);
-    ly_set_erase(&mod_set, NULL);
+    ly_set_free(mod_set, NULL);
     return err_info;
 }
 
 sr_error_info_t *
-srsn_dispatch_init(int fd, void *cb_data)
+srsn_dispatch_init(sr_conn_ctx_t *conn, srsn_notif_cb cb)
 {
     sr_error_info_t *err_info = NULL;
     int r;
@@ -1633,34 +1607,101 @@ srsn_dispatch_init(int fd, void *cb_data)
         return err_info;
     }
 
-    if (snstate.pfds) {
-        sr_errinfo_new(&err_info, SR_ERR_EXISTS, "Subscription read dispatch thread is already running.");
-        goto cleanup;
-    }
+    snstate.conn = conn;
+    snstate.cb = cb;
 
-    /* set FD to non-blocking mode */
-    if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) {
-        sr_errinfo_new(&err_info, SR_ERR_SYS, "Setting non-blocking mode failed (%s).", strerror(errno));
-        goto cleanup;
-    }
-
-    /* prepare the poll structure */
-    snstate.pfds = calloc(1, sizeof *snstate.pfds);
-    snstate.cb_data = calloc(1, sizeof *snstate.cb_data);
-    SR_CHECK_MEM_GOTO(!snstate.pfds || !snstate.cb_data, err_info, cleanup);
-
-    snstate.pfds[0].fd = fd;
-    snstate.pfds[0].events = POLLIN;
-    snstate.cb_data[0] = cb_data;
-
-    snstate.pfd_count = 1;
-    snstate.valid_pfds = 1;
-
-cleanup:
     /* DISPATCH UNLOCK */
     pthread_mutex_unlock(&snstate.dispatch_lock);
 
-    return err_info;
+    return NULL;
+}
+
+/**
+ * @brief Thread reading notifications from subscriptions.
+ */
+static void *
+srsn_read_dispatch_thread(void *UNUSED(arg))
+{
+    sr_error_info_t *err_info = NULL;
+    const struct ly_ctx *ly_ctx;
+    struct timespec ts;
+    struct lyd_node *notif;
+    uint32_t i;
+    int r, locked = 0;
+
+    /* DISPATCH LOCK */
+    if ((r = pthread_mutex_lock(&snstate.dispatch_lock))) {
+        sr_errinfo_new(&err_info, SR_ERR_SYS, "Locking failed (%s: %s).", __func__, strerror(r));
+        goto cleanup;
+    }
+    locked = 1;
+
+    while (snstate.tid) {
+        /* poll */
+        if (snstate.valid_pfds) {
+            r = poll(snstate.pfds, snstate.pfd_count, 10);
+        } else {
+            r = 0;
+        }
+        if (r == -1) {
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Poll failed (%s).", strerror(errno));
+            goto cleanup;
+        }
+
+        for (i = 0; r; ++i) {
+            if (!snstate.pfds[i].revents) {
+                /* no event */
+                continue;
+            }
+
+            if (snstate.pfds[i].revents & POLLIN) {
+                /* lock the context */
+                ly_ctx = sr_acquire_context(snstate.conn);
+
+                /* read all notifs and call the callback */
+                while (!srsn_read_notif(snstate.pfds[i].fd, ly_ctx, &ts, &notif)) {
+                    snstate.cb(notif, &ts, snstate.cb_data[i]);
+                    lyd_free_tree(notif);
+                }
+
+                /* release the context */
+                sr_release_context(snstate.conn);
+            }
+
+            if (snstate.pfds[i].revents & POLLHUP) {
+                /* subscription terminated */
+                close(snstate.pfds[i].fd);
+                snstate.pfds[i].fd = -1;
+                --snstate.valid_pfds;
+            }
+
+            /* processed */
+            --r;
+        }
+
+        /* DISPATCH UNLOCK */
+        pthread_mutex_unlock(&snstate.dispatch_lock);
+        locked = 0;
+
+        /* sleep, to yield the lock */
+        sr_msleep(10);
+
+        /* DISPATCH LOCK */
+        if ((r = pthread_mutex_lock(&snstate.dispatch_lock))) {
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Locking failed (%s: %s).", __func__, strerror(r));
+            goto cleanup;
+        }
+        locked = 1;
+    }
+
+cleanup:
+    if (locked) {
+        /* DISPATCH UNLOCK */
+        pthread_mutex_unlock(&snstate.dispatch_lock);
+    }
+
+    sr_errinfo_free(&err_info);
+    return NULL;
 }
 
 sr_error_info_t *
@@ -1677,8 +1718,8 @@ srsn_dispatch_add(int fd, void *cb_data)
         return err_info;
     }
 
-    if (!snstate.pfds) {
-        sr_errinfo_new(&err_info, SR_ERR_EXISTS, "Subscription read dispatch thread is not running.");
+    if (!snstate.conn || !snstate.cb) {
+        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Subscribed-notifications read dispatch not initialized.");
         goto cleanup;
     }
 
@@ -1689,10 +1730,16 @@ srsn_dispatch_add(int fd, void *cb_data)
     }
 
     if (snstate.valid_pfds < snstate.pfd_count) {
-        /* move the invalid PFDs, keep the order */
-        for (i = 0; i < snstate.valid_pfds; ++i) {
+        /* move the invalid PFDs and their cb_data, keep the order */
+        i = 0;
+        while (i < snstate.pfd_count) {
             if (snstate.pfds[i].fd == -1) {
-                memmove(&snstate.pfds[i], &snstate.pfds[i + 1], (snstate.pfd_count - i) * sizeof *snstate.pfds);
+                memmove(&snstate.pfds[i], &snstate.pfds[i + 1], (snstate.pfd_count - (i + 1)) * sizeof *snstate.pfds);
+                memmove(&snstate.cb_data[i], &snstate.cb_data[i + 1], (snstate.pfd_count - (i + 1)) * sizeof *snstate.cb_data);
+
+                --snstate.pfd_count;
+            } else {
+                ++i;
             }
         }
     }
@@ -1712,6 +1759,14 @@ srsn_dispatch_add(int fd, void *cb_data)
 
     ++snstate.valid_pfds;
     snstate.pfd_count = snstate.valid_pfds;
+
+    if (!snstate.tid) {
+        /* create the thread */
+        if ((r = pthread_create(&snstate.tid, NULL, srsn_read_dispatch_thread, NULL))) {
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Failed to create a thread (%s).", strerror(r));
+            goto cleanup;
+        }
+    }
 
 cleanup:
     /* DISPATCH UNLOCK */
@@ -1743,82 +1798,39 @@ cleanup:
     return count;
 }
 
-void *
-srsn_read_dispatch_thread(void *arg)
+sr_error_info_t *
+srsn_dispatch_destroy(void)
 {
-    struct srsn_dispatch_arg *data = arg;
     sr_error_info_t *err_info = NULL;
-    const struct ly_ctx *ly_ctx;
-    struct timespec ts;
-    struct lyd_node *notif;
+    pthread_t tid;
     uint32_t i;
-    int r, locked = 0;
-
-    /* no need to call join */
-    pthread_detach(pthread_self());
+    int r;
 
     /* DISPATCH LOCK */
     if ((r = pthread_mutex_lock(&snstate.dispatch_lock))) {
         sr_errinfo_new(&err_info, SR_ERR_SYS, "Locking failed (%s: %s).", __func__, strerror(r));
         goto cleanup;
     }
-    locked = 1;
 
-    while (snstate.valid_pfds) {
-        /* poll */
-        r = poll(snstate.pfds, snstate.pfd_count, 490);
-        if (r == -1) {
-            sr_errinfo_new(&err_info, SR_ERR_SYS, "Poll failed (%s).", strerror(errno));
-            goto cleanup;
-        }
+    tid = snstate.tid;
+    snstate.tid = 0;
 
-        for (i = 0; r; ++i) {
-            if (!snstate.pfds[i].revents) {
-                /* no event */
-                continue;
-            }
+    /* DISPATCH UNLOCK */
+    pthread_mutex_unlock(&snstate.dispatch_lock);
 
-            if (snstate.pfds[i].revents & POLLIN) {
-                /* lock the context */
-                ly_ctx = sr_acquire_context(data->conn);
-
-                /* read all notifs and call the callback */
-                while (!srsn_read_notif(snstate.pfds[i].fd, ly_ctx, &ts, &notif)) {
-                    data->cb(notif, &ts, snstate.cb_data[i]);
-                    lyd_free_tree(notif);
-                }
-
-                /* release the context */
-                sr_release_context(data->conn);
-            }
-
-            if (snstate.pfds[i].revents & POLLHUP) {
-                /* subscription terminated */
-                close(snstate.pfds[i].fd);
-                snstate.pfds[i].fd = -1;
-                --snstate.valid_pfds;
-            }
-
-            /* processed */
-            --r;
-        }
-
-        /* DISPATCH UNLOCK */
-        pthread_mutex_unlock(&snstate.dispatch_lock);
-        locked = 0;
-
-        /* sleep, to yield the lock */
-        sr_msleep(10);
-
-        /* DISPATCH LOCK */
-        if ((r = pthread_mutex_lock(&snstate.dispatch_lock))) {
-            sr_errinfo_new(&err_info, SR_ERR_SYS, "Locking failed (%s: %s).", __func__, strerror(r));
-            goto cleanup;
-        }
-        locked = 1;
+    /* join the thread */
+    if (tid && (r = pthread_join(tid, NULL))) {
+        sr_errinfo_new(&err_info, SR_ERR_SYS, "Joining a thread failed (%s: %s).", __func__, strerror(r));
+        goto cleanup;
     }
 
-cleanup:
+    /* DISPATCH LOCK */
+    if ((r = pthread_mutex_lock(&snstate.dispatch_lock))) {
+        sr_errinfo_new(&err_info, SR_ERR_SYS, "Locking failed (%s: %s).", __func__, strerror(r));
+        goto cleanup;
+    }
+
+    /* free vars */
     for (i = 0; i < snstate.pfd_count; ++i) {
         if (snstate.pfds[i].fd > -1) {
             close(snstate.pfds[i].fd);
@@ -1831,12 +1843,9 @@ cleanup:
     snstate.pfd_count = 0;
     snstate.valid_pfds = 0;
 
-    if (locked) {
-        /* DISPATCH UNLOCK */
-        pthread_mutex_unlock(&snstate.dispatch_lock);
-    }
+    /* DISPATCH UNLOCK */
+    pthread_mutex_unlock(&snstate.dispatch_lock);
 
-    free(data);
-    sr_errinfo_free(&err_info);
-    return NULL;
+cleanup:
+    return err_info;
 }

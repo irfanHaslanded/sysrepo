@@ -774,7 +774,7 @@ sr_store_module_yang(const struct lys_module *ly_mod, const struct lysp_submodul
     }
 
     /* update group */
-    if (strlen(SR_GROUP)) {
+    if (sr_is_prod_env() && strlen(SR_GROUP)) {
         if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
             goto cleanup;
         }
@@ -3471,7 +3471,7 @@ sr_open(const char *path, int flags, mode_t mode)
         }
 
         /* set correct group if needed */
-        if (strlen(SR_GROUP)) {
+        if (sr_is_prod_env() && strlen(SR_GROUP)) {
             /* get GID */
             if ((err_info = sr_get_gid(SR_GROUP, &gid))) {
                 sr_errinfo_free(&err_info);
@@ -3498,13 +3498,11 @@ sr_mkpath(char *path, mode_t mode)
     int r;
     gid_t gid;
 
-    assert(path[0] == '/');
-
     /* apply umask on mode */
     mode &= ~SR_UMASK;
 
     /* get GID of the group */
-    if (strlen(SR_GROUP) && (err_info = sr_get_gid(SR_GROUP, &gid))) {
+    if (sr_is_prod_env() && strlen(SR_GROUP) && (err_info = sr_get_gid(SR_GROUP, &gid))) {
         goto cleanup;
     }
 
@@ -3522,7 +3520,7 @@ sr_mkpath(char *path, mode_t mode)
                 SR_ERRINFO_SYSERRNO(&err_info, "chmod");
                 goto cleanup;
             }
-            if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+            if (sr_is_prod_env() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
                 SR_ERRINFO_SYSERRNO(&err_info, "chown");
                 goto cleanup;
             }
@@ -3542,7 +3540,7 @@ sr_mkpath(char *path, mode_t mode)
             SR_ERRINFO_SYSERRNO(&err_info, "chmod");
             goto cleanup;
         }
-        if (strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
+        if (sr_is_prod_env() && strlen(SR_GROUP) && (chown(path, -1, gid) == -1)) {
             SR_ERRINFO_SYSERRNO(&err_info, "chown");
             goto cleanup;
         }
@@ -3657,11 +3655,61 @@ sr_get_trim_predicates(const char *expr, char **expr2)
 }
 
 sr_error_info_t *
-sr_get_schema_name_format(const char *schema_path, char **module_name, LYS_INFORMAT *format)
+sr_get_schema_name_format(const char *schema_path, int is_schema_yang, char **module_name, LYS_INFORMAT *format)
 {
     sr_error_info_t *err_info = NULL;
     const char *ptr;
     int index;
+    char quot;
+
+    if (is_schema_yang) {
+        ptr = schema_path;
+
+        /* skip leading spaces */
+        while (isspace(ptr[0])) {
+            ++ptr;
+        }
+
+        if (strncmp(ptr, "module", 6)) {
+            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "Invalid YANG module data (\"%.20s\").", schema_path);
+            return err_info;
+        }
+        ptr += 6;
+
+        /* skip more spaces */
+        while (isspace(ptr[0])) {
+            ++ptr;
+        }
+
+        /* optional quotes */
+        if ((ptr[0] == '\'') || (ptr[0] == '\"')) {
+            quot = ptr[0];
+            ++ptr;
+        } else {
+            quot = 0;
+        }
+
+        /* parse module name */
+        index = 0;
+        if (quot) {
+            /* quoted */
+            do {
+                ++index;
+            } while (ptr[index] != quot);
+        } else {
+            /* unquoted */
+            do {
+                ++index;
+            } while (!isspace(ptr[index]) && (ptr[index] != '{'));
+        }
+
+        /* out params */
+        *module_name = strndup(ptr, index);
+        SR_CHECK_MEM_RET(!*module_name, err_info);
+        *format = LYS_IN_YANG;
+
+        return NULL;
+    }
 
     /* learn the format */
     if ((strlen(schema_path) > 4) && !strcmp(schema_path + strlen(schema_path) - 4, ".yin")) {
@@ -4333,7 +4381,8 @@ sr_lyd_dup_module_np_cont(const struct lyd_node *data, const struct lys_module *
 
     if (add_state_np_conts) {
         /* add any state NP containers */
-        if ((err_info = sr_lyd_new_implicit_module(new_data, ly_mod, LYD_IMPLICIT_NO_CONFIG, NULL))) {
+        if ((err_info = sr_lyd_new_implicit_module(new_data, ly_mod, LYD_IMPLICIT_NO_CONFIG | LYD_IMPLICIT_NO_DEFAULTS,
+                NULL))) {
             return err_info;
         }
     }
@@ -4941,7 +4990,7 @@ sr_xpath_text_atoms_expr(const char *xpath, const char *prev_atom, const char *e
 {
     sr_error_info_t *err_info = NULL;
     uint32_t i;
-    int parsed = 0, mod_len, name_len, op_len, last_is_node = 0;
+    int parsed = 0, mod_len, name_len, op_len, last_is_node = 0, len;
     const char *mod, *name, *next, *next2;
     char *tmp, *cur_atom = NULL;
 
@@ -5074,19 +5123,36 @@ parse_name:
                     ++next2;
                 }
                 if ((next2[0] == '\'') || (next2[0] == '\"')) {
-                    if (asprintf(&tmp, "%s[.=%.*s]", cur_atom, (int)(strchr(next2 + 1, next2[0]) - next2) + 1, next2) == -1) {
+                    /* parse and store the literal */
+                    len = (strchr(next2 + 1, next2[0]) - next2) + 1;
+                    if (asprintf(&tmp, "%s[.=%.*s]", cur_atom, len, next2) == -1) {
                         SR_ERRINFO_MEM(&err_info);
                         goto cleanup;
                     }
+                    next2 += len;
+
                     if ((err_info = sr_xpath_text_atom_add(&tmp, atoms, atom_count))) {
                         goto cleanup;
                     }
-                }
-            }
 
-            /* add new atom if a new one */
-            if ((strlen(prev_atom) < strlen(cur_atom)) && (err_info = sr_xpath_text_atom_add(&cur_atom, atoms, atom_count))) {
-                goto cleanup;
+                    /* there can be another (logical) operator */
+                    while (isspace(next2[0])) {
+                        ++next2;
+                    }
+                    op_len = 0;
+                    for (i = 0; i < sizeof xpath_ops / sizeof *xpath_ops; ++i) {
+                        if (!strncmp(next2, xpath_ops[i], strlen(xpath_ops[i]))) {
+                            op_len = strlen(xpath_ops[i]);
+                            break;
+                        }
+                    }
+                    next2 += op_len;
+                }
+            } else if (strlen(prev_atom) < strlen(cur_atom)) {
+                /* add a new atom if a new one */
+                if ((err_info = sr_xpath_text_atom_add(&cur_atom, atoms, atom_count))) {
+                    goto cleanup;
+                }
             }
 
             if (!end_chars && (next[0] == '|')) {
@@ -5559,4 +5625,15 @@ cleanup:
     sr_munlock(&conn->oper_push_mod_lock);
 
     return err_info;
+}
+
+int
+sr_is_prod_env(void)
+{
+    static int sr_prod_env = -1;
+
+    if (sr_prod_env < 0) {
+        sr_prod_env = !getenv("SR_ENV_RUN_TESTS");
+    }
+    return sr_prod_env;
 }

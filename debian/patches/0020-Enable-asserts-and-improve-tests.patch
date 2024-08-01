@@ -8,7 +8,6 @@ Add the yang modules in systemdb unit-tests to allow for faster
 debugging of any issues.
 ---
  CMakeLists.txt                                 |   7 +-
- src/common.c                                   |   5 +-
  src/sysrepo.c                                  |   6 +-
  tests/CMakeLists.txt                           |  12 +-
  tests/files/ex-interfaces.yang                 | 642 +++++++++++++++++
@@ -31,7 +30,7 @@ debugging of any issues.
  tests/test_edit.c                              | 169 +++++
  tests/test_massive_scale.c                     | 417 +++++++++++
  tests/test_oper_edit.c                         | 233 +++++++
- 24 files changed, 4222 insertions(+), 12 deletions(-)
+ 23 files changed, 4219 insertions(+), 10 deletions(-)
  create mode 100644 tests/files/ex-interfaces.yang
  create mode 100644 tests/files/ex-protocols.yang
  create mode 100644 tests/files/ex-yanggen-augments.yang
@@ -52,7 +51,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 57fef18..2dfb29c 100644
+index 69f4296..a24c3ef 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -70,29 +69,12 @@ index 57fef18..2dfb29c 100644
 +    set(CMAKE_C_FLAGS "-g3 -O0 ${CMAKE_C_FLAGS}")
  elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBINFO")
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
- elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
-diff --git a/src/common.c b/src/common.c
-index e7f4586..c3065b4 100644
---- a/src/common.c
-+++ b/src/common.c
-@@ -5585,9 +5585,10 @@ cleanup:
-  * This function caches the result of the environment variable check to improve performance.
-  * @return 1 if the process has privileged access to default shared memory, 0 otherwise.
-  * */
--static int sr_is_priviliged(void)
-+static int
-+sr_is_priviliged(void)
- {
--    static int is_priviliged  = -1;
-+    static int is_priviliged = -1;
- 
-     if (is_priviliged < 0) {
-         is_priviliged = (getenv(SR_SHM_PREFIX_ENV) == NULL);
+     set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 5940ae9..06b3c6e 100644
+index 545516b..bed6fbd 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7250,7 +7250,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7341,7 +7341,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -101,7 +83,7 @@ index 5940ae9..06b3c6e 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7260,8 +7260,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7351,8 +7351,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -112,7 +94,7 @@ index 5940ae9..06b3c6e 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7275,6 +7276,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7366,6 +7367,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;
@@ -121,7 +103,7 @@ index 5940ae9..06b3c6e 100644
          if ((ret = sr_set_module_ds_access(conn, module_name, i, owner, group, perm))) {
              return ret;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index ea45402..1a6e7da 100644
+index 179efaa..9bbb669 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -55,9 +55,13 @@ if(ENABLE_TESTS)
@@ -141,7 +123,7 @@ index ea45402..1a6e7da 100644
  
      foreach(test_name IN LISTS tests)
          add_executable(${test_name} ${test_sources} ${test_name}.c)
-@@ -119,7 +123,7 @@ endif()
+@@ -125,7 +129,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)

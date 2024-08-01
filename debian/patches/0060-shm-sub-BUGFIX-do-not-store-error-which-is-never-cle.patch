@@ -1,0 +1,27 @@
+From: Michal Vasko <mvasko@cesnet.cz>
+Date: Thu, 6 Jun 2024 10:42:36 +0200
+Subject: shm sub BUGFIX do not store error, which is never cleared
+
+(cherry picked from commit 73ec45d7184c7a5216dd8e609a68423188eb3018)
+---
+ src/shm_sub.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index 550f0d3..15b2071 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -558,9 +558,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+             /* event failed */
+             if (clear_ev_on_err) {
+                 ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
++                SR_LOG_DBG("Clearing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
+             } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
+                 /* do not store SR_SUB_EV_ERROR if abort event is not generated (it is not on lock_lost) */
+-                ATOMIC_STORE_RELAXED(sub_shm->event, *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR);
++                event = *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR;
++                ATOMIC_STORE_RELAXED(sub_shm->event, event);
++                SR_LOG_DBG("Storing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
+             }
+         }
+ 

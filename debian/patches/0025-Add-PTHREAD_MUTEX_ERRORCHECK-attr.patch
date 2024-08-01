@@ -7,10 +7,10 @@ Subject: Add PTHREAD_MUTEX_ERRORCHECK attr
  1 file changed, 6 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index e2192b8..43a1e82 100644
+index 9e70f4f..4e75651 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -2167,6 +2167,12 @@ _sr_mutex_init(pthread_mutex_t *lock, int shared, int robust)
+@@ -2165,6 +2165,12 @@ _sr_mutex_init(pthread_mutex_t *lock, int shared, int robust)
              return err_info;
          }
  

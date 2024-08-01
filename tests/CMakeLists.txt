@@ -77,6 +77,7 @@ if(ENABLE_TESTS)
             "MALLOC_CHECK_=3"
             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
             "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
+            "SR_ENV_RUN_TESTS=1"
         )
 
         # avoid loading installed plugins by sysrepo-plugind
@@ -100,6 +101,10 @@ if(ENABLE_PERF_TESTS)
     target_link_libraries(sr_perf sysrepo srobj)
 
     add_test(NAME sr_perf_1000_10 COMMAND sr_perf 1000 10)
+    set_property(TEST sr_perf_1000_10 APPEND PROPERTY ENVIRONMENT
+        "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/sr_perf"
+        "SYSREPO_SHM_PREFIX=_tests_sr_sr_perf"
+    )
 
     if(${CMAKE_VERSION} VERSION_GREATER "3.7")
         set_tests_properties(sr_perf_1000_10 PROPERTIES FIXTURES_REQUIRED tests_cleanup)
@@ -114,6 +119,7 @@ if(ENABLE_VALGRIND_TESTS)
         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
             "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
             "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
+            "SR_ENV_RUN_TESTS=1"
         )
 
         # avoid loading installed plugins by sysrepo-plugind

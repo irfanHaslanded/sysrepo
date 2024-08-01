@@ -36,6 +36,7 @@ elseif("${BUILD_TYPE_UPPER}" STREQUAL "DEBUG")
     set(CMAKE_C_FLAGS "-g -O0 ${CMAKE_C_FLAGS}")
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBINFO")
     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
+    set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "RELWITHDEBUG")
     set(CMAKE_BUILD_TYPE "RelWithDebug" CACHE STRING "Build Type" FORCE)
 elseif("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
@@ -52,22 +53,22 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # minor version changes with added functionality (new tool, functionality of the tool or library, ...) and
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
-set(SYSREPO_MINOR_VERSION 3)
-set(SYSREPO_MICRO_VERSION 9)
+set(SYSREPO_MINOR_VERSION 11)
+set(SYSREPO_MICRO_VERSION 0)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
 # Major version is changed with every backward non-compatible API/ABI change, minor version changes
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
-set(SYSREPO_MINOR_SOVERSION 25)
-set(SYSREPO_MICRO_SOVERSION 3)
+set(SYSREPO_MINOR_SOVERSION 27)
+set(SYSREPO_MICRO_SOVERSION 7)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
 # Version of libyang library that this sysrepo depends on
-set(LIBYANG_DEP_VERSION 2.2.0)
-set(LIBYANG_DEP_SOVERSION 3.0.0)
+set(LIBYANG_DEP_VERSION 3.0.18)
+set(LIBYANG_DEP_SOVERSION 3.1.7)
 set(LIBYANG_DEP_SOVERSION_MAJOR 3)
 
 # generate only version header, it is needed for docs
@@ -227,6 +228,11 @@ if(NOT SRPD_PLUGINS_PATH)
         "Sysrepo plugin daemon plugins path.")
 endif()
 message(STATUS "SRPD plugins path:  ${SRPD_PLUGINS_PATH}")
+
+if(NOT SYSREPOCFG_DEFAULT_LYD_FORMAT)
+    set(SYSREPOCFG_DEFAULT_LYD_FORMAT LYD_XML)
+endif()
+message(STATUS "sysrepocfg default data format: ${SYSREPOCFG_DEFAULT_LYD_FORMAT}")
 
 #
 # sources
@@ -391,14 +397,15 @@ unset(CMAKE_REQUIRED_DEFINITIONS)
 
 # libmongoc - optional
 find_package(mongoc-1.0 1.24.0 CONFIG)
-if(TARGET mongo::mongoc_shared)
+find_program(MONGOSH mongosh)
+if(TARGET mongo::mongoc_shared AND MONGOSH)
     # datastore plugin added if libraries exist
     list(APPEND LIB_SRC src/plugins/ds_mongo.c)
     set(SR_ENABLED_DS_PLG_MONGO 1)
     message(STATUS "Datastore plugin ds_mongo supported.")
 
     # try running a command in MongoDB database (should not be possible) and check authentication
-    execute_process(COMMAND "mongosh" "--host" "${MONGO_HOST}" "--port" "${MONGO_PORT}" "--eval" "use sr_running" "--eval" "db.runCommand({usersInfo: 1})"
+    execute_process(COMMAND ${MONGOSH} "--host" "${MONGO_HOST}" "--port" "${MONGO_PORT}" "--eval" "use sr_running" "--eval" "db.runCommand({usersInfo: 1})"
             RESULT_VARIABLE MONGO_RETURN_CODE
             ERROR_VARIABLE MONGO_STDERR
             OUTPUT_QUIET)
@@ -417,7 +424,8 @@ endif()
 
 # libhiredis - optional
 find_package(LibHiredis 1.1.0)
-if(LIBHIREDIS_FOUND)
+find_program(REDIS_CLI redis-cli)
+if(LIBHIREDIS_FOUND AND REDIS_CLI)
     # datastore plugin added if libraries exist
     list(APPEND LIB_SRC src/plugins/ds_redis.c)
     set(SR_ENABLED_DS_PLG_REDIS 1)
@@ -425,7 +433,7 @@ if(LIBHIREDIS_FOUND)
 
     # try running a command in Redis database and check authentication
     execute_process(COMMAND "echo" "ACL WHOAMI"
-            COMMAND "redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT}"
+            COMMAND "${REDIS_CLI}" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}"
             OUTPUT_VARIABLE REDIS_STDOUT
             ERROR_VARIABLE REDIS_STDERR)
     if("${REDIS_STDOUT}" MATCHES "^NOAUTH.*")
@@ -437,6 +445,12 @@ if(LIBHIREDIS_FOUND)
     endif()
 else()
     message(STATUS "Datastore plugin ds_redis not supported.")
+endif()
+
+# common database utility functions - optional
+if((TARGET mongo::mongoc_shared AND MONGOSH) OR (LIBHIREDIS_FOUND AND REDIS_CLI))
+    # common utilities added if at least one library exists
+    list(APPEND LIB_SRC src/plugins/common_db.c)
 endif()
 
 # sysrepo

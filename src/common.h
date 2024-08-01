@@ -78,6 +78,9 @@ struct srplg_ntf_s;
 /** timeout for locking ext SHM lock; time that truncating, writing into SHM but even recovering may take (ms) */
 #define SR_EXT_LOCK_TIMEOUT 500
 
+/** timeout for obtaining write lock after an event timed out */
+#define SR_EVENT_TIMEOUT_LOCK_TIMEOUT 50
+
 /** timeout for locking the local connection list; maximum time the list can be accessed (ms) */
 #define SR_CONN_LIST_LOCK_TIMEOUT 100
 
@@ -88,7 +91,7 @@ struct srplg_ntf_s;
 #define SR_CONN_RUN_CACHE_LOCK_TIMEOUT 1000
 
 /** timeout for write-locking connection oper cache (ms) */
-#define SR_CONN_OPER_CACHE_LOCK_TIMEOUT 10
+#define SR_CONN_OPER_CACHE_LOCK_TIMEOUT 50
 
 /** timeout for write-locking connection subscription oper cache data (ms) */
 #define SR_CONN_OPER_CACHE_DATA_LOCK_TIMEOUT 1000
@@ -122,6 +125,9 @@ struct srplg_ntf_s;
 
 /** timeout step for parallel subscription active polling loop */
 #define SR_SHMSUB_MANY_EVENT_TIMEOUT_STEP_MS 1
+
+/** timeout for waiting until SRSN dispatch thread closes the read end of the notification pipe (ms) */
+#define SR_SN_READ_DISPATCH_CLOSE_TIMEOUT 1000
 
 /** permissions of main SHM lock file and main/mod/ext SHM */
 #define SR_SHM_PERM 00666
@@ -187,7 +193,10 @@ extern const sr_module_ds_t sr_module_ds_disabled_run;
  */
 typedef struct {
     /* compatible with sr_install_mod_t */
-    const char *schema_path;
+    union {
+        const char *schema_path;
+        const char *schema_yang;
+    };
     const char **features;
     sr_module_ds_t module_ds;
     const char *owner;
@@ -195,9 +204,11 @@ typedef struct {
     mode_t perm;
 
     /* additional members */
+    int is_schema_yang;
     const struct lys_module *ly_mod;
-    int installed[SR_DS_READ_COUNT];
-    int yangs_stored;
+    const char **enable_features;       /**< set if module is installed and only some of its features should be enabled */
+    int installed[SR_DS_READ_COUNT];    /**< install_cb was called for the DS */
+    int yangs_stored;                   /**< YANG module files were stored */
 } sr_int_install_mod_t;
 
 /**
@@ -997,11 +1008,12 @@ sr_error_info_t *sr_get_trim_predicates(const char *expr, char **expr2);
  * @brief Learn schema file module name and format.
  *
  * @param[in] schema_path Path to the module file.
+ * @param[in] is_schema_yang Set when @p schema_path are actually YANG module data.
  * @param[out] module_name Name of the module.
  * @param[out] format Module format.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_get_schema_name_format(const char *schema_path, char **module_name, LYS_INFORMAT *format);
+sr_error_info_t *sr_get_schema_name_format(const char *schema_path, int is_schema_yang, char **module_name, LYS_INFORMAT *format);
 
 /**
  * @brief Get datastore string name.
@@ -1359,5 +1371,11 @@ sr_error_info_t *sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_
  * @return err_info, NULL on success.
  */
 sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name);
+
+/**
+ * @brief Check if we are running in a development/test env - we may not be able to chown/chmod.
+ * @return 1 if SR_ENV_RUN_TESTS is set in the env, 0 otherwise.
+ */
+int sr_is_prod_env(void);
 
 #endif /* _COMMON_H */
