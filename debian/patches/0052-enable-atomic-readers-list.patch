@@ -694,7 +694,7 @@ index bf54268..e0235f9 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 4397c2d..759aa67 100644
+index c2ad645..45c1a3c 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -373,7 +373,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
