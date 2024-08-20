@@ -221,7 +221,7 @@ index 9221a81..fdfea24 100644
   * @brief Get or set operational get subscription suspended state (flag).
   *
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 78fe6f2..f17e676 100644
+index 2c2161c..7c10057 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -1061,7 +1061,11 @@ sr_shmsub_get_relevant_indices(struct sr_mod_info_s *mod_info, struct sr_mod_inf

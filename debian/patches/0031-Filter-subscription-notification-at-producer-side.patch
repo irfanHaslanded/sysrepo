@@ -20,7 +20,7 @@ Add tests
  src/shm_ext.c                 |    9 +-
  src/shm_ext.h                 |    5 +-
  src/shm_main.c                |    1 +
- src/shm_sub.c                 |  500 +++++++++++++----
+ src/shm_sub.c                 |  510 ++++++++++++++----
  src/shm_sub.h                 |    4 +-
  src/shm_types.h               |    3 +
  src/subscr.c                  |    3 +-
@@ -29,7 +29,7 @@ Add tests
  src/sysrepo_types.h           |    8 +-
  tests/test_apply_changes.c    |    1 -
  tests/test_subscr_filtering.c | 1182 +++++++++++++++++++++++++++++++++++++++++
- 15 files changed, 1642 insertions(+), 116 deletions(-)
+ 15 files changed, 1635 insertions(+), 133 deletions(-)
  create mode 100644 tests/test_subscr_filtering.c
 
 diff --git a/src/common_types.h b/src/common_types.h
@@ -187,7 +187,7 @@ index 4b6a365..b1b5f21 100644
          ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
          ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 2153aec..69aec8d 100644
+index 2153aec..fc52261 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -382,7 +382,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
@@ -953,7 +953,7 @@ index 2153aec..69aec8d 100644
      }
  
  cleanup_sub_unlock:
-@@ -3310,7 +3557,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3310,18 +3557,23 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
      sr_error_info_t *err_info = NULL;
      uint32_t i, data_len = 0, valid_subscr_count;
      char *data = NULL, *shm_data_ptr;
@@ -962,15 +962,20 @@ index 2153aec..69aec8d 100644
      sr_lock_mode_t sub_lock = SR_LOCK_NONE;
      struct lyd_node *diff;
      sr_data_t *edit_data;
-@@ -3322,6 +3569,11 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+     sr_error_t err_code = SR_ERR_OK;
+-    struct modsub_changesub_s *change_sub;
++    struct modsub_changesub_s *change_sub = NULL;
+     sr_sub_shm_t *sub_shm;
+     sr_shm_t shm_data_sub = SR_SHM_INITIALIZER;
+     sr_session_ctx_t *ev_sess = NULL;
      struct info_sub_s sub_info;
  
      sub_shm = (sr_sub_shm_t *)change_subs->sub_shm.addr;
-+    uint32_t filtered = 0;
 +    uint32_t not_new_event = 0;
 +    uint32_t first_new_event_sub_idx = 0;
 +    uint32_t xpath_count = 0;
 +    uint32_t *xpath_ids = NULL;
++    size_t xpath_arr_size = 0;
  
      for (i = 0; i < change_subs->sub_count; ++i) {
          if (sr_shmsub_change_listen_is_new_event(sub_shm, &change_subs->subs[i])) {
@@ -983,7 +988,7 @@ index 2153aec..69aec8d 100644
      /* SUB READ LOCK */
      if ((err_info = sr_rwlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
              NULL, NULL))) {
-@@ -3360,12 +3614,18 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3360,12 +3614,20 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
      sub_info.event = ATOMIC_LOAD_RELAXED(sub_shm->event);
      sub_info.request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
      sub_info.priority = ATOMIC_LOAD_RELAXED(sub_shm->priority);
@@ -995,58 +1000,73 @@ index 2153aec..69aec8d 100644
      }
  
 +    if (xpath_count) {
-+        xpath_ids = (uint32_t*)shm_data_ptr;
-+        shm_data_ptr += sizeof(*xpath_ids) * xpath_count;
++        xpath_arr_size = sizeof(*xpath_ids) * xpath_count;
++        xpath_ids = malloc(xpath_arr_size);
++        memcpy(xpath_ids, shm_data_ptr, xpath_arr_size);
++        shm_data_ptr += xpath_arr_size;
 +    }
 +
      /* parse event diff */
      if ((err_info = sr_lyd_parse_data(conn->ly_ctx, shm_data_ptr, NULL, LYD_LYB,
              LYD_PARSE_STORE_ONLY | LYD_PARSE_STRICT | LYD_PARSE_ORDERED, 0, &diff))) {
-@@ -3389,6 +3649,7 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+@@ -3382,30 +3644,25 @@ sr_shmsub_change_listen_process_module_events(struct modsub_change_s *change_sub
+             sub_shm->subscriber_count);
+ 
+     /* process individual subscriptions (starting at the last found subscription, it was valid) */
+-    change_sub = &change_subs->subs[i];
+     valid_subscr_count = 0;
+-    goto process_event;
+ 
      for ( ; i < change_subs->sub_count; ++i) {
++        filter_valid = 0;
          change_sub = &change_subs->subs[i];
-         if (!sr_shmsub_change_listen_is_new_event(sub_shm, change_sub)) {
+-        if (!sr_shmsub_change_listen_is_new_event(sub_shm, change_sub)) {
++        if (!sr_shmsub_change_listen_is_new_event(sub_shm, change_sub) ||
++                !sr_shmsub_change_is_xpath_event_valid(change_sub, xpath_ids, xpath_count)) {
 +            not_new_event++;
              continue;
          }
  
-@@ -3396,10 +3657,27 @@ process_event:
+-process_event:
          /* SUB UNLOCK */
          sr_rwunlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, sub_lock, conn->cid, __func__);
          sub_lock = SR_LOCK_NONE;
 -
-+        filter_valid = 0;
++        filter_valid = 1;
          /* call callback if there are some changes */
 -        filter_valid = sr_shmsub_change_filter_is_valid(change_sub->xpath, diff);
 -        if (filter_valid) {
-+        if (change_sub->opts & SR_SUBSCR_PRODUCER_FILTERING) {
-+            if ((filter_valid = sr_shmsub_change_is_xpath_event_valid(change_sub, xpath_ids, xpath_count))) {
-+                SR_LOG_INF("Invoking callback for %s xpath_id %u", change_subs->module_name, change_sub->xpath_id);
-+                ret = change_sub->cb(ev_sess, change_sub->sub_id, change_subs->module_name, change_sub->xpath,
-+                        sr_ev2api(sub_info.event), sub_info.request_id, change_sub->private_data);
-+            } else {
-+                SR_LOG_INF("Skipping callback for %s xpath_id %u", change_subs->module_name, change_sub->xpath_id);
-+                /* filtered out */
-+                filtered++;
-+                ATOMIC_INC_RELAXED(change_sub->filtered_out);
-+                /* Reacquire lock and continue to next subscription */
-+                if ((err_info = sr_rwlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__,
-+                        NULL, NULL))) {
-+                    goto cleanup;
-+                }
-+                sub_lock = SR_LOCK_READ;
-+                continue;
-+            }
-+        } else if ((filter_valid = sr_shmsub_change_filter_is_valid(change_sub->xpath, diff))) {
-             ret = change_sub->cb(ev_sess, change_sub->sub_id, change_subs->module_name, change_sub->xpath,
-                     sr_ev2api(sub_info.event), sub_info.request_id, change_sub->private_data);
-         } else if (!(change_sub->opts & SR_SUBSCR_FILTER_ORIG)) {
-@@ -3445,6 +3723,13 @@ process_event:
+-            ret = change_sub->cb(ev_sess, change_sub->sub_id, change_subs->module_name, change_sub->xpath,
+-                    sr_ev2api(sub_info.event), sub_info.request_id, change_sub->private_data);
+-        } else if (!(change_sub->opts & SR_SUBSCR_FILTER_ORIG)) {
+-            /* filtered out (not by originator) */
+-            ATOMIC_INC_RELAXED(change_sub->filtered_out);
+-        }
++        SR_LOG_INF("Invoking callback for %s xpath_id %u", change_subs->module_name, change_sub->xpath_id);
++        ret = change_sub->cb(ev_sess, change_sub->sub_id, change_subs->module_name, change_sub->xpath,
++                sr_ev2api(sub_info.event), sub_info.request_id, change_sub->private_data);
+ 
+         /* SUB READ LOCK */
+         if (sr_shmsub_change_listen_relock(sub_shm, SR_LOCK_READ, &sub_info, change_sub,
+@@ -3414,11 +3671,6 @@ process_event:
+         }
+         sub_lock = SR_LOCK_READ;
+ 
+-        if (!filter_valid && (change_sub->opts & SR_SUBSCR_FILTER_ORIG)) {
+-            /* not a valid event for this subscription */
+-            continue;
+-        }
+-
+         if ((sub_info.event == SR_SUB_EV_UPDATE) || (sub_info.event == SR_SUB_EV_CHANGE)) {
+             if (ret == SR_ERR_CALLBACK_SHELVE) {
+                 /* this subscription did not process the event yet, skip it */
+@@ -3445,6 +3697,14 @@ process_event:
          ATOMIC_STORE_RELAXED(change_sub->event, ATOMIC_LOAD_RELAXED(sub_shm->event));
      }
  
-+    if (change_subs->sub_count == not_new_event + filtered + first_new_event_sub_idx) {
-+        SR_LOG_INF("No events processed for request ID %" PRIuFAST32 " event %" PRIuFAST32,
++    if (change_subs->sub_count == not_new_event + first_new_event_sub_idx) {
++        /* likely executed callback out of band or (unlikely) bug? */
++        SR_LOG_DBG("No events processed for request ID %" PRIuFAST32 " event %" PRIuFAST32,
 +                ATOMIC_LOAD_RELAXED(sub_shm->request_id),
 +                ATOMIC_LOAD_RELAXED(sub_shm->event));
 +        goto cleanup;
@@ -1055,7 +1075,24 @@ index 2153aec..69aec8d 100644
      /*
       * prepare additional event data written into subscription data SHM
       */
-@@ -3833,6 +4118,7 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
+@@ -3484,6 +3744,7 @@ process_event:
+     sr_rwunlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, sub_lock, conn->cid, __func__);
+     sub_lock = SR_LOCK_NONE;
+ 
++    assert(change_sub);
+     /* SUB WRITE URGE LOCK */
+     if (sr_shmsub_change_listen_relock(sub_shm, SR_LOCK_WRITE_URGE, &sub_info, change_sub, change_subs->module_name,
+             ret, filter_valid, ev_sess, &err_info)) {
+@@ -3502,7 +3763,7 @@ cleanup:
+         /* SUB UNLOCK */
+         sr_rwunlock(&sub_shm->lock, SR_SUBSHM_LOCK_TIMEOUT, sub_lock, conn->cid, __func__);
+     }
+-
++    free(xpath_ids);
+     free(data);
+     sr_session_stop(ev_sess);
+     sr_shm_clear(&shm_data_sub);
+@@ -3833,6 +4094,7 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
      int found;
      sr_session_ctx_t *ev_sess = NULL;
      sr_get_options_t get_opts;
@@ -1063,7 +1100,7 @@ index 2153aec..69aec8d 100644
  
      /* find LY module */
      ly_mod = ly_ctx_get_module_implemented(conn->ly_ctx, oper_poll_subs->module_name);
-@@ -3935,10 +4221,14 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
+@@ -3935,10 +4197,14 @@ sr_shmsub_oper_poll_listen_process_module_events(struct modsub_operpoll_s *oper_
              if (mod_info.diff) {
                  /* publish "update" event to update the data/diff */
                  if ((err_info = sr_modinfo_change_notify_update(&mod_info, NULL, SR_CHANGE_CB_TIMEOUT, &change_sub_lock,
@@ -1079,7 +1116,7 @@ index 2153aec..69aec8d 100644
                  if (cb_err_info) {
                      /* return callback error if some was generated */
                      sr_errinfo_merge(&err_info, cb_err_info);
-@@ -3976,7 +4266,7 @@ finish_iter:
+@@ -3976,7 +4242,7 @@ finish_iter:
  
          if (mod_info.diff) {
              /* publish "change" event, we do not care about callback failure */
@@ -1088,7 +1125,7 @@ index 2153aec..69aec8d 100644
                  goto cleanup_unlock;
              }
              sr_errinfo_free(&cb_err_info);
-@@ -4003,6 +4293,8 @@ cleanup_unlock:
+@@ -4003,6 +4269,8 @@ cleanup_unlock:
      sr_rwunlock(&conn->oper_cache_lock, SR_CONN_OPER_CACHE_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
  
  cleanup:
@@ -1097,7 +1134,7 @@ index 2153aec..69aec8d 100644
      lyd_free_siblings(mod_info.diff);
      free(mod_info.mods);
      return err_info;
-@@ -4869,3 +5161,21 @@ error:
+@@ -4869,3 +5137,21 @@ error:
      pthread_detach(pthread_self());
      return NULL;
  }
