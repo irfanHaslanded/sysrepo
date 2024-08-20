@@ -11,10 +11,10 @@ Subject: TESTS sleep and retry with bigger step
  3 files changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index a110777..db9002a 100644
+index 1199b3e..3529321 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -131,7 +131,7 @@ endif()
+@@ -123,7 +123,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)
