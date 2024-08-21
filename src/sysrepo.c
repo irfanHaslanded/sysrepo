@@ -3938,6 +3938,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
     sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
     struct sr_mod_info_s mod_info;
     uint32_t mi_opts;
+    char *edit_json = NULL, *data_json = NULL;
 
     SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds), session, err_info);
 
@@ -3966,6 +3967,12 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
             session->orig_data, 0, 0, 0))) {
         goto cleanup;
     }
+
+    lyd_print_mem(&edit_json, session->dt[session->ds].edit->tree, LYD_JSON, LYD_PRINT_WITHSIBLINGS);
+    lyd_print_mem(&data_json, mod_info.data, LYD_JSON, LYD_PRINT_WITHSIBLINGS);
+    SR_LOG_INF("apply changes data\n%s\n edit\n%s\n", data_json, edit_json);
+    free(edit_json);
+    free(data_json);
 
     /* create diff */
     if (mod_info.ds == SR_DS_OPERATIONAL) {

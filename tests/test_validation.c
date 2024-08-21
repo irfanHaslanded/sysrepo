@@ -42,6 +42,7 @@ setup_f(void **state)
     const char *schema_paths[] = {
         TESTS_SRC_DIR "/files/test.yang",
         TESTS_SRC_DIR "/files/refs.yang",
+        TESTS_SRC_DIR "/files/simple.yang",
         NULL
     };
 
@@ -72,6 +73,7 @@ teardown_f(void **state)
     const char *module_names[] = {
         "refs",
         "test",
+        "simple",
         NULL
     };
 
@@ -101,6 +103,7 @@ clear_test_refs(void **state)
     sr_delete_item(st->sess, "/refs:ll[.='y']", 0);
     sr_delete_item(st->sess, "/refs:ll[.='z']", 0);
     sr_delete_item(st->sess, "/refs:lll[key='1']", 0);
+    sr_delete_item(st->sess, "/simple:ac1", 0);
     sr_apply_changes(st->sess, 0);
 
     return 0;
@@ -267,10 +270,52 @@ test_operational(void **state)
     assert_int_equal(ret, SR_ERR_OK);
 }
 
+static void
+test_3modules(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+
+    /* create valid data */
+    ret = sr_set_item_str(st->sess, "/test:test-leaf", "10", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/simple:ac1/acd1", "false", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/refs:l", NULL, NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
+static void
+test_3modules2(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+
+    /* create valid data */
+    ret = sr_set_item_str(st->sess, "/test:test-leaf", "10", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/simple:ac1/acd1", "false", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_set_item_str(st->sess, "/refs:l", NULL, NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_3modules, clear_test_refs),
+        cmocka_unit_test_teardown(test_3modules2, clear_test_refs),
         cmocka_unit_test_teardown(test_leafref, clear_test_refs),
         cmocka_unit_test_teardown(test_instid, clear_test_refs),
         cmocka_unit_test(test_operational),
