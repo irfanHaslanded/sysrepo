@@ -11,7 +11,7 @@ sysrepocfg: Add simple ut for oper import
  create mode 100755 tests/test_sysrepocfg_oper.sh
 
 diff --git a/src/executables/sysrepocfg.c b/src/executables/sysrepocfg.c
-index f1dde1a..e0593fb 100644
+index 34213a6..b541566 100644
 --- a/src/executables/sysrepocfg.c
 +++ b/src/executables/sysrepocfg.c
 @@ -20,6 +20,7 @@
@@ -120,7 +120,7 @@ index f1dde1a..e0593fb 100644
              break;
          case 'E':
              op_str = "Edit";
-@@ -1112,6 +1136,12 @@ main(int argc, char **argv)
+@@ -1113,6 +1137,12 @@ main(int argc, char **argv)
      }
  
  cleanup:

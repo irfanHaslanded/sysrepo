@@ -12,7 +12,7 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index ddcb6aa..9e70f4f 100644
+index 20d543d..fcca09e 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,7 +90,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
@@ -27,7 +27,7 @@ index ddcb6aa..9e70f4f 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5754,7 +5757,7 @@ sr_is_prod_env(void)
+@@ -5764,7 +5767,7 @@ sr_is_prod_env(void)
  }
  
  void
@@ -37,10 +37,10 @@ index ddcb6aa..9e70f4f 100644
      if (enable) {
          /* Set the MSB to enable debug logs */
 diff --git a/src/common.h b/src/common.h
-index 342c904..870fb50 100644
+index 0ccc394..e13c63e 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1404,4 +1404,9 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -1405,4 +1405,9 @@ typedef enum sr_val_ly2sr_opts_e {
   */
  sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
  
@@ -137,10 +137,10 @@ index b968055..ee05f0c 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 1b44e1e..58fc07d 100644
+index 4a41caa..3b5d15e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7376,3 +7376,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7383,3 +7383,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }

@@ -16,7 +16,7 @@ Subject: Allow runtime configurable shm dir
  5 files changed, 34 insertions(+), 23 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index efe39e5..190e7eb 100644
+index d69815a..a78a0f1 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -1064,6 +1064,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
@@ -92,10 +92,10 @@ index efe39e5..190e7eb 100644
  
      if (ret == -1) {
 diff --git a/src/common.h b/src/common.h
-index 9f1ce58..44c6374 100644
+index 7dabea8..fa299c7 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1411,4 +1411,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
+@@ -1412,4 +1412,6 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2s
   * */
  void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  

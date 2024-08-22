@@ -19,7 +19,7 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  12 files changed, 240 insertions(+), 88 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 6cbcb16..ddcb6aa 100644
+index db2cb5e..20d543d 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,41 @@
@@ -309,7 +309,7 @@ index 6cbcb16..ddcb6aa 100644
      ++conn->oper_cache_count;
  
  cleanup:
-@@ -5648,3 +5752,15 @@ sr_is_prod_env(void)
+@@ -5658,3 +5762,15 @@ sr_is_prod_env(void)
      }
      return sr_prod_env;
  }
@@ -326,7 +326,7 @@ index 6cbcb16..ddcb6aa 100644
 +    }
 +}
 diff --git a/src/common.h b/src/common.h
-index 32ca6ba..342c904 100644
+index dbd7a9f..0ccc394 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -60,6 +60,15 @@ struct srplg_ntf_s;
@@ -345,7 +345,7 @@ index 32ca6ba..342c904 100644
  /** all ext SHM item sizes will be aligned to this number; also represents the allocation unit (B) */
  #define SR_SHM_MEM_ALIGN 8
  
-@@ -785,7 +794,7 @@ void sr_munlock(pthread_mutex_t *lock);
+@@ -786,7 +795,7 @@ void sr_munlock(pthread_mutex_t *lock);
   * @param[in] shared Whether the RW lock will be shared between processes or not.
   * @return err_info, NULL on success.
   */
@@ -367,10 +367,10 @@ index f7f35d7..2c6ae14 100644
  
  /**
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 1a22d53..7f8d308 100644
+index 4a2d321..b01cf5a 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1269,7 +1269,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1315,7 +1315,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      /* merge into one data tree */
                      if ((err_info = sr_lyd_merge(data, oper_data, 1, LYD_MERGE_DESTRUCT))) {
                          lyd_free_all(oper_data);
@@ -832,7 +832,7 @@ index da9e7df..7906276 100644
  /**
   * @brief Load modules stored in mod SHM into a context.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 132885c..45baece 100644
+index 7302a98..4bd1108 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -879,7 +879,7 @@ index bd48960..a16fef5 100644
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index bed6fbd..1b44e1e 100644
+index f75d9f4..4a41caa 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -930,7 +930,7 @@ index bed6fbd..1b44e1e 100644
          goto error10;
      }
      if ((err_info = sr_mutex_init(&conn->oper_push_mod_lock, 0))) {
-@@ -274,7 +275,7 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
+@@ -268,7 +269,7 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
          sr_shmext_recover_sub_all(conn);
  
          /* add all the modules in lydmods data into mod SHM */
@@ -939,7 +939,7 @@ index bed6fbd..1b44e1e 100644
              goto cleanup_unlock;
          }
  
-@@ -732,7 +733,7 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
+@@ -729,7 +730,7 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
      if ((err_info = sr_mutex_init(&(*session)->ptr_lock, 0))) {
          goto error;
      }
@@ -948,7 +948,7 @@ index bed6fbd..1b44e1e 100644
          goto error;
      }
  
-@@ -1552,7 +1553,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
+@@ -1558,7 +1559,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
      }
  
      /* update SHM modules */
@@ -957,7 +957,7 @@ index bed6fbd..1b44e1e 100644
          goto error;
      }
      mod_shm_changed = 1;
-@@ -1596,7 +1597,7 @@ error:
+@@ -1602,7 +1603,7 @@ error:
      lyd_free_siblings(sr_del_mods);
  
      /* revert SHM module changes */
@@ -966,7 +966,7 @@ index bed6fbd..1b44e1e 100644
          sr_errinfo_merge(&err_info, tmp_err);
      }
  
-@@ -1863,7 +1864,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
+@@ -1870,7 +1871,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
      }
  
      /* update SHM modules */
@@ -975,7 +975,7 @@ index bed6fbd..1b44e1e 100644
          goto cleanup;
      }
  
-@@ -2108,7 +2109,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
+@@ -2115,7 +2116,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
      }
  
      /* update SHM modules */
@@ -984,7 +984,7 @@ index bed6fbd..1b44e1e 100644
          goto cleanup;
      }
  
-@@ -2615,7 +2616,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
+@@ -2622,7 +2623,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
      }
  
      /* update SHM modules */
@@ -993,7 +993,7 @@ index bed6fbd..1b44e1e 100644
          goto cleanup;
      }
  
-@@ -5224,7 +5225,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5231,7 +5232,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);

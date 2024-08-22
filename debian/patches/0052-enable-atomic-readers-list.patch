@@ -17,7 +17,7 @@ Subject: enable atomic readers list
  7 files changed, 290 insertions(+), 147 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index b0233ae..61b5c2c 100644
+index 0bacf61..e06f4d0 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,11 +90,16 @@ sr_log_rwlock_details(sr_log_level_t log_level, sr_rwlock_t *rwlock, sr_lock_mod
@@ -590,7 +590,7 @@ index b0233ae..61b5c2c 100644
  }
  
 diff --git a/src/common.h b/src/common.h
-index 4b27e60..9130de8 100644
+index 64d5cc8..7830cf9 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -63,9 +63,6 @@ struct srplg_ntf_s;
@@ -643,10 +643,10 @@ index d363bfb..4faad2e 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index bf54268..e0235f9 100644
+index aa710cb..a089a31 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1687,7 +1687,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1733,7 +1733,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
  
  #define PATH_LEN 128
      char path[PATH_LEN];
@@ -655,7 +655,7 @@ index bf54268..e0235f9 100644
  
      /* unlocked access to the lock, possible wrong/stale values should not matter */
  
-@@ -1705,9 +1705,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1751,9 +1751,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
      memcpy(reader_cids, rwlock->readers, sizeof reader_cids);
  
      for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && reader_cids[i]; ++i) {
@@ -666,7 +666,7 @@ index bf54268..e0235f9 100644
              continue;
          }
  
-@@ -1716,12 +1715,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1762,12 +1761,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
@@ -679,7 +679,7 @@ index bf54268..e0235f9 100644
      }
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
-@@ -1791,12 +1784,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
+@@ -1837,12 +1830,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
          }
      }
  
@@ -695,7 +695,7 @@ index bf54268..e0235f9 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 803d477..2c2161c 100644
+index 23d1470..1d195c8 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -373,7 +373,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

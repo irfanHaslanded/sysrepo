@@ -30,10 +30,10 @@ cherry-picked from libyang1 patch
  3 files changed, 41 insertions(+), 41 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ad90674..ad3358d 100644
+index 03334fe..3d41b6f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5699,7 +5699,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
+@@ -5706,7 +5706,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
      } else if (node->schema->nodetype == LYS_LEAFLIST) {
          /* do not include the value predicate */
          free(sr_val->xpath);
