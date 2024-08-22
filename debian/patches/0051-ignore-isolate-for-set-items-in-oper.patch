@@ -10,7 +10,7 @@ ignore isolate for set items in oper
  2 files changed, 58 insertions(+), 2 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ae04274..0ff03ca 100644
+index 4b007f4..e2ced83 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3395,10 +3395,16 @@ sr_free_values(sr_val_t *values, size_t count)

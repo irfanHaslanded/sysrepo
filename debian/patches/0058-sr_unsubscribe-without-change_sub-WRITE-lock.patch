@@ -506,7 +506,7 @@ index 5d1b58c..27d1cce 100644
      if (subs_lock != has_subs_lock) {
          if (subs_lock == SR_LOCK_NONE) {
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index d8dab7e..b8bdf43 100644
+index d15c86b..e0bff7e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -7615,11 +7615,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,

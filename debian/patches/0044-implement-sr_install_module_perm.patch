@@ -48,7 +48,7 @@ index aaf5df2..5f874b5 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e7aa7a8..acc2f34 100644
+index e7aa7a8..23f5646 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -58,6 +58,9 @@
@@ -102,7 +102,7 @@ index e7aa7a8..acc2f34 100644
 +        if ((err_info = sr_install_modules_check_features(new_mod, no_changes))) {
 +            goto cleanup;
 +        }
-+        if (!strcmp(mod_name, "sysrepo")) {
++        if (!strcmp(new_mod->ly_mod->name, "sysrepo")) {
 +            goto cleanup;
 +        }
 +        /* check and install permissions */

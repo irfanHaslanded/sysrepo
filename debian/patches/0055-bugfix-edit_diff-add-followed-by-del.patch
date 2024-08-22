@@ -72,7 +72,7 @@ index 24000fd..d844531 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e73c06a..4217a67 100644
+index 3e6dd5b..af7a1e2 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -3480,16 +3480,18 @@ cleanup:
