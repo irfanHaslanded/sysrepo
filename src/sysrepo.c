@@ -205,7 +205,6 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
 {
     sr_error_info_t *err_info = NULL;
     sr_conn_ctx_t *conn = NULL;
-    struct ly_ctx *tmp_ly_ctx = NULL;
     struct lyd_node *sr_mods = NULL;
     int created = 0, initialized = 0;
     sr_main_shm_t *main_shm;
@@ -256,13 +255,8 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
     }
 
     if (created) {
-        /* create new temporary context */
-        if ((err_info = sr_ly_ctx_init(NULL, &tmp_ly_ctx))) {
-            goto cleanup_unlock;
-        }
-
         /* parse SR mods */
-        if ((err_info = sr_lydmods_parse(tmp_ly_ctx, conn, &initialized, &sr_mods))) {
+        if ((err_info = sr_lydmods_parse(conn->ly_ctx, conn, &initialized, &sr_mods))) {
             goto cleanup_unlock;
         }
 
@@ -277,6 +271,10 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
         if ((err_info = sr_shmmod_store_modules(&conn->mod_shm, sr_mods))) {
             goto cleanup_unlock;
         }
+
+        /* free sr_mods, conn ly_ctx may be recompiled later */
+        lyd_free_all(sr_mods);
+        sr_mods = NULL;
 
         assert((conn->ext_shm.size == SR_SHM_SIZE(sizeof(sr_ext_shm_t))) || sr_ext_hole_next(NULL, SR_CONN_EXT_SHM(conn)));
         if ((hole = sr_ext_hole_next(NULL, SR_CONN_EXT_SHM(conn)))) {
@@ -340,7 +338,6 @@ cleanup_unlock:
 
 cleanup:
     lyd_free_all(sr_mods);
-    ly_ctx_destroy(tmp_ly_ctx);
     if (err_info) {
         sr_conn_free(conn);
         if (created) {
@@ -411,7 +408,7 @@ sr_disconnect(sr_conn_ctx_t *conn)
         return sr_api_ret(NULL, err_info);
     }
 
-    SR_LOG_INF("Connection %" PRIu32 " destroyed", conn->cid);
+    SR_LOG_INF("Connection %" PRIu32 " destroyed.", conn->cid);
     /* free attributes */
     sr_conn_free(conn);
 
@@ -1362,21 +1359,13 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
 {
     sr_error_info_t *err_info = NULL;
     const sr_module_ds_t sr_empty_module_ds = {0};
-    char *mod_name = NULL;
-    LYS_INFORMAT format;
     sr_datastore_t ds;
     int mod_ds;
 
     *no_changes = 0;
 
-    /* learn module name and format */
-    if ((err_info = sr_get_schema_name_format(new_mod->schema_path, new_mod->is_schema_yang, &mod_name, &format))) {
-        goto cleanup;
-    }
-
-    /* try to find the module */
-    if ((new_mod->ly_mod = ly_ctx_get_module_implemented(new_ctx, mod_name))) {
-        /* module installed, check whether with all the features */
+    if (new_mod->ly_mod) {
+        /* module already installed, check whether with all the features */
         err_info = sr_install_modules_check_features(new_mod, no_changes);
         goto cleanup;
     }
@@ -1405,12 +1394,12 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
 
     /* parse the module with the features */
     if (new_mod->is_schema_yang) {
-        if ((err_info = sr_lys_parse(new_ctx, new_mod->schema_yang, NULL, format, new_mod->features,
+        if ((err_info = sr_lys_parse(new_ctx, new_mod->schema_yang, NULL, new_mod->format, new_mod->features,
                 (struct lys_module **)&new_mod->ly_mod))) {
             goto cleanup;
         }
     } else {
-        if ((err_info = sr_lys_parse(new_ctx, NULL, new_mod->schema_path, format, new_mod->features,
+        if ((err_info = sr_lys_parse(new_ctx, NULL, new_mod->schema_path, new_mod->format, new_mod->features,
                 (struct lys_module **)&new_mod->ly_mod))) {
             goto cleanup;
         }
@@ -1435,7 +1424,6 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
     }
 
 cleanup:
-    free(mod_name);
     return err_info;
 }
 
@@ -1466,6 +1454,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
     uint32_t i, j, search_dir_count = 0;
     int no_changes, mod_shm_changed = 0;
     struct ly_set mod_set = {0};
+    char *mod_name = NULL;
 
     /* create new temporary context */
     if ((err_info = sr_ly_ctx_init(conn, &new_ctx))) {
@@ -1492,6 +1481,21 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
     }
     ctx_mode = SR_LOCK_READ_UPGR;
 
+    for (i = 0; i < *new_mod_count; ++i) {
+        nmod = &(*new_mods)[i];
+
+        /* learn module name and format */
+        if ((err_info = sr_get_schema_name_format(nmod->schema_path, nmod->is_schema_yang, &mod_name, &nmod->format))) {
+            goto cleanup;
+        }
+
+        /* try to find the module (before any are parsed to not get new modules) */
+        nmod->ly_mod = ly_ctx_get_module_implemented(new_ctx, mod_name);
+
+        free(mod_name);
+        mod_name = NULL;
+    }
+
     i = 0;
     while (i < *new_mod_count) {
         nmod = &(*new_mods)[i];
@@ -1507,6 +1511,8 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
             }
             if (!--(*new_mod_count)) {
                 /* no modules left to install */
+                free(*new_mods);
+                *new_mods = NULL;
                 goto cleanup;
             }
             continue;
@@ -1611,6 +1617,7 @@ cleanup:
     lyd_free_siblings(sr_mods);
     ly_ctx_destroy(old_ctx);
     ly_ctx_destroy(new_ctx);
+    free(mod_name);
 
     /* CONTEXT UNLOCK */
     sr_lycc_unlock(conn, ctx_mode, 1, __func__);
