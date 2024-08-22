@@ -78,10 +78,10 @@ index 647cc6e..e8d8a82 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index bc38fdf..b83dc25 100644
+index 61b5c2c..d1d972b 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5744,7 +5744,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5745,7 +5745,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
  }
  
  sr_error_info_t *
@@ -90,7 +90,7 @@ index bc38fdf..b83dc25 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *root, *elem;
-@@ -5759,6 +5759,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5760,6 +5760,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
          return err_info;
      }
  

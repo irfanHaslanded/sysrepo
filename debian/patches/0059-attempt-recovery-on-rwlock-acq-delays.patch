@@ -1,0 +1,105 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Fri, 9 Aug 2024 12:15:24 +0000
+Subject: always attempt recovery on delayed rwlock acquire
+
+With every retry attempt of acquiring a rwlock, we can also check the
+aliveness of the CID. A dead CID has the ability to cause system-wide
+delays until the lock is recovered.
+
+This mainly entails doing a CID liveness check on all lock holders.
+The current mechanism for liveness check involves checking if a file is
+locked by the owning process. A faster and better mechanism can be
+implemented but is not trivial and from profiling for the performance
+impact, the current mechanism only incurs a max penalty of < 10 us each
+iteration.
+---
+ src/common.c  | 8 ++++++++
+ src/common.h  | 1 -
+ src/shm_sub.c | 1 +
+ 3 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/common.c b/src/common.c
+index d1d972b..a87896d 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -61,6 +61,8 @@
+ #include "shm_sub.h"
+ #include "sysrepo.h"
+ 
++#define SR_COND_RETRY_STEP_SEC 3
++
+ #define SR_RWLOCK_ID(rwlock_ptr) (~(1u<<31) & (rwlock_ptr)->id)
+ #define _SR_LOG_RWLOCK(ll, rwlock_ptr, mode, cid, func, str)           \
+     sr_log(ll, "%s: %s rwlock %" PRIu32 " in mode %d by CID %" PRIu32, \
+@@ -2713,6 +2715,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+@@ -2755,6 +2758,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+@@ -2797,6 +2801,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+@@ -2838,6 +2843,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+@@ -2968,6 +2974,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, &timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay relocking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+@@ -3034,6 +3041,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+             ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, &timeout_abs);
+             if (ret == EAGAIN) {
+                 SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay relocking");
++                sr_rwlock_recover(rwlock, func, cb, cb_data);
+                 ret = 0;
+             }
+         }
+diff --git a/src/common.h b/src/common.h
+index 49edd00..6e198de 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -1414,7 +1414,6 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
+ 
+ const char * sr_shm_dir_get(void);
+ 
+-#define SR_COND_RETRY_STEP_SEC 3
+ int sr_cond_clockwait_retry(sr_cond_t *cond, pthread_mutex_t *mutex, struct timespec *timeout_abs);
+ 
+ #endif /* _COMMON_H */
+diff --git a/src/shm_sub.c b/src/shm_sub.c
+index 7e5d68a..13dc7f4 100644
+--- a/src/shm_sub.c
++++ b/src/shm_sub.c
+@@ -381,6 +381,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
+             snprintf(buf, sizeof(buf), "orig-CID %" PRIu32 " request ID %" PRIuFAST32,
+                     sub_shm->orig_cid, ATOMIC_LOAD_RELAXED(sub_shm->request_id));
+             SR_RWLOCK_WRN(&sub_shm->lock, SR_LOCK_NONE, cid, "delay new-wrlock", buf);
++            sr_shmsub_recover(sub_shm);
+             ret = 0;
+         }
+     }
