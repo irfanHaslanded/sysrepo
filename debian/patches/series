@@ -56,3 +56,4 @@
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
 0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
 0059-attempt-recovery-on-rwlock-acq-delays.patch
+0059-Revert-modinfo-BUGFIX-support-union-subscription-xpa.patch
