@@ -43,7 +43,7 @@ ENG-6495
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 647cc6e..e8d8a82 100644
+index e6d6b50..082f9da 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -78,10 +78,10 @@ index 647cc6e..e8d8a82 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index 61b5c2c..d1d972b 100644
+index e06f4d0..5442df3 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5745,7 +5745,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5755,7 +5755,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
  }
  
  sr_error_info_t *
@@ -90,7 +90,7 @@ index 61b5c2c..d1d972b 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *root, *elem;
-@@ -5760,6 +5760,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5770,6 +5770,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
          return err_info;
      }
  
@@ -103,10 +103,10 @@ index 61b5c2c..d1d972b 100644
      if (dead_cid) {
          /* this connection is dead, remove its stored edit */
 diff --git a/src/common.h b/src/common.h
-index f9a4fb5..49edd00 100644
+index 0b31e3d..3457ab9 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1348,10 +1348,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
+@@ -1349,10 +1349,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
   * @brief Load operational data (edit) loaded from a SHM for a specific module.
   *
   * @param[in] mod Mod info mod.
@@ -226,10 +226,10 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index e0235f9..abef5e2 100644
+index a089a31..f94f1b2 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1167,9 +1167,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1213,9 +1213,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
      size_t oper_get_sub_count = 0, count = 0;
  
@@ -241,7 +241,7 @@ index e0235f9..abef5e2 100644
              return err_info;
          }
      }
-@@ -2869,6 +2870,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+@@ -2915,6 +2916,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
          }
      }
  
@@ -286,10 +286,10 @@ index c921365..85db8c8 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index aee1fc7..1624b70 100644
+index e0bff7e..053d4df 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -406,8 +406,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
+@@ -403,8 +403,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
          }
      }
  

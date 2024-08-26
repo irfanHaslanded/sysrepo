@@ -54,7 +54,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
 set(SYSREPO_MINOR_VERSION 11)
-set(SYSREPO_MICRO_VERSION 0)
+set(SYSREPO_MICRO_VERSION 4)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
@@ -62,7 +62,7 @@ set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
 set(SYSREPO_MINOR_SOVERSION 27)
-set(SYSREPO_MICRO_SOVERSION 7)
+set(SYSREPO_MICRO_SOVERSION 11)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
@@ -662,8 +662,8 @@ endif()
 # flush all sysrepo related data from redis
 if(SR_ENABLED_DS_PLG_REDIS)
     add_custom_target(sr_redis_clean
-        COMMAND "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "--scan" "--pattern" "\"sr:*\"" "|" "xargs" "-d" "\"\\n\"" "-I," "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "unlink" "\",\"" "1>/dev/null"
-        COMMAND "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "--raw" "ft._list" "|" "grep" "-x" "-G" "\"^sr:.*\"" "|" "xargs" "-n" "1" "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "ft.dropindex" "1>/dev/null"
+        COMMAND "redis-cli" "-h" "${REDIS_HOST}" "-p" "${REDIS_PORT}" "-e"
+                "--eval" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/deleteAllSysrepoDataInRedis.lua" "1>/dev/null"
     )
     add_dependencies(sr_clean sr_redis_clean)
 endif()

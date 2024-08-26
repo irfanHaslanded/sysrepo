@@ -4,22 +4,28 @@ Subject: shm sub BUGFIX do not store error, which is never cleared
 
 (cherry picked from commit 73ec45d7184c7a5216dd8e609a68423188eb3018)
 ---
- src/shm_sub.c | 5 ++++-
- 1 file changed, 4 insertions(+), 1 deletion(-)
+ src/shm_sub.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 7c10057..7e5d68a 100644
+index 846a481..3149ce8 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -558,9 +558,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
-             /* event failed */
+@@ -559,14 +559,17 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              if (clear_ev_on_err) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
+                 sub_shm->orig_cid = 0;
 +                SR_LOG_DBG("Clearing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
              } else if ((expected_ev == SR_SUB_EV_SUCCESS) || (expected_ev == SR_SUB_EV_ERROR)) {
                  /* do not store SR_SUB_EV_ERROR if abort event is not generated (it is not on lock_lost) */
--                ATOMIC_STORE_RELAXED(sub_shm->event, *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR);
-+                event = *lock_lost ? SR_SUB_EV_NONE : SR_SUB_EV_ERROR;
+                 if (*lock_lost) {
+-                    ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
++                    event = SR_SUB_EV_NONE;
+                     sub_shm->orig_cid = 0;
+                 } else {
+-                    ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_ERROR);
++                    event = SR_SUB_EV_ERROR;
+                 }
 +                ATOMIC_STORE_RELAXED(sub_shm->event, event);
 +                SR_LOG_DBG("Storing event \"%s\" ID %" PRIu32 " after timeout", sr_ev2str(event), request_id);
              }

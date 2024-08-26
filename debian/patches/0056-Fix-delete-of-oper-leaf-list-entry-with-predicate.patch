@@ -25,7 +25,7 @@ Closes: ENG-6050
  2 files changed, 93 insertions(+), 6 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 20cb424..2472914 100644
+index af7a1e2..fc6840d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -33,6 +33,7 @@
@@ -36,7 +36,7 @@ index 20cb424..2472914 100644
  
  #include <libyang/hash_table.h>
  #include <libyang/libyang.h>
-@@ -3480,7 +3481,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3486,7 +3487,8 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
      uint32_t temp_lo = 0;
@@ -46,7 +46,7 @@ index 20cb424..2472914 100644
      sr_edit_options_t opts = in_opts;
  
      if (session && session->ds == SR_DS_OPERATIONAL) {
-@@ -3502,11 +3504,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3508,11 +3510,29 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
          }
      }
  
@@ -78,7 +78,7 @@ index 20cb424..2472914 100644
          operation = "purge";
      } else if (opts & SR_EDIT_STRICT) {
          operation = "delete";
-@@ -3518,6 +3538,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3524,6 +3544,14 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      /* add the operation into edit */
      err_info = sr_edit_add(session, path, NULL, operation, opts & SR_EDIT_STRICT ? "none" : "ether", NULL, NULL, NULL,
              NULL, opts & SR_EDIT_ISOLATE);

@@ -1,3 +1,24 @@
+sysrepo (2.11.4-1) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * ly_wrap: discard ignored libyang errors
+  * ly_wrap: discard ignored libyang errors
+
+  [ IrfanMohammad ]
+  * shm change_sub has_sub must account for dead CIDs
+  * shm_sub UPDATE make periodic logs debug level (#3383)
+  * always attempt recovery on delayed rwlock acquire
+  * tests fix sr_perf env settings
+  * simplify xpath_id event processing
+
+  [ Michal Vasko ]
+  * modinfo BUGFIX combination of mod types allowed
+
+  [ IrfanMohammad ]
+  * update patches for upstream/v2.11.4
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Thu, 22 Aug 2024 14:03:21 +0000
+
 sysrepo (2.11.0-1) unstable; urgency=medium
   [ IrfanMohammad ]
   * sysrepocfg: add -s/--no-subs export argument

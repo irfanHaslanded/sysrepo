@@ -18,7 +18,7 @@ Add tests for reader lock failures
  create mode 100644 tests/test_lock_log.c
 
 diff --git a/src/common.c b/src/common.c
-index 449b121..eea766c 100644
+index aacd3f8..62a6c54 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -62,10 +62,13 @@
@@ -177,7 +177,7 @@ index 449b121..eea766c 100644
      }
      if ((err_info = sr_rwlock_init(&cache->data_lock, 0, SR_RWLOCK_NEW_ID(conn), lock_descr))) {
 diff --git a/src/common.h b/src/common.h
-index 870fb50..9f1ce58 100644
+index e13c63e..7dabea8 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -69,6 +69,8 @@ struct srplg_ntf_s;
@@ -266,7 +266,7 @@ index d7c3896..2ecd805 100644
      /* check that this exact subscription does not exist yet while finding its position */
      new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index fc52261..c4ee179 100644
+index aa9983b..1de26be 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@

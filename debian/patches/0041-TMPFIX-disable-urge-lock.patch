@@ -9,7 +9,7 @@ also disable test for urge lock
  2 files changed, 12 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 190e7eb..ff74e90 100644
+index a78a0f1..c3c52be 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -2529,7 +2529,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t

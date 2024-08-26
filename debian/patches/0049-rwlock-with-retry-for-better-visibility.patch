@@ -9,7 +9,7 @@ Subject: rwlock with retry for better visibility
  3 files changed, 84 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index b3fc641..b0233ae 100644
+index 1262ed4..0bacf61 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -145,6 +145,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
@@ -150,10 +150,10 @@ index b3fc641..b0233ae 100644
              /* make it consistent */
              ret = pthread_mutex_consistent(&rwlock->mutex);
 diff --git a/src/common.h b/src/common.h
-index d2b0966..4b27e60 100644
+index a45a4bc..64d5cc8 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1413,4 +1413,7 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
+@@ -1414,4 +1414,7 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
  const char * sr_shm_dir_get(void);
  
@@ -162,7 +162,7 @@ index d2b0966..4b27e60 100644
 +
  #endif /* _COMMON_H */
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index c4ee179..803d477 100644
+index 1de26be..23d1470 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -351,6 +351,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

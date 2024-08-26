@@ -55,5 +55,5 @@
 0058-sr_unsubscribe-without-change_sub-WRITE-lock.patch
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
 0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
-0061-ly_wrap-discard-ignored-libyang-errors.patch
 0059-attempt-recovery-on-rwlock-acq-delays.patch
+0059-Revert-modinfo-BUGFIX-support-union-subscription-xpa.patch
