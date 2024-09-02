@@ -10,7 +10,7 @@ libyang data into a sysrepo value.
  2 files changed, 20 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index 397fff4..b6e7ca0 100644
+index bcbe1da..d6e6bcf 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -3970,6 +3970,12 @@ sr_ev2api(sr_sub_event_t ev)

@@ -10,7 +10,7 @@ nodes of type LY_TYPE_ENUM to SR_INT32_T, rather than SR_ENUM_T.
  2 files changed, 11 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index b6e7ca0..e921f68 100644
+index d6e6bcf..f52f902 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -4024,9 +4024,14 @@ store_value:

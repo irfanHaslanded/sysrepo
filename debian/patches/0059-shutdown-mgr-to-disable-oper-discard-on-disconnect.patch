@@ -43,7 +43,7 @@ ENG-6495
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index e6d6b50..082f9da 100644
+index 8b2b3cd..4b84582 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -78,10 +78,10 @@ index e6d6b50..082f9da 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index e06f4d0..5442df3 100644
+index 3334a87..5842d95 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5755,7 +5755,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5757,7 +5757,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
  }
  
  sr_error_info_t *
@@ -90,7 +90,7 @@ index e06f4d0..5442df3 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *root, *elem;
-@@ -5770,6 +5770,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5772,6 +5772,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
          return err_info;
      }
  
@@ -226,10 +226,10 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index a089a31..f94f1b2 100644
+index 12c638d..2fdacfd 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1213,9 +1213,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1223,9 +1223,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
      size_t oper_get_sub_count = 0, count = 0;
  
@@ -241,7 +241,7 @@ index a089a31..f94f1b2 100644
              return err_info;
          }
      }
-@@ -2915,6 +2916,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+@@ -2925,6 +2926,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
          }
      }
  

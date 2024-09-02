@@ -17,7 +17,7 @@ This reverts commit 10a14c2712dd7159eaa4d98ea758cc95b16658b5.
  1 file changed, 8 insertions(+), 26 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index c3c52be..1262ed4 100644
+index 43152e6..f212f20 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -2392,10 +2392,6 @@ cleanup:
