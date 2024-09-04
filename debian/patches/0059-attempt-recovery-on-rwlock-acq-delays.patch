@@ -19,7 +19,7 @@ iteration.
  3 files changed, 9 insertions(+), 1 deletion(-)
 
 diff --git a/src/common.c b/src/common.c
-index 5442df3..3ab6f75 100644
+index 5842d95..1726e91 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,8 @@

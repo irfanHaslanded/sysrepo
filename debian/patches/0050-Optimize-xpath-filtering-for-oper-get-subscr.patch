@@ -31,7 +31,7 @@ subscriptions.
  4 files changed, 224 insertions(+), 14 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 0a37b90..aa710cb 100644
+index c4b4a0a..3030872 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -934,6 +934,22 @@ sr_xpath_oper_data_text_atoms_required(const char *request_atom, const char *sub
@@ -57,7 +57,7 @@ index 0a37b90..aa710cb 100644
  /**
   * @brief Check whether operational data are required.
   *
-@@ -954,8 +970,8 @@ sr_xpath_oper_data_required(const char *request_xpath, const char *sub_xpath, in
+@@ -955,8 +971,8 @@ sr_xpath_oper_data_required(const char *request_xpath, const char *sub_xpath, in
  
      *required = 1;
  
@@ -68,7 +68,7 @@ index 0a37b90..aa710cb 100644
          goto cleanup;
      }
  
-@@ -1874,6 +1890,11 @@ sr_modinfo_module_srmon_module_subs(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, stru
+@@ -1884,6 +1900,11 @@ sr_modinfo_module_srmon_module_subs(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, stru
       */
  
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -80,7 +80,7 @@ index 0a37b90..aa710cb 100644
          /* CHANGE SUB READ LOCK */
          if ((err_info = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
                  __func__, NULL, NULL))) {
-@@ -1944,6 +1965,9 @@ change_sub_unlock:
+@@ -1954,6 +1975,9 @@ change_sub_unlock:
      /*
       * oper get subscriptions
       */
@@ -90,7 +90,7 @@ index 0a37b90..aa710cb 100644
  
      /* OPER GET SUB READ LOCK */
      if ((err_info = sr_rwlock(&shm_mod->oper_get_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
-@@ -2002,9 +2026,13 @@ operget_sub_unlock:
+@@ -2012,9 +2036,13 @@ operget_sub_unlock:
          return err_info;
      }
  
@@ -104,7 +104,7 @@ index 0a37b90..aa710cb 100644
  
      /* OPER POLL SUB READ LOCK */
      if ((err_info = sr_rwlock(&shm_mod->oper_poll_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
-@@ -2055,6 +2083,11 @@ operpoll_sub_unlock:
+@@ -2065,6 +2093,11 @@ operpoll_sub_unlock:
          return err_info;
      }
  
@@ -116,7 +116,7 @@ index 0a37b90..aa710cb 100644
      /*
       * notification subscriptions
       */
-@@ -2115,7 +2148,7 @@ notif_sub_unlock:
+@@ -2125,7 +2158,7 @@ notif_sub_unlock:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -125,7 +125,7 @@ index 0a37b90..aa710cb 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *sr_mod, *sr_ds_lock;
-@@ -2130,6 +2163,10 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -2140,6 +2173,10 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          return err_info;
      }
  
@@ -136,7 +136,7 @@ index 0a37b90..aa710cb 100644
      /* last-modified */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
          if ((ds == SR_DS_RUNNING) && !shm_mod->plugins[ds]) {
-@@ -2213,6 +2250,7 @@ ds_unlock:
+@@ -2223,6 +2260,7 @@ ds_unlock:
          return err_info;
      }
  
@@ -144,7 +144,7 @@ index 0a37b90..aa710cb 100644
      /* module subscriptions */
      if ((err_info = sr_modinfo_module_srmon_module_subs(conn, shm_mod, sr_mod))) {
          return err_info;
-@@ -2399,6 +2437,36 @@ cleanup:
+@@ -2409,6 +2447,36 @@ cleanup:
      return err_info;
  }
  
@@ -181,7 +181,7 @@ index 0a37b90..aa710cb 100644
  /**
   * @brief Load module data of the sysrepo-monitoring module. They are actually generated.
   *
-@@ -2418,7 +2486,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2428,7 +2496,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      const struct lys_module *ly_mod;
      sr_mod_shm_t *mod_shm;
      uint32_t i, j;
@@ -194,7 +194,7 @@ index 0a37b90..aa710cb 100644
  
      mod_shm = SR_CONN_MOD_SHM(mod_info->conn);
      ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, "sysrepo-monitoring");
-@@ -2429,39 +2501,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2439,39 +2511,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
          goto cleanup;
      }
  
@@ -259,7 +259,7 @@ index 0a37b90..aa710cb 100644
                      goto cleanup;
                  }
              }
-@@ -2469,19 +2558,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2479,19 +2568,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      }
  
      /* connections */

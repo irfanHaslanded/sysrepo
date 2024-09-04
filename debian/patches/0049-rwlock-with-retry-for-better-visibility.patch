@@ -9,7 +9,7 @@ Subject: rwlock with retry for better visibility
  3 files changed, 84 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 1262ed4..0bacf61 100644
+index f212f20..120496b 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -145,6 +145,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{

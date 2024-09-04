@@ -19,7 +19,7 @@ provide a more convenient alternative, particularly in Rust applications
  5 files changed, 75 insertions(+), 9 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index e921f68..db2cb5e 100644
+index f52f902..3128aac 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -4025,7 +4025,7 @@ store_value:

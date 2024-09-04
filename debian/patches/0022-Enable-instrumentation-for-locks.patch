@@ -19,7 +19,7 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  12 files changed, 240 insertions(+), 88 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index db2cb5e..20d543d 100644
+index 3128aac..13db2fa 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,41 @@
@@ -309,7 +309,7 @@ index db2cb5e..20d543d 100644
      ++conn->oper_cache_count;
  
  cleanup:
-@@ -5658,3 +5762,15 @@ sr_is_prod_env(void)
+@@ -5660,3 +5764,15 @@ sr_is_prod_env(void)
      }
      return sr_prod_env;
  }
@@ -355,7 +355,7 @@ index dbd7a9f..0ccc394 100644
  /**
   * @brief Destroy a sysrepo RW lock.
 diff --git a/src/common_types.h b/src/common_types.h
-index f7f35d7..2c6ae14 100644
+index a7dd2de..610a191 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -64,6 +64,7 @@ typedef struct {
@@ -367,10 +367,10 @@ index f7f35d7..2c6ae14 100644
  
  /**
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 4a2d321..b01cf5a 100644
+index c1ec315..60cfc46 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1315,7 +1315,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1325,7 +1325,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      /* merge into one data tree */
                      if ((err_info = sr_lyd_merge(data, oper_data, 1, LYD_MERGE_DESTRUCT))) {
                          lyd_free_all(oper_data);

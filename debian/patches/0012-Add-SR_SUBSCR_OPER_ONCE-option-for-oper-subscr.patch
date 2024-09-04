@@ -26,10 +26,10 @@ a "one shot" fashion where it is more performant to do so.
  4 files changed, 250 insertions(+), 4 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index ff867b7..4a2d321 100644
+index 6dc6645..c1ec315 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1292,10 +1292,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1302,10 +1302,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              /* nested data */
@@ -42,7 +42,7 @@ index ff867b7..4a2d321 100644
                      goto cleanup_opergetsub_ext_unlock;
                  }
  
-@@ -1304,6 +1304,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1314,6 +1314,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      lyd_free_all(oper_data);
                      goto cleanup_opergetsub_ext_unlock;
                  }
@@ -97,10 +97,10 @@ index 9f820b8..43b7663 100644
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_oper_pull.c b/tests/test_oper_pull.c
-index 49eaf7b..25d3089 100644
+index cd338f5..5fdfb57 100644
 --- a/tests/test_oper_pull.c
 +++ b/tests/test_oper_pull.c
-@@ -3739,6 +3739,230 @@ test_cache_diff(void **state)
+@@ -3746,6 +3746,230 @@ test_cache_diff(void **state)
  
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
  }
@@ -331,7 +331,7 @@ index 49eaf7b..25d3089 100644
  
  int
  main(void)
-@@ -3770,6 +3994,7 @@ main(void)
+@@ -3777,6 +4001,7 @@ main(void)
          cmocka_unit_test_teardown(test_cache, clear_up),
          cmocka_unit_test_teardown(test_cache_no_sub, clear_up),
          cmocka_unit_test_teardown(test_cache_diff, clear_up),

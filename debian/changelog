@@ -1,3 +1,17 @@
+sysrepo (2.11.5-1) unstable; urgency=medium
+
+  [ Michal Vasko ]
+  * common UPDATE remember the specific selected node atom, if any
+  * modinfo BUGFIX final consideration of union data necessity
+  * SOVERSION bump to version 7.27.12
+  * VERSION bump to version 2.11.5
+
+  [ IrfanMohammad ]
+  * Revert "Revert "modinfo BUGFIX support union subscription xpaths""
+  * update patches for upstream/v2.11.5
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Mon, 02 Sep 2024 10:08:41 +0000
+
 sysrepo (2.11.4-1) unstable; urgency=medium
 
   [ Duncan Eastoe ]

@@ -16,7 +16,7 @@ Subject: Allow runtime configurable shm dir
  5 files changed, 34 insertions(+), 23 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index d69815a..a78a0f1 100644
+index 6231025..22254f8 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -1064,6 +1064,20 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m

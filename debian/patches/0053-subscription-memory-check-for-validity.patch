@@ -19,7 +19,7 @@ context to add more subscriptions to it.
  3 files changed, 43 insertions(+), 8 deletions(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index 4faad2e..3611c70 100644
+index eeb2559..a60b8de 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -67,6 +67,10 @@ typedef enum {
@@ -33,7 +33,7 @@ index 4faad2e..3611c70 100644
  /**
   * @brief Sysrepo read-write lock.
   */
-@@ -343,6 +347,7 @@ struct sr_subscription_ctx_s {
+@@ -351,6 +355,7 @@ struct sr_subscription_ctx_s {
          sr_shm_t sub_shm;           /**< Subscription SHM. */
      } *rpc_subs;                    /**< RPC/action subscriptions for each operation. */
      uint32_t rpc_sub_count;         /**< RPC/action operation subscription count. */
