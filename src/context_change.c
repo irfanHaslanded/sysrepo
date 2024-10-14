@@ -507,7 +507,7 @@ sr_lycc_check_upd_modules(sr_conn_ctx_t *conn, const struct ly_set *old_mod_set,
     }
 
     /* check subscriptions in the new context */
-    if ((err_info = sr_shmext_check_sub_all(conn, upd_mod->ctx))) {
+    if (upd_mod && (err_info = sr_shmext_check_sub_all(conn, upd_mod->ctx))) {
         return err_info;
     }
 
