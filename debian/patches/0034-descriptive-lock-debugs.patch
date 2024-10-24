@@ -18,7 +18,7 @@ Add tests for reader lock failures
  create mode 100644 tests/test_lock_log.c
 
 diff --git a/src/common.c b/src/common.c
-index 7f8e28b..b130318 100644
+index 8a7c79e..ffd7a32 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -62,10 +62,13 @@

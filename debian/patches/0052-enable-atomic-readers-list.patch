@@ -17,7 +17,7 @@ Subject: enable atomic readers list
  7 files changed, 290 insertions(+), 147 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 120496b..3334a87 100644
+index 95be581..cd2651c 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,11 +90,16 @@ sr_log_rwlock_details(sr_log_level_t log_level, sr_rwlock_t *rwlock, sr_lock_mod

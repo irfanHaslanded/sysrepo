@@ -78,7 +78,7 @@ index 8b2b3cd..4b84582 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index 3334a87..5842d95 100644
+index cd2651c..4bd3b97 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -5757,7 +5757,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h

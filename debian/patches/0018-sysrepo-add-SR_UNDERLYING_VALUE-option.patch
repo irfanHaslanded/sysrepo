@@ -11,26 +11,12 @@ then looking up the schema. However the intention of this option is to
 provide a more convenient alternative, particularly in Rust applications
 (where this would currently require unsafe code).
 ---
- src/common.c                 |  2 +-
- src/sysrepo.c                |  6 +++--
- src/sysrepo_types.h          | 10 +++++--
- tests/files/test-module.yang |  4 +--
- tests/test_get.c             | 62 +++++++++++++++++++++++++++++++++++++++++++-
- 5 files changed, 75 insertions(+), 9 deletions(-)
+ src/sysrepo.c                |  6 ++--
+ src/sysrepo_types.h          | 10 ++++--
+ tests/files/test-module.yang | 12 +++++--
+ tests/test_get.c             | 77 +++++++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 98 insertions(+), 7 deletions(-)
 
-diff --git a/src/common.c b/src/common.c
-index f52f902..3128aac 100644
---- a/src/common.c
-+++ b/src/common.c
-@@ -4025,7 +4025,7 @@ store_value:
-             break;
-         case LY_TYPE_ENUM:
-             if (opts & SR_VAL_LY2SR_UNDERLYING_VALUE) {
--                sr_val->data.int32_val = val->int32;
-+                sr_val->data.int32_val = leaf->value.enum_item->value;
-                 sr_val->type = SR_INT32_T;
-             } else {
-                 sr_val->type = SR_ENUM_T;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
 index 15b7855..52e7412 100644
 --- a/src/sysrepo.c
@@ -87,22 +73,30 @@ index 9232e3c..1daadc5 100644
  
  /**
 diff --git a/tests/files/test-module.yang b/tests/files/test-module.yang
-index 55f5d1e..64442c8 100644
+index 55f5d1e..c8d85af 100644
 --- a/tests/files/test-module.yang
 +++ b/tests/files/test-module.yang
-@@ -40,9 +40,7 @@ module test-module {
+@@ -40,8 +40,16 @@ module test-module {
          enum "no" {
            value 2;
          }
 -        enum "maybe" {
 -          value 3;
--        }
 +        enum "maybe";
++      }
++    }
++    leaf enum-union {
++      type union {
++        type enumtpdf;
++        type enumeration {
++          enum "d" {
++            value 4;
++          }
+         }
        }
      }
-     leaf options {
 diff --git a/tests/test_get.c b/tests/test_get.c
-index 5b426dd..066e507 100644
+index 5b426dd..61ccfc1 100644
 --- a/tests/test_get.c
 +++ b/tests/test_get.c
 @@ -49,6 +49,8 @@ setup(void **state)
@@ -114,7 +108,7 @@ index 5b426dd..066e507 100644
          NULL
      };
  
-@@ -85,17 +87,74 @@ teardown(void **state)
+@@ -85,17 +87,89 @@ teardown(void **state)
          "simple",
          "defaults",
          "mod",
@@ -185,12 +179,27 @@ index 5b426dd..066e507 100644
 +    assert_int_equal(vals[0].type, SR_INT32_T);
 +    assert_int_equal(vals[0].data.int32_val, 3);
 +    sr_free_values(vals, vals_cnt);
++
++    /* set union of two enums */
++    ret = sr_set_item_str(st->sess, "/test-module:main/enum-union", "d", NULL, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++    ret = sr_apply_changes(st->sess, 0);
++    assert_int_equal(ret, SR_ERR_OK);
++
++    /* read it back as the underlying value (int) */
++    vals = NULL;
++    vals_cnt = 0;
++    ret = sr_get_items(st->sess, "/test-module:main/enum-union", 0, SR_UNDERLYING_VALUE, &vals, &vals_cnt);
++    assert_int_equal(ret, SR_ERR_OK);
++    assert_int_equal(vals[0].type, SR_INT32_T);
++    assert_int_equal(vals[0].data.int32_val, 4);
++    sr_free_values(vals, vals_cnt);
 +}
 +
  /* TEST */
  static void
  test_invalid(void **state)
-@@ -711,6 +770,7 @@ int
+@@ -711,6 +785,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

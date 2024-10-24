@@ -19,7 +19,7 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  12 files changed, 240 insertions(+), 88 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 3128aac..13db2fa 100644
+index b3cd6f7..a50f573 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,41 @@
