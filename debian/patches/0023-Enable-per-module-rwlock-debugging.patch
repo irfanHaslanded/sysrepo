@@ -12,7 +12,7 @@ cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
  5 files changed, 98 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 13db2fa..dbab75c 100644
+index a50f573..2fd3241 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,7 +90,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
