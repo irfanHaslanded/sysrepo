@@ -32,18 +32,20 @@ Added test for sysrepo-shutdown-mgr to oper import test script.
 ENG-6495
 ---
  CMakeLists.txt                         |  10 ++++
- src/common.c                           |   7 ++-
+ src/common.c                           |   5 +-
  src/common.h                           |   3 +-
+ src/context_change.c                   |   8 +--
  src/executables/sysrepo-shutdown-mgr.c | 100 +++++++++++++++++++++++++++++++++
- src/modinfo.c                          |   8 ++-
- src/shm_types.h                        |   7 ++-
+ src/modinfo.c                          |  11 +++-
+ src/shm_main.c                         |   7 ++-
+ src/shm_types.h                        |   5 ++
  src/sysrepo.c                          |   5 +-
  tests/test_sysrepocfg_oper.sh          |  94 +++++++++++++++++++++++++------
- 8 files changed, 212 insertions(+), 22 deletions(-)
+ 10 files changed, 217 insertions(+), 31 deletions(-)
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 8b2b3cd..4b84582 100644
+index 7ad6b84..59e8aec 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -54,7 +56,7 @@ index 8b2b3cd..4b84582 100644
  option(BUILD_SHARED_LIBS "By default, shared libs are enabled. Turn off for a static build." ON)
  option(INSTALL_SYSCTL_CONF "Install sysctl conf file to allow shared access to SHM files." OFF)
  set(YANG_MODULE_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/yang/modules/sysrepo" CACHE STRING "Directory where to copy the YANG modules to.")
-@@ -494,6 +495,12 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -501,6 +502,12 @@ if(ENABLE_SYSREPO_PLUGIND)
      target_link_libraries(sysrepo-plugind sysrepo)
  endif()
  
@@ -67,7 +69,7 @@ index 8b2b3cd..4b84582 100644
  # include repository files with highest priority
  include_directories("${PROJECT_SOURCE_DIR}/src")
  include_directories("${PROJECT_SOURCE_DIR}/src/plugins")
-@@ -596,6 +603,9 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -603,6 +610,9 @@ if(ENABLE_SYSREPO_PLUGIND)
      install(FILES ${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
      install(DIRECTORY DESTINATION ${SRPD_PLUGINS_PATH})
  endif()
@@ -78,47 +80,96 @@ index 8b2b3cd..4b84582 100644
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
 diff --git a/src/common.c b/src/common.c
-index cd2651c..4bd3b97 100644
+index 8438f96..fb500cb 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5757,7 +5757,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+@@ -5782,7 +5782,7 @@ sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
  }
  
  sr_error_info_t *
--sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit)
-+sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, int ignore_dead_cids, struct lyd_node **edit)
+-sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
++sr_module_file_data_append(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
+         const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
  {
      sr_error_info_t *err_info = NULL;
-     struct lyd_node *root, *elem;
-@@ -5772,6 +5772,11 @@ sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **e
+@@ -5790,6 +5790,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
+     struct lyd_meta *meta;
+     int modified;
+     sr_cid_t dead_cid = 0;
++    int dead_cid_check = (ds == SR_DS_OPERATIONAL) && (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect));
+ 
+     if (ds == SR_DS_CANDIDATE) {
+         if ((err_info = ds_handle[ds]->plugin->candidate_modified_cb(ly_mod, ds_handle[ds]->plg_data, &modified))) {
+@@ -5812,7 +5813,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
          return err_info;
      }
  
-+    if (ignore_dead_cids) {
-+        /* no need to check for dead connections, we are done */
-+        return err_info;
-+    }
-+
+-    if (mod_data && (ds == SR_DS_OPERATIONAL)) {
++    if (mod_data && dead_cid_check) {
  trim_retry:
-     if (dead_cid) {
-         /* this connection is dead, remove its stored edit */
+         if (dead_cid) {
+             /* this connection is dead, remove its stored edit */
 diff --git a/src/common.h b/src/common.h
-index 0b31e3d..3457ab9 100644
+index f7b5ab2..61bcb98 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1349,10 +1349,11 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
-  * @brief Load operational data (edit) loaded from a SHM for a specific module.
+@@ -1369,6 +1369,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
+ /**
+  * @brief Append stored module data to a data tree.
   *
-  * @param[in] mod Mod info mod.
-+ * @param[in] ignore_dead_cids flag to ignore dead connection check.
-  * @param[out] edit Loaded edit to return.
++ * @param[in] conn Connection to use.
+  * @param[in] ly_mod libyang module.
+  * @param[in] ds_handle Datastore plugin handles of @p ly_mod.
+  * @param[in] ds Datastore of the data.
+@@ -1377,7 +1378,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
+  * @param[in,out] data Data tree to append to.
   * @return err_info, NULL on success.
   */
--sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit);
-+sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, int ignore_dead_cids, struct lyd_node **edit);
+-sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[],
++sr_error_info_t *sr_module_file_data_append(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[],
+         sr_datastore_t ds, const char **xpaths, uint32_t xpath_count, struct lyd_node **data);
  
  /**
-  * @brief Learn CIDs and PIDs of all the live connections.
+diff --git a/src/context_change.c b/src/context_change.c
+index 924d820..27144e9 100644
+--- a/src/context_change.c
++++ b/src/context_change.c
+@@ -638,7 +638,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
+         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
+             goto cleanup;
+         }
+-        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->start))) {
++        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->start))) {
+             goto cleanup;
+         }
+ 
+@@ -648,7 +648,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
+             if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
+                 goto cleanup;
+             }
+-            if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->run))) {
++            if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->run))) {
+                 goto cleanup;
+             }
+         }
+@@ -658,7 +658,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
+         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
+             goto cleanup;
+         }
+-        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->oper))) {
++        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->oper))) {
+             goto cleanup;
+         }
+ 
+@@ -667,7 +667,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
+         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
+             goto cleanup;
+         }
+-        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->fdflt))) {
++        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->fdflt))) {
+             goto cleanup;
+         }
+     }
 diff --git a/src/executables/sysrepo-shutdown-mgr.c b/src/executables/sysrepo-shutdown-mgr.c
 new file mode 100644
 index 0000000..852b124
@@ -226,22 +277,28 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 12c638d..2fdacfd 100644
+index 80d9c84..0229389 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1223,9 +1223,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
-     sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
-     size_t oper_get_sub_count = 0, count = 0;
+@@ -1225,7 +1225,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
-+    int ignore_dead_cids = ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect);
      if (!(get_oper_opts & SR_OPER_NO_STORED)) {
          /* get stored operational edit */
--        if ((err_info = sr_module_file_oper_data_load(mod, &edit))) {
-+        if ((err_info = sr_module_file_oper_data_load(mod, ignore_dead_cids, &edit))) {
+-        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0, &edit))) {
++        if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0, &edit))) {
              return err_info;
          }
      }
-@@ -2925,6 +2926,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+@@ -2603,7 +2603,7 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
+         }
+ 
+         /* get current DS data (ds2 is running when getting operational data) */
+-        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, xpaths, xpath_count,
++        if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, mod_info->ds2, xpaths, xpath_count,
+                 &mod_info->data))) {
+             return err_info;
+         }
+@@ -2867,6 +2867,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
          }
      }
  
@@ -253,18 +310,58 @@ index 12c638d..2fdacfd 100644
      /* load data for each module */
      for (i = 0; i < mod_info->mod_count; ++i) {
          mod = &mod_info->mods[i];
+@@ -2878,7 +2883,7 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+         if ((mod_info->ds == SR_DS_OPERATIONAL) && (mod_info->ds2 == SR_DS_OPERATIONAL)) {
+             /* special case when we are not working with data but with edit */
+             assert(!mod->xpath_count);
+-            if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0,
++            if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0,
+                     &mod_info->data))) {
+                 goto cleanup;
+             }
+diff --git a/src/shm_main.c b/src/shm_main.c
+index 27a8ab4..f2f8763 100644
+--- a/src/shm_main.c
++++ b/src/shm_main.c
+@@ -455,6 +455,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+     sr_main_shm_t *main_shm;
+     char *shm_name = NULL, *shm_dir = NULL;
+     int creat = 0;
++    const uint32_t shm_ver = (10000*SR_DEBIAN_SHM_VER) + SR_SHM_VER;
+ 
+     if ((err_info = sr_path_main_shm(&shm_name))) {
+         goto cleanup;
+@@ -495,7 +496,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+ 
+     if (creat) {
+         /* init the memory */
+-        main_shm->shm_ver = SR_SHM_VER;
++        main_shm->shm_ver = shm_ver;
+ 
+         if ((err_info = sr_mutex_init(&main_shm->ext_lock, 1))) {
+             goto cleanup;
+@@ -518,9 +519,9 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+         sr_remove_evpipes();
+     } else {
+         /* check version */
+-        if (main_shm->shm_ver != SR_SHM_VER) {
++        if (main_shm->shm_ver != shm_ver) {
+             sr_errinfo_new(&err_info, SR_ERR_UNSUPPORTED, "Shared memory version mismatch (%" PRIu32 ", expected %d),"
+-                    " remove the SHM to fix.", main_shm->shm_ver, SR_SHM_VER);
++                    " remove the SHM to fix.", main_shm->shm_ver, shm_ver);
+             goto cleanup;
+         }
+ 
 diff --git a/src/shm_types.h b/src/shm_types.h
-index c921365..85db8c8 100644
+index d21eed8..af13222 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -25,7 +25,9 @@
- #include "common_types.h"
+@@ -26,6 +26,8 @@
  #include "sysrepo_types.h"
  
--#define SR_SHM_VER 17   /**< Main, mod, and ext SHM version of their expected content structures. */
+ #define SR_SHM_VER 18   /**< Main, mod, and ext SHM version of their expected content structures. */
 +#define SR_DEBIAN_SHM_VER 1 /**< shm version to track debian changes to shm */
 +
-+#define SR_SHM_VER ((10000*SR_DEBIAN_SHM_VER) + 17)   /**< Main, mod, and ext SHM version of their expected content structures. */
  #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
  
  /**
@@ -286,7 +383,7 @@ index c921365..85db8c8 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e0bff7e..053d4df 100644
+index 648a90d..7510985 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -403,8 +403,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
@@ -302,7 +399,7 @@ index e0bff7e..053d4df 100644
      }
  
 diff --git a/tests/test_sysrepocfg_oper.sh b/tests/test_sysrepocfg_oper.sh
-index 35cebef..51ab6b0 100755
+index 35cebef..5167ec4 100755
 --- a/tests/test_sysrepocfg_oper.sh
 +++ b/tests/test_sysrepocfg_oper.sh
 @@ -1,9 +1,20 @@
@@ -361,7 +458,7 @@ index 35cebef..51ab6b0 100755
 +shutdown_mgr_pid=$!
 +
 +TestLog 'Wait for operational data to be pushed'
-+timeout 5 tail -f importer.log | grep -m 1 'sr_apply_changes for operational success'
++timeout 5 tail -f importer.log | grep -m 1 'Applying "operational" datastore changes success.'
 +
 +$cfg -v4 -X -d operational -m mixed-config > out.json
 +TestLog 'Verify operational data is pushed'

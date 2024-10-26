@@ -17,7 +17,7 @@ Subject: enable atomic readers list
  7 files changed, 290 insertions(+), 147 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 95be581..cd2651c 100644
+index b58eef0..8438f96 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,11 +90,16 @@ sr_log_rwlock_details(sr_log_level_t log_level, sr_rwlock_t *rwlock, sr_lock_mod
@@ -42,7 +42,7 @@ index 95be581..cd2651c 100644
          }
      }
  
-@@ -2359,6 +2364,7 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared, uint32_t id, const char *desc)
+@@ -2416,6 +2421,7 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared, uint32_t id, const char *desc)
          return err_info;
      }
  
@@ -50,7 +50,7 @@ index 95be581..cd2651c 100644
      memset(rwlock->readers, 0, sizeof rwlock->readers);
      rwlock->upgr = 0;
      rwlock->writer = 0;
-@@ -2387,34 +2393,104 @@ static sr_error_info_t *
+@@ -2444,34 +2450,104 @@ static sr_error_info_t *
  sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid, const char *func)
  {
      sr_error_info_t *err_info = NULL;
@@ -174,7 +174,7 @@ index 95be581..cd2651c 100644
  }
  
  /**
-@@ -2424,27 +2500,54 @@ cleanup:
+@@ -2481,27 +2557,54 @@ cleanup:
   * @param[in] i Index of the reader.
   */
  static void
@@ -245,7 +245,7 @@ index 95be581..cd2651c 100644
  }
  
  /**
-@@ -2461,16 +2564,18 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
+@@ -2518,16 +2621,18 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
      uint32_t i;
  
      /* find a CID match */
@@ -267,7 +267,7 @@ index 95be581..cd2651c 100644
  
  cleanup:
      return err_info;
-@@ -2489,24 +2594,7 @@ static void
+@@ -2546,24 +2651,7 @@ static void
  sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb, void *cb_data)
  {
      uint32_t i = 0;
@@ -293,7 +293,7 @@ index 95be581..cd2651c 100644
  
      /* read-upgr */
      if (rwlock->upgr) {
-@@ -2519,6 +2607,7 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
+@@ -2576,6 +2664,7 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
                  cb(SR_LOCK_READ_UPGR, cid, cb_data);
              }
              SR_LOG_WRN("Recovered a read-upgr-lock of CID %" PRIu32 " (%s).", cid, func);
@@ -301,7 +301,7 @@ index 95be581..cd2651c 100644
          }
      }
  
-@@ -2535,6 +2624,49 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
+@@ -2592,6 +2681,49 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
              SR_LOG_WRN("Recovered a write-lock of CID %" PRIu32 " (%s).", cid, func);
          }
      }
@@ -351,7 +351,7 @@ index 95be581..cd2651c 100644
  }
  
  sr_error_info_t *
-@@ -2569,14 +2701,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2626,14 +2758,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
  
      if (mode == SR_LOCK_WRITE) {
          /* WRITE lock */
@@ -368,7 +368,7 @@ index 95be581..cd2651c 100644
              /* COND WAIT */
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
-@@ -2587,7 +2719,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2644,7 +2776,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -377,7 +377,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2604,7 +2736,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2661,7 +2793,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
  
      } else if (mode == SR_LOCK_WRITE_URGE) {
          /* WRITE URGE lock */
@@ -386,7 +386,7 @@ index 95be581..cd2651c 100644
              /* instead of waiting, try to recover the lock immediately */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
          }
-@@ -2612,7 +2744,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2669,7 +2801,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          /* wait until there are no readers or another writer waiting */
          ret = 0;
          wr_urged = 0;
@@ -395,7 +395,7 @@ index 95be581..cd2651c 100644
              if (!rwlock->writer) {
                  /* urge waiting for write lock */
                  rwlock->writer = cid;
-@@ -2629,7 +2761,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2686,7 +2818,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -404,7 +404,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2653,14 +2785,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2710,14 +2842,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
  
      } else if (mode == SR_LOCK_READ_UPGR) {
          /* READ UPGR lock */
@@ -421,7 +421,7 @@ index 95be581..cd2651c 100644
              /* COND WAIT */
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
-@@ -2671,7 +2803,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2728,7 +2860,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -430,7 +430,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2694,14 +2826,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2751,14 +2883,14 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
  
      } else {
          /* READ lock */
@@ -447,7 +447,7 @@ index 95be581..cd2651c 100644
              /* COND WAIT */
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
-@@ -2712,7 +2844,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2769,7 +2901,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -456,7 +456,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2823,7 +2955,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2880,7 +3012,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          /* consistency checks */
          assert(rwlock->upgr == cid);
  
@@ -465,7 +465,7 @@ index 95be581..cd2651c 100644
              /* instead of waiting, try to recover the lock immediately */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
          }
-@@ -2831,7 +2963,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2888,7 +3020,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          /* wait until there are no readers except for this one */
          sr_timeouttime_get(&timeout_abs, timeout_ms);
          ret = 0;
@@ -474,7 +474,7 @@ index 95be581..cd2651c 100644
              /* COND WAIT */
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, &timeout_abs);
              if (ret == EAGAIN) {
-@@ -2841,7 +2973,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2898,7 +3030,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -483,7 +483,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2853,7 +2985,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2910,7 +3042,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          }
  
          /* additional consistency check */
@@ -492,7 +492,7 @@ index 95be581..cd2651c 100644
  
          /* update readers and flags */
          if ((err_info = sr_rwlock_reader_del(rwlock, cid))) {
-@@ -2882,7 +3014,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2939,7 +3071,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          /* clear the flag, wanting write now */
          rwlock->upgr = 0;
  
@@ -501,7 +501,7 @@ index 95be581..cd2651c 100644
              /* instead of waiting, try to recover the lock immediately */
              sr_rwlock_recover(rwlock, func, cb, cb_data);
          }
-@@ -2891,7 +3023,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2948,7 +3080,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          sr_timeouttime_get(&timeout_abs, timeout_ms);
          wr_urged = 0;
          ret = 0;
@@ -510,7 +510,7 @@ index 95be581..cd2651c 100644
              if (!rwlock->writer) {
                  /* waiting for write lock */
                  rwlock->writer = cid;
-@@ -2907,7 +3039,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2964,7 +3096,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
@@ -519,7 +519,7 @@ index 95be581..cd2651c 100644
                  /* recovered */
                  ret = 0;
              }
-@@ -2924,9 +3056,6 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2981,9 +3113,6 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              goto cleanup_unlock;
          }
  
@@ -529,7 +529,7 @@ index 95be581..cd2651c 100644
          /* update readers and flags */
          if ((err_info = sr_rwlock_reader_del(rwlock, cid))) {
              /* restore flags */
-@@ -2968,7 +3097,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -3025,7 +3154,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
       */
  
      /* consistency checks */
@@ -538,7 +538,7 @@ index 95be581..cd2651c 100644
  
      /* add a reader */
      if ((err_info = sr_rwlock_reader_add(rwlock, cid, func))) {
-@@ -3008,7 +3137,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -3065,7 +3194,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
  
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
@@ -547,7 +547,7 @@ index 95be581..cd2651c 100644
  
          /* remove the writer flag */
          rwlock->writer = 0;
-@@ -3041,19 +3170,17 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -3098,19 +3227,17 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          }
  
          /* remove this reader */
@@ -572,7 +572,7 @@ index 95be581..cd2651c 100644
              rwlock->writer || (mode == SR_LOCK_READ_UPGR)) {
          /* broadcast on condition */
          sr_cond_broadcast(&rwlock->cond);
-@@ -3061,10 +3188,12 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -3118,10 +3245,12 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
  
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "UnLocked");
      /* MUTEX UNLOCK */
@@ -590,10 +590,10 @@ index 95be581..cd2651c 100644
  }
  
 diff --git a/src/common.h b/src/common.h
-index 64d5cc8..7830cf9 100644
+index 35a616f..c36f482 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -63,9 +63,6 @@ struct srplg_ntf_s;
+@@ -66,9 +66,6 @@ struct srplg_ntf_s;
  /* macro for getting next ID for rwlock from a connection using main_shm */
  #define SR_RWLOCK_NEW_ID(conn) ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_rwlock_id)
  
@@ -643,10 +643,10 @@ index b440c34..eeb2559 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 3030872..12c638d 100644
+index 3a0893b..80d9c84 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1743,7 +1743,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1688,7 +1688,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
  
  #define PATH_LEN 128
      char path[PATH_LEN];
@@ -655,7 +655,7 @@ index 3030872..12c638d 100644
  
      /* unlocked access to the lock, possible wrong/stale values should not matter */
  
-@@ -1761,9 +1761,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1706,9 +1706,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
      memcpy(reader_cids, rwlock->readers, sizeof reader_cids);
  
      for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && reader_cids[i]; ++i) {
@@ -666,7 +666,7 @@ index 3030872..12c638d 100644
              continue;
          }
  
-@@ -1772,12 +1771,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1717,12 +1716,6 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
@@ -679,7 +679,7 @@ index 3030872..12c638d 100644
      }
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
-@@ -1847,12 +1840,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
+@@ -1792,12 +1785,12 @@ sr_modinfo_module_srmon_locks(sr_rwlock_t *rwlock, const char *list_name, struct
          }
      }
  
@@ -695,7 +695,7 @@ index 3030872..12c638d 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 23d1470..1d195c8 100644
+index 2cb22d1..d69e300 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -373,7 +373,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
@@ -753,10 +753,10 @@ index 23d1470..1d195c8 100644
              sr_munlock(&sub_shm->lock.mutex);
              *lock_lost = 1;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index bb46b2f..0f3661f 100644
+index 28c5a33..b69439c 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -120,7 +120,7 @@ endif()
+@@ -126,7 +126,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)

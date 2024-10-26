@@ -9,20 +9,20 @@ Subject: fix test failures and improve test infra
  3 files changed, 15 insertions(+), 23 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 3529321..bb46b2f 100644
+index c70f65e..28c5a33 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -83,9 +83,6 @@ if(ENABLE_TESTS)
-                 )
+@@ -92,9 +92,6 @@ if(ENABLE_TESTS)
+             )
          endif()
  
 -        if(${CMAKE_VERSION} VERSION_GREATER "3.7")
 -            set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
 -        endif()
      endforeach()
-     add_test(NAME test_sysrepocfg_oper_import COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-     set_property(TEST test_sysrepocfg_oper_import APPEND PROPERTY ENVIRONMENT
-@@ -141,9 +138,6 @@ if(ENABLE_VALGRIND_TESTS)
+     set(test_name test_sysrepocfg_oper_import)
+     add_test(NAME ${test_name} COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+@@ -144,9 +141,6 @@ if(ENABLE_VALGRIND_TESTS)
              )
          endif()
  

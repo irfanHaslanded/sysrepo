@@ -11,17 +11,50 @@ then looking up the schema. However the intention of this option is to
 provide a more convenient alternative, particularly in Rust applications
 (where this would currently require unsafe code).
 ---
+ src/common.c                 |  4 +--
+ src/common.h                 |  2 +-
  src/sysrepo.c                |  6 ++--
  src/sysrepo_types.h          | 10 ++++--
  tests/files/test-module.yang | 12 +++++--
  tests/test_get.c             | 77 +++++++++++++++++++++++++++++++++++++++++++-
- 4 files changed, 98 insertions(+), 7 deletions(-)
+ 6 files changed, 101 insertions(+), 10 deletions(-)
 
+diff --git a/src/common.c b/src/common.c
+index 750ce18..635ed10 100644
+--- a/src/common.c
++++ b/src/common.c
+@@ -4048,11 +4048,11 @@ sr_ev2api(sr_sub_event_t ev)
+ sr_error_info_t *
+ sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val)
+ {
+-    return sr_val_ly2sr_with_opts(node, SR_VAL_LY2SR_DEFAULT, sr_val);
++    return sr_val_ly2sr_with_opts(node, with_origin, SR_VAL_LY2SR_DEFAULT, sr_val);
+ }
+ 
+ sr_error_info_t *
+-sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val)
++sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_origin, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val)
+ {
+     sr_error_info_t *err_info = NULL;
+     char *ptr, *origin = NULL;
+diff --git a/src/common.h b/src/common.h
+index a883d35..efc8cd0 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -243,7 +243,7 @@ typedef enum sr_val_ly2sr_opts_e {
+  * @param[out] sr_val sysrepo value.
+  * @return err_info, NULL on success.
+  */
+-sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
++sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_origin, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
+ 
+ /*
+  * From sysrepo.c
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 15b7855..52e7412 100644
+index cd3663e..82f2d42 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2880,7 +2880,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2895,7 +2895,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      uint32_t i;
  
      SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
@@ -30,12 +63,12 @@ index 15b7855..52e7412 100644
  
      if (!timeout_ms) {
          timeout_ms = SR_OPER_CB_TIMEOUT;
-@@ -2923,7 +2923,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2955,7 +2955,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      }
  
      for (i = 0; i < set->count; ++i) {
--        if ((err_info = sr_val_ly2sr(set->dnodes[i], (*values) + i))) {
-+        if ((err_info = sr_val_ly2sr_with_opts(set->dnodes[i],
+-        if ((err_info = sr_val_ly2sr(set->dnodes[i], opts & SR_OPER_WITH_ORIGIN, (*values) + i))) {
++        if ((err_info = sr_val_ly2sr_with_opts(set->dnodes[i], opts & SR_OPER_WITH_ORIGIN,
 +                (opts & SR_UNDERLYING_VALUE) ? SR_VAL_LY2SR_UNDERLYING_VALUE : SR_VAL_LY2SR_DEFAULT,
 +                (*values) + i))) {
              goto cleanup;
@@ -96,7 +129,7 @@ index 55f5d1e..c8d85af 100644
        }
      }
 diff --git a/tests/test_get.c b/tests/test_get.c
-index 5b426dd..61ccfc1 100644
+index dd6e4b9..c7b8701 100644
 --- a/tests/test_get.c
 +++ b/tests/test_get.c
 @@ -49,6 +49,8 @@ setup(void **state)
@@ -199,7 +232,7 @@ index 5b426dd..61ccfc1 100644
  /* TEST */
  static void
  test_invalid(void **state)
-@@ -711,6 +785,7 @@ int
+@@ -774,6 +848,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

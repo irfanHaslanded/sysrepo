@@ -10,10 +10,10 @@ before we can downgrade to a read lock.
  2 files changed, 8 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.h b/src/common.h
-index fa299c7..a45a4bc 100644
+index 4066da8..43670e2 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -123,10 +123,10 @@ struct srplg_ntf_s;
+@@ -126,10 +126,10 @@ struct srplg_ntf_s;
  #define SR_SHMEXT_SUB_LOCK_TIMEOUT 15000
  
  /** default timeout for change subscription callback (ms) */

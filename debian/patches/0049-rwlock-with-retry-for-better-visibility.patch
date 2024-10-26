@@ -4,12 +4,12 @@ Subject: rwlock with retry for better visibility
 
 ---
  src/common.c  | 74 ++++++++++++++++++++++++++++++++++++++++++++++++++++-------
- src/common.h  |  3 +++
+ src/common.h  |  2 ++
  src/shm_sub.c | 17 ++++++++++++--
- 3 files changed, 84 insertions(+), 10 deletions(-)
+ 3 files changed, 83 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index dfdcbc6..95be581 100644
+index 47f17fd..b58eef0 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -145,6 +145,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
@@ -53,7 +53,7 @@ index dfdcbc6..95be581 100644
  sr_error_info_t *
  sr_ptr_add(pthread_mutex_t *ptr_lock, void ***ptrs, uint32_t *ptr_count, void *add_ptr)
  {
-@@ -2516,7 +2550,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2573,7 +2607,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
      }
      if (!has_mutex) {
          /* MUTEX LOCK */
@@ -62,7 +62,7 @@ index dfdcbc6..95be581 100644
      }
  
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locking");
-@@ -2544,7 +2578,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2601,7 +2635,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[0] || rwlock->writer)) {
              /* COND WAIT */
@@ -75,7 +75,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2582,7 +2620,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2639,7 +2677,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              }
  
              /* COND WAIT */
@@ -88,7 +88,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2620,7 +2662,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2677,7 +2719,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->upgr || rwlock->writer)) {
              /* COND WAIT */
@@ -101,7 +101,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2657,7 +2703,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2714,7 +2760,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->writer)) {
              /* COND WAIT */
@@ -114,7 +114,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2783,7 +2833,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2840,7 +2890,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          ret = 0;
          while (!ret && (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer)) {
              /* COND WAIT */
@@ -127,7 +127,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -2845,7 +2899,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2902,7 +2956,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              }
  
              /* COND WAIT */
@@ -140,7 +140,7 @@ index dfdcbc6..95be581 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -2958,7 +3016,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -3015,7 +3073,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          sr_timeouttime_get(&timeout_ts, timeout_ms);
  
          /* MUTEX LOCK */
@@ -150,19 +150,20 @@ index dfdcbc6..95be581 100644
              /* make it consistent */
              ret = pthread_mutex_consistent(&rwlock->mutex);
 diff --git a/src/common.h b/src/common.h
-index a45a4bc..64d5cc8 100644
+index 43670e2..35a616f 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1414,4 +1414,7 @@ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
+@@ -261,6 +261,8 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_or
+  * */
+ void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
- const char * sr_shm_dir_get(void);
- 
-+#define SR_COND_RETRY_STEP_SEC 3
 +int sr_cond_clockwait_retry(sr_cond_t *cond, pthread_mutex_t *mutex, struct timespec *timeout_abs);
 +
- #endif /* _COMMON_H */
+ 
+ /*
+  * From sysrepo.c
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 1de26be..23d1470 100644
+index 68af271..2cb22d1 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -351,6 +351,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

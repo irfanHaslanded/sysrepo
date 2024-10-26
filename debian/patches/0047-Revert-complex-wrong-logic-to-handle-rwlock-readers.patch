@@ -17,10 +17,10 @@ This reverts commit 10a14c2712dd7159eaa4d98ea758cc95b16658b5.
  1 file changed, 8 insertions(+), 26 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 82dc4a5..dfdcbc6 100644
+index cfed584..47f17fd 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -2392,10 +2392,6 @@ cleanup:
+@@ -2449,10 +2449,6 @@ cleanup:
  static void
  sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
  {
@@ -31,7 +31,7 @@ index 82dc4a5..dfdcbc6 100644
      /* decrease recursive read lock count */
      assert(rwlock->read_count[i]);
      --rwlock->read_count[i];
-@@ -2405,30 +2401,16 @@ sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
+@@ -2462,30 +2458,16 @@ sr_rwlock_reader_del_(sr_rwlock_t *rwlock, uint32_t i)
          return;
      }
  

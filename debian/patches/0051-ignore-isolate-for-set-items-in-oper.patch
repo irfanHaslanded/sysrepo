@@ -10,10 +10,10 @@ ignore isolate for set items in oper
  2 files changed, 58 insertions(+), 2 deletions(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4b007f4..e2ced83 100644
+index 9e850d5..2088991 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3395,10 +3395,16 @@ sr_free_values(sr_val_t *values, size_t count)
+@@ -3516,10 +3516,16 @@ sr_free_values(sr_val_t *values, size_t count)
  }
  
  API int
@@ -31,7 +31,7 @@ index 4b007f4..e2ced83 100644
  
      SR_CHECK_ARG_APIRET(!session || (!path && (!value || !value->xpath)) || SR_EDIT_DS_API_CHECK(session->ds, opts),
              session, err_info);
-@@ -3423,10 +3429,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
+@@ -3544,10 +3550,16 @@ sr_set_item(sr_session_ctx_t *session, const char *path, const sr_val_t *value,
  
  API int
  sr_set_item_str(sr_session_ctx_t *session, const char *path, const char *value, const char *origin,
@@ -49,7 +49,7 @@ index 4b007f4..e2ced83 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
-@@ -3474,6 +3486,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
+@@ -3595,6 +3607,11 @@ sr_delete_item(sr_session_ctx_t *session, const char *path, const sr_edit_option
      const char *operation;
      const struct lysc_node *snode;
      uint32_t temp_lo = 0;
@@ -62,7 +62,7 @@ index 4b007f4..e2ced83 100644
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
  
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index f5c26a4..fa32251 100644
+index 94743c3..ec1b033 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -162,6 +162,44 @@ clear_up(void **state)
@@ -110,7 +110,7 @@ index f5c26a4..fa32251 100644
  static int
  dummy_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
          uint32_t request_id, void *private_data)
-@@ -4211,6 +4249,7 @@ int
+@@ -4410,6 +4448,7 @@ int
  main(void)
  {
      const struct CMUnitTest tests[] = {

@@ -22,10 +22,10 @@ cherry-picked from 0063-Remove-unnecessary-read-locks-from-srmon.patch
  3 files changed, 68 insertions(+), 11 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 5cfbae3..c4b4a0a 100644
+index b9a214a..0bc181f 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1724,8 +1724,10 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1669,8 +1669,10 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
      sr_error_info_t *err_info = NULL;
      sr_cid_t cid, skip_read_upgr_cid = 0;
      uint32_t i;
@@ -36,7 +36,7 @@ index 5cfbae3..c4b4a0a 100644
  
      /* unlocked access to the lock, possible wrong/stale values should not matter */
  
-@@ -1740,13 +1742,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1685,13 +1687,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          skip_read_upgr_cid = cid;
      }
  
@@ -55,7 +55,7 @@ index 5cfbae3..c4b4a0a 100644
              continue;
          }
  
-@@ -1755,6 +1756,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
+@@ -1700,6 +1701,12 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
