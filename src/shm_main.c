@@ -419,7 +419,7 @@ sr_shmmain_conn_list_del(sr_cid_t cid)
             }
 
             /* cleanup local resources */
-            if (ptr->lock_fd > 0) {
+            if (ptr->lock_fd > -1) {
                 /* closing ANY file descriptor to a locked file releases all the locks */
                 close(ptr->lock_fd);
             } else {
@@ -453,7 +453,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
 {
     sr_error_info_t *err_info = NULL;
     sr_main_shm_t *main_shm;
-    char *shm_name = NULL, buf[128];
+    char *shm_name = NULL, *shm_dir = NULL;
     int creat = 0;
 
     if ((err_info = sr_path_main_shm(&shm_name))) {
@@ -469,8 +469,8 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
         }
 
         /* make sure the directory exists */
-        strcpy(buf, SR_SHM_DIR);
-        if ((err_info = sr_mkpath(buf, SR_DIR_PERM))) {
+        shm_dir = strdup(sr_shm_dir_get());
+        if ((err_info = sr_mkpath(shm_dir, SR_DIR_PERM))) {
             goto cleanup;
         }
 
@@ -540,5 +540,6 @@ cleanup:
         *created = creat;
     }
     free(shm_name);
+    free(shm_dir);
     return err_info;
 }

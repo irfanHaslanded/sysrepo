@@ -466,6 +466,9 @@ apply_change_done_thread(void *arg)
     assert_string_equal(str1, str2);
     free(str1);
 
+    /* wait before change #2 */
+    pthread_barrier_wait(&st->barrier);
+
     /* perform 2nd change */
     ret = sr_delete_item(sess, "/ietf-interfaces:interfaces", 0);
     assert_int_equal(ret, SR_ERR_OK);
@@ -475,15 +478,10 @@ apply_change_done_thread(void *arg)
     /* check current data tree */
     ret = sr_get_subtree(sess, "/ietf-interfaces:interfaces", 0, &subtree);
     assert_int_equal(ret, SR_ERR_OK);
-
     ret = lyd_print_mem(&str1, subtree->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS | LYD_PRINT_SHRINK);
     assert_int_equal(ret, 0);
-
     assert_null(str1);
     sr_release_data(subtree);
-
-    /* signal that we have finished applying changes */
-    pthread_barrier_wait(&st->barrier);
 
     sr_session_stop(sess);
     return NULL;
@@ -495,32 +493,57 @@ subscribe_change_done_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret, fd;
+    struct pollfd pfd = {.events = POLLIN};
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
 
-    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_change_done_cb, st, 0, 0, &subscr);
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_change_done_cb, st, 0, SR_SUBSCR_NO_THREAD,
+            &subscr);
     assert_int_equal(ret, SR_ERR_OK);
+    sr_get_event_pipe(subscr, &fd);
+    pfd.fd = fd;
 
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 1) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
+    /* wait until the change event */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
+
+    /* process the event */
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
 
     /* callback was shelved, process it again */
     ret = sr_subscription_process_events(subscr, NULL, NULL);
     assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
 
-    /* wait for the other thread to finish */
+    /* wait until the done event and process it */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 3);
+
+    /* ready for change #2 */
     pthread_barrier_wait(&st->barrier);
 
-    /* final invocation count check */
+    /* wait until the change event and process it */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
+
+    /* wait until the done event and process it */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 5);
 
     sr_unsubscribe(subscr);
@@ -1303,18 +1326,15 @@ apply_update_fail_thread(void *arg)
 
     /* perform the change (it should fail) */
     ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ret, SR_ERR_UNSUPPORTED);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
 
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(err_info->err_count, 2);
+    assert_int_equal(err_info->err_count, 1);
     assert_int_equal(err_info->err[0].err_code, SR_ERR_UNSUPPORTED);
     assert_string_equal(err_info->err[0].message, "Custom user callback error.%s");
     assert_null(err_info->err[0].error_format);
-    assert_int_equal(err_info->err[1].err_code, SR_ERR_CALLBACK_FAILED);
-    assert_string_equal(err_info->err[1].message, "User callback failed.");
-    assert_null(err_info->err[1].error_format);
 
     ret = sr_discard_changes(sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1841,7 +1861,7 @@ apply_change_fail_thread(void *arg)
 
     /* perform the change (it should fail) */
     ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ret, SR_ERR_UNSUPPORTED);
 
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 2);
@@ -1850,16 +1870,13 @@ apply_change_fail_thread(void *arg)
     /* no custom error message set */
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(err_info->err_count, 2);
+    assert_int_equal(err_info->err_count, 1);
     assert_int_equal(err_info->err[0].err_code, SR_ERR_UNSUPPORTED);
     assert_string_equal(err_info->err[0].message, "msg");
     assert_string_equal(err_info->err[0].error_format, "error1");
     assert_int_equal(sr_get_error_data(&err_info->err[0], 0, &size, (const void **)&str1), SR_ERR_OK);
     assert_int_equal(size, 6);
     assert_string_equal(str1, "empty");
-    assert_int_equal(err_info->err[1].err_code, SR_ERR_CALLBACK_FAILED);
-    assert_string_equal(err_info->err[1].message, "User callback failed.");
-    assert_null(err_info->err[1].error_format);
 
     ret = sr_discard_changes(sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -1880,7 +1897,7 @@ apply_change_fail_thread(void *arg)
     ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth52']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ret, SR_ERR_NOT_FOUND);
 
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
     assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called2), 3);
@@ -2086,12 +2103,12 @@ apply_change_fail2_thread(void *arg)
 
     /* perform the change (it should fail) */
     ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ret, SR_ERR_OPERATION_FAILED);
 
     /* no custom error message set */
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(err_info->err_count, 2);
+    assert_int_equal(err_info->err_count, 1);
     assert_string_equal(err_info->err[0].message, "Modifications are not supported for "
             "/ietf-interfaces:interfaces/interface/ietf-if-aug:bridge-port/enable-ingress-filtering");
     assert_null(err_info->err[0].error_format);
@@ -2306,12 +2323,12 @@ apply_change_fail_priority_thread(void *arg)
 
     /* perform the change (it should fail) */
     ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    assert_int_equal(ret, SR_ERR_OPERATION_FAILED);
 
     /* check error */
     ret = sr_session_get_error(sess, &err_info);
     assert_int_equal(ret, SR_ERR_OK);
-    assert_int_equal(err_info->err_count, 2);
+    assert_int_equal(err_info->err_count, 1);
     assert_int_equal(err_info->err[0].err_code, SR_ERR_OPERATION_FAILED);
     assert_string_equal(err_info->err[0].message, "Operation failed");
     assert_null(err_info->err[0].error_format);
@@ -5527,6 +5544,7 @@ module_change_timeout_cb(sr_session_ctx_t *session, uint32_t sub_id, const char 
         sr_event_t event, uint32_t request_id, void *private_data)
 {
     struct state *st = (struct state *)private_data;
+    int wait = 0;
 
     (void)session;
     (void)sub_id;
@@ -5541,13 +5559,13 @@ module_change_timeout_cb(sr_session_ctx_t *session, uint32_t sub_id, const char 
 
         /* time out, twice */
         pthread_barrier_wait(&st->barrier2);
-        pthread_barrier_wait(&st->barrier2);
+        wait = 1;
         break;
     case 1:
         /* we timeouted before, but returned success so now we get abort */
         assert_int_equal(event, SR_EV_ABORT);
 
-        pthread_barrier_wait(&st->barrier2);
+        wait = 1;
         break;
     case 2:
         assert_int_equal(event, SR_EV_CHANGE);
@@ -5560,6 +5578,10 @@ module_change_timeout_cb(sr_session_ctx_t *session, uint32_t sub_id, const char 
     }
 
     ATOMIC_INC_RELAXED(st->cb_called);
+    if (wait) {
+        /* wait after cb_called is increased */
+        pthread_barrier_wait(&st->barrier2);
+    }
     return SR_ERR_OK;
 }
 
@@ -5580,19 +5602,22 @@ apply_change_timeout_thread(void *arg)
     pthread_barrier_wait(&st->barrier);
 
     /* perform the change, time out but give it some time so that the callback is at least called) */
-    ret = sr_apply_changes(sess, 10);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    ret = sr_apply_changes(sess, 100);
+    assert_int_equal(ret, SR_ERR_TIME_OUT);
     pthread_barrier_wait(&st->barrier2);
 
     /* try again while the first callback is still executing (waiting) */
-    ret = sr_apply_changes(sess, 10);
-    assert_int_equal(ret, SR_ERR_CALLBACK_FAILED);
+    ret = sr_apply_changes(sess, 100);
+    assert_int_equal(ret, SR_ERR_TIME_OUT);
     pthread_barrier_wait(&st->barrier2);
 
     /* process abort */
     pthread_barrier_wait(&st->barrier2);
 
     /* signal that the commit is finished (by timeout) */
+    pthread_barrier_wait(&st->barrier);
+
+    /* wait for the other thread */
     pthread_barrier_wait(&st->barrier);
 
     /* finally apply changes successfully */
@@ -5621,7 +5646,7 @@ subscribe_change_timeout_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret;
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -5632,25 +5657,16 @@ subscribe_change_timeout_thread(void *arg)
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 2) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
-
     /* wait for the other thread to report timeout */
     pthread_barrier_wait(&st->barrier);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
 
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 4) && (count < 1500)) {
-        usleep(10000);
-        ++count;
-    }
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
-
-    /* wait for the other thread to finish */
+    /* signal that we checked cb_called */
     pthread_barrier_wait(&st->barrier);
+
+    /* wait for the other thread to finish applying changes */
+    pthread_barrier_wait(&st->barrier);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 4);
 
     sr_unsubscribe(subscr);
 
@@ -5759,7 +5775,8 @@ subscribe_done_timeout_thread(void *arg)
     struct state *st = (struct state *)arg;
     sr_session_ctx_t *sess;
     sr_subscription_ctx_t *subscr = NULL;
-    int count, ret;
+    int ret, fd;
+    struct pollfd pfd = {.events = POLLIN};
 
     ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
     assert_int_equal(ret, SR_ERR_OK);
@@ -5767,41 +5784,44 @@ subscribe_done_timeout_thread(void *arg)
     ret = sr_module_change_subscribe(sess, "test", NULL, module_done_timeout_cb, st, 0,
             SR_SUBSCR_DONE_ONLY | SR_SUBSCR_NO_THREAD, &subscr);
     assert_int_equal(ret, SR_ERR_OK);
+    sr_get_event_pipe(subscr, &fd);
+    pfd.fd = fd;
 
     /* signal that subscription was created */
     pthread_barrier_wait(&st->barrier);
 
+    /* "eat" the event but do not process it */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
+    ret = read(fd, &ret, 1);
+    assert_int_equal(ret, 1);
+
     /* sync #1 */
     pthread_barrier_wait(&st->barrier);
 
-    /* keep handling events */
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 1) && (count < 1500)) {
-        ret = sr_subscription_process_events(subscr, NULL, NULL);
-        assert_int_equal(ret, SR_ERR_OK);
+    /* wait until the event #1 */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
 
-        usleep(10000);
-        ++count;
-    }
+    /* process the event #1 */
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 1);
 
     /* sync #2 */
     pthread_barrier_wait(&st->barrier);
 
-    /* keep handling events */
-    count = 0;
-    while ((ATOMIC_LOAD_RELAXED(st->cb_called) < 2) && (count < 1500)) {
-        ret = sr_subscription_process_events(subscr, NULL, NULL);
-        assert_int_equal(ret, SR_ERR_OK);
+    /* wait until the event #2 */
+    ret = poll(&pfd, 1, 1000);
+    assert_int_equal(ret, 1);
 
-        usleep(10000);
-        ++count;
-    }
+    /* process the event #2 */
+    ret = sr_subscription_process_events(subscr, NULL, NULL);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
 
     /* wait for the other thread to finish */
     pthread_barrier_wait(&st->barrier);
-
-    /* check callback call count */
-    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 2);
 
     sr_unsubscribe(subscr);
     sr_session_stop(sess);

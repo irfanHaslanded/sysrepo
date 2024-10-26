@@ -60,18 +60,19 @@ if(ENABLE_TESTS)
         test_multi_connection test_nacm test_rotation test_sub_notif test_plugin)
 
     foreach(test_name IN LISTS tests)
-        add_executable(${test_name} ${test_sources} ${test_name}.c)
+        # link srobj to get the number of DS plugins available
+        # this number can fluctuate depending on the presence of optional libraries
+        if(${test_name} STREQUAL "test_plugin")
+            add_executable(${test_name} ${test_sources} ${test_name}.c $<TARGET_OBJECTS:srobj>)
+        else()
+            add_executable(${test_name} ${test_sources} ${test_name}.c)
+        endif()
     endforeach()
 
     # set common attributes of all tests
     foreach(test_name IN LISTS tests)
         target_link_libraries(${test_name} ${CMOCKA_LIBRARIES} sysrepo)
 
-        # link srobj to get the number of DS plugins available
-        # this number can fluctuate depending on the presence of optional libraries
-        if(${test_name} STREQUAL "test_plugin")
-            target_link_libraries(${test_name} srobj)
-        endif()
         add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${test_name}>)
         set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
             "MALLOC_CHECK_=3"
@@ -83,7 +84,8 @@ if(ENABLE_TESTS)
         # avoid loading installed plugins by sysrepo-plugind
         if(${test_name} STREQUAL "test_rotation")
             set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
-                "SRPD_PLUGINS_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}/testing")
+                "SRPD_PLUGINS_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}/testing"
+            )
         endif()
 
         if(${CMAKE_VERSION} VERSION_GREATER "3.7")
@@ -104,6 +106,7 @@ if(ENABLE_PERF_TESTS)
     set_property(TEST sr_perf_1000_10 APPEND PROPERTY ENVIRONMENT
         "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/sr_perf"
         "SYSREPO_SHM_PREFIX=_tests_sr_sr_perf"
+        "SR_ENV_RUN_TESTS=1"
     )
 
     if(${CMAKE_VERSION} VERSION_GREATER "3.7")
@@ -125,7 +128,8 @@ if(ENABLE_VALGRIND_TESTS)
         # avoid loading installed plugins by sysrepo-plugind
         if(${test_name} STREQUAL "test_rotation_valgrind")
             set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
-                "SRPD_PLUGINS_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}/testing")
+                "SRPD_PLUGINS_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}/testing"
+            )
         endif()
 
         if(${CMAKE_VERSION} VERSION_GREATER "3.7")
