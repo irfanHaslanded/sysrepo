@@ -1,3 +1,25 @@
+sysrepo (2.12.0-1) unstable; urgency=medium
+
+  [ Rob Shearman ]
+  * Fix use of SR_UNDERLING_VALUE with unions
+
+  [ IrfanMohammad ]
+  * shm ext UPDATE do not recover dead subs during notify (#3332)
+  * log error when handler thread exits with failure
+  * sysrepo UPDATE runtime configurable shm dir (#3424)
+  * - debian rules set CMAKE_BUILD_WITH_INSTALL_RPATH ON
+  * bugfix strncpy null term of maxlen SR_PATH_MAX
+  * bugfix Wunused-result in test_process.c
+  * bugfix cppcheck errors
+  * Use snprintf instead of strncpy to avoid confusion
+  * Add PTHREAD_MUTEX_ERRORCHECK attr
+  * sysrepo UPDATE more details for no datastore changes message (#3433)
+  * tests UPDATE increase timeout to 100ms (#3435)
+  * update patches for upstream/v2.12.0
+  * tests debian/rules set LD_LIBRARY_PATH
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Sat, 26 Oct 2024 21:28:50 +0000
+
 sysrepo (2.11.5-1) unstable; urgency=medium
 
   [ Michal Vasko ]
