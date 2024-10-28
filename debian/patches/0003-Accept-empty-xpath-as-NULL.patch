@@ -7,10 +7,10 @@ Subject: Accept empty xpath "" as NULL
  1 file changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 6df13e5..0beba31 100644
+index ffc1215..74e9421 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5301,6 +5301,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5423,6 +5423,11 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
              !callback || !subscription, session, err_info);
  
@@ -22,7 +22,7 @@ index 6df13e5..0beba31 100644
      SR_MODINFO_INIT(mod_info, session->conn, SR_DS_RUNNING, SR_DS_RUNNING);
  
      conn = session->conn;
-@@ -5467,6 +5472,11 @@ sr_module_change_sub_modify_xpath(sr_subscription_ctx_t *subscription, uint32_t
+@@ -5589,6 +5594,11 @@ sr_module_change_sub_modify_xpath(sr_subscription_ctx_t *subscription, uint32_t
  
      SR_CHECK_ARG_APIRET(!subscription || !sub_id, NULL, err_info);
  
@@ -34,7 +34,7 @@ index 6df13e5..0beba31 100644
      /* SUBS WRITE LOCK */
      if ((err_info = sr_rwlock(&subscription->subs_lock, SR_SUBSCR_LOCK_TIMEOUT, SR_LOCK_WRITE, subscription->conn->cid,
              __func__, NULL, NULL))) {
-@@ -5521,7 +5531,7 @@ _sr_get_changes_iter(sr_session_ctx_t *session, const char *xpath, int dup, sr_c
+@@ -5643,7 +5653,7 @@ _sr_get_changes_iter(sr_session_ctx_t *session, const char *xpath, int dup, sr_c
  {
      sr_error_info_t *err_info = NULL;
  

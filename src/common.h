@@ -33,6 +33,9 @@ struct sr_mod_info_mod_s;
 struct srplg_ds_s;
 struct srplg_ntf_s;
 
+/* max length for env variables specifying paths **/
+#define SR_PATH_MAX 256
+
 /** macro for mutex align check */
 #define SR_MUTEX_ALIGN_CHECK(mutex) ((uintptr_t)mutex % sizeof(void *))
 
@@ -76,7 +79,7 @@ struct srplg_ntf_s;
 #define SR_SUBSHM_LOCK_TIMEOUT 10000
 
 /** timeout for locking ext SHM lock; time that truncating, writing into SHM but even recovering may take (ms) */
-#define SR_EXT_LOCK_TIMEOUT 500
+#define SR_EXT_LOCK_TIMEOUT 2000
 
 /** timeout for obtaining write lock after an event timed out */
 #define SR_EVENT_TIMEOUT_LOCK_TIMEOUT 50
@@ -1108,10 +1111,11 @@ sr_event_t sr_ev2api(sr_sub_event_t ev);
  * @brief Transform a libyang node into sysrepo value.
  *
  * @param[in] node libyang node to transform.
+ * @param[in] with_origin Whether to fill the origin as well.
  * @param[out] sr_val sysrepo value.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val);
+sr_error_info_t *sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val);
 
 /**
  * @brief Transform a sysrepo value into libyang string value.
@@ -1144,10 +1148,12 @@ sr_error_info_t *sr_val_sr2ly(struct ly_ctx *ctx, const char *xpath, const char 
  *
  * @param[in] src_parent Source parent.
  * @param[in] depth Depth to duplicate.
+ * @param[in] options libyang dup options.
  * @param[in,out] trg_parent Target parent to add children to.
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, struct lyd_node *trg_parent);
+sr_error_info_t *sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, uint32_t options,
+        struct lyd_node *trg_parent);
 
 /**
  * @brief Trim subtree to the specified depth.
@@ -1335,15 +1341,6 @@ sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, con
         sr_datastore_t ds, const char **xpaths, uint32_t xpath_count, struct lyd_node **data);
 
 /**
- * @brief Load operational data (edit) loaded from a SHM for a specific module.
- *
- * @param[in] mod Mod info mod.
- * @param[out] edit Loaded edit to return.
- * @return err_info, NULL on success.
- */
-sr_error_info_t *sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit);
-
-/**
  * @brief Learn CIDs and PIDs of all the live connections.
  *
  * @param[out] cids Optional array of CIDs.
@@ -1378,5 +1375,11 @@ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_
  * @return 1 if SR_ENV_RUN_TESTS is set in the env, 0 otherwise.
  */
 int sr_is_prod_env(void);
+
+/**
+ * @brief Get the SHM dir as determined by SYSREPO_SHM_DIR env var else default SR_SHM_DIR
+ * @return Path to the current SHM directory.
+ */
+const char *sr_shm_dir_get(void);
 
 #endif /* _COMMON_H */

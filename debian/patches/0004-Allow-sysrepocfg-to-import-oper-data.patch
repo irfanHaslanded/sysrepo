@@ -134,19 +134,19 @@ index 34213a6..b541566 100644
      sr_disconnect(conn);
      return rc;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index f5df713..179efaa 100644
+index 4ac5717..f630800 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -93,6 +93,14 @@ if(ENABLE_TESTS)
+@@ -92,6 +92,14 @@ if(ENABLE_TESTS)
              set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
          endif()
      endforeach()
-+    add_test(NAME test_sysrepocfg_oper_import COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-+    set_property(TEST test_sysrepocfg_oper_import APPEND PROPERTY ENVIRONMENT
++    set(test_name test_sysrepocfg_oper_import)
++    add_test(NAME ${test_name} COMMAND ${PROJECT_SOURCE_DIR}/tests/test_sysrepocfg_oper.sh WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
++    set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT
 +        "SYSREPO_REPOSITORY_PATH=${PROJECT_BINARY_DIR}/test_repositories/${test_name}"
 +        "SYSREPO_SHM_PREFIX=_tests_sr_${test_name}"
 +        "SR_ENV_RUN_TESTS=1"
-+        "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}"
 +    )
 +
  endif()

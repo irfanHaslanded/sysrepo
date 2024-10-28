@@ -36,16 +36,14 @@ Also fix wrong assumption in new_wrlock about cleared events
 cherry-picked from 0068-Cache-sr_mod_oper_sub_t-shm-during-pull-callback.patch
 ---
  src/modinfo.c   | 83 +++++++++++++++++++++++++++++++++++++++------------------
- src/shm_ext.c   | 41 ++++++++++------------------
- src/shm_ext.h   |  7 +++--
- src/shm_sub.c   | 23 +++++++++-------
+ src/shm_sub.c   | 19 +++++++------
  src/shm_sub.h   |  2 +-
  src/shm_types.h |  9 +++++++
  src/subscr.c    |  6 ++---
- 7 files changed, 101 insertions(+), 70 deletions(-)
+ 5 files changed, 81 insertions(+), 38 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index f3b2c00..d4b75b5 100644
+index 3a5b8f1..4204716 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1030,7 +1030,7 @@ cleanup:
@@ -254,133 +252,8 @@ index f3b2c00..d4b75b5 100644
      free(request_xpaths);
      free(parent_xpath);
      ly_set_free(set, NULL);
-diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 42a7c42..728ebd8 100644
---- a/src/shm_ext.c
-+++ b/src/shm_ext.c
-@@ -896,7 +896,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
-             xpath_sub = &((sr_mod_oper_get_xpath_sub_t *)(conn->ext_shm.addr + shm_sub->xpath_subs))[j];
-             if (!sr_conn_is_alive(xpath_sub->cid)) {
-                 /* subscription is dead, recover it */
--                if ((err_info = sr_shmext_oper_get_sub_stop(conn, shm_mod, i, j, 1, SR_LOCK_WRITE, 1))) {
-+                if ((err_info = sr_shmext_oper_get_sub_stop(conn, shm_mod, i, j, SR_LOCK_WRITE, 0))) {
-                     goto cleanup_unlock;
-                 }
-             } else {
-@@ -1098,28 +1098,21 @@ cleanup_unlock:
- }
- 
- sr_error_info_t *
--sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_idx1, uint32_t del_idx2, int del_evpipe,
--        sr_lock_mode_t has_locks, int recovery)
-+sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_idx1, uint32_t del_idx2,
-+        sr_lock_mode_t has_locks, uint32_t sub_id)
- {
-     sr_error_info_t *err_info = NULL, *tmp_err;
-     sr_mod_oper_get_sub_t *shm_sub;
-     sr_mod_oper_get_xpath_sub_t *xpath_sub;
-     char *path;
--    uint32_t evpipe_num, sub_id;
-+    uint32_t evpipe_num;
-+    int del_evpipe = 1;
- 
--    assert((has_locks == SR_LOCK_READ) || (has_locks == SR_LOCK_WRITE));
-+    assert((has_locks == SR_LOCK_NONE) || (has_locks == SR_LOCK_WRITE));
- 
-     /* get sub write lock keeping the lock order */
- 
--    if (has_locks == SR_LOCK_READ) {
--        /* remember also the sub ID */
--        shm_sub = (sr_mod_oper_get_sub_t *)(conn->ext_shm.addr + shm_mod->oper_get_subs);
--        xpath_sub = (sr_mod_oper_get_xpath_sub_t *)(conn->ext_shm.addr + shm_sub[del_idx1].xpath_subs);
--        sub_id = xpath_sub[del_idx2].sub_id;
--
--        /* EXT READ UNLOCK */
--        sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 0, __func__);
--
-+    if (has_locks == SR_LOCK_NONE) {
-         /* OPER GET SUB READ UNLOCK */
-         sr_rwunlock(&shm_mod->oper_get_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
- 
-@@ -1138,20 +1131,19 @@ sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
-     shm_sub = (sr_mod_oper_get_sub_t *)(conn->ext_shm.addr + shm_mod->oper_get_subs);
- 
-     /* check that the subscription has not been removed while we were not holding the locks */
--    if ((has_locks == SR_LOCK_READ) && (shm_mod->oper_get_sub_count <= del_idx1)) {
-+    if ((has_locks == SR_LOCK_NONE) && (shm_mod->oper_get_sub_count <= del_idx1)) {
-         xpath_sub = NULL;
-     } else {
-         xpath_sub = (sr_mod_oper_get_xpath_sub_t *)(conn->ext_shm.addr + shm_sub[del_idx1].xpath_subs);
-     }
--    if ((has_locks == SR_LOCK_READ) && (!xpath_sub || (shm_sub[del_idx1].xpath_sub_count <= del_idx2) ||
-+
-+    if ((has_locks == SR_LOCK_NONE) && (!xpath_sub || (shm_sub[del_idx1].xpath_sub_count <= del_idx2) ||
-             (xpath_sub[del_idx2].sub_id != sub_id))) {
-         /* already removed, do nothing */
-         del_evpipe = 0;
-     } else {
--        if (recovery) {
--            SR_LOG_WRN("Recovering module \"%s\" operational get subscription of CID %" PRIu32 ".",
--                    conn->mod_shm.addr + shm_mod->name, xpath_sub[del_idx2].cid);
--        }
-+        SR_LOG_WRN("Recovering module \"%s\" operational get subscription of CID %" PRIu32 ".",
-+                conn->mod_shm.addr + shm_mod->name, xpath_sub[del_idx2].cid);
-         evpipe_num = xpath_sub[del_idx2].evpipe_num;
- 
-         /* remove the subscription */
-@@ -1160,7 +1152,7 @@ sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
-         }
-     }
- 
--    if (has_locks == SR_LOCK_READ) {
-+    if (has_locks == SR_LOCK_NONE) {
-         /* EXT READ UNLOCK */
-         sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
- 
-@@ -1169,11 +1161,6 @@ sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
-                 __func__, NULL, NULL))) {
-             sr_errinfo_merge(&err_info, tmp_err);
-         }
--
--        /* EXT READ LOCK */
--        if ((tmp_err = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
--            sr_errinfo_merge(&err_info, tmp_err);
--        }
-     }
- 
-     if (del_evpipe) {
-@@ -1930,7 +1917,7 @@ sr_shmext_recover_sub_oper_get(sr_conn_ctx_t *conn, sr_mod_t *shm_mod)
-         shm_sub = &((sr_mod_oper_get_sub_t *)(conn->ext_shm.addr + shm_mod->oper_get_subs))[i];
- 
-         for (count = shm_sub->xpath_sub_count; count; --count) {
--            if ((tmp_err = sr_shmext_oper_get_sub_stop(conn, shm_mod, i, count - 1, 1, SR_LOCK_WRITE, 1))) {
-+            if ((tmp_err = sr_shmext_oper_get_sub_stop(conn, shm_mod, i, count - 1, SR_LOCK_WRITE, 0))) {
-                 sr_errinfo_merge(&err_info, tmp_err);
-             }
-         }
-diff --git a/src/shm_ext.h b/src/shm_ext.h
-index 3a1c368..df3503c 100644
---- a/src/shm_ext.h
-+++ b/src/shm_ext.h
-@@ -150,13 +150,12 @@ sr_error_info_t *sr_shmext_oper_get_sub_del(sr_conn_ctx_t *conn, sr_mod_t *shm_m
-  * @param[in] shm_mod SHM module with subscriptions.
-  * @param[in] del_idx1 Index of the list of subscriptions with the same XPath.
-  * @param[in] del_idx2 Index of the XPath subscription to free.
-- * @param[in] del_evpipe Whether to also remove the evpipe.
-- * @param[in] has_locks Mode of held CHANGE SUB and EXT locks.
-- * @param[in] recovery Whether to print subscription recovery warning.
-+ * @param[in] has_locks Mode of held EXT lock.
-+ * @param[in] sub_id id to delete if locks are not held.
-  * @return err_info, NULL on success.
-  */
- sr_error_info_t *sr_shmext_oper_get_sub_stop(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_idx1, uint32_t del_idx2,
--        int del_evpipe, sr_lock_mode_t has_locks, int recovery);
-+        sr_lock_mode_t has_locks, uint32_t sub_id);
- 
- /**
-  * @brief Add main SHM module operational poll subscription.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 918a9c5..5dc600c 100644
+index d1be1c9..d936e97 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -374,6 +374,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
@@ -421,7 +294,7 @@ index 918a9c5..5dc600c 100644
              }
              SR_ERRINFO_COND(&err_info, __func__, ret);
          }
-@@ -2067,7 +2069,7 @@ cleanup:
+@@ -2051,7 +2053,7 @@ cleanup:
  
  sr_error_info_t *
  sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, const char *request_xpath,
@@ -430,7 +303,7 @@ index 918a9c5..5dc600c 100644
          uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **data, sr_error_info_t **cb_err_info)
  {
      sr_error_info_t *err_info = NULL;
-@@ -2077,6 +2079,7 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+@@ -2061,14 +2063,15 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
      char *parent_lyb = NULL;
      struct lyd_node *oper_data;
      sr_cid_t cid;
@@ -438,34 +311,18 @@ index 918a9c5..5dc600c 100644
  
      if (!request_xpath) {
          request_xpath = "";
-@@ -2084,13 +2087,13 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+     }
      cid = conn->cid;
  
-     i = 0;
--    while (i < oper_get_subs[idx1].xpath_sub_count) {
+-    for (i = 0; i < oper_get_subs[idx1].xpath_sub_count; i++) {
 -        xpath_sub = &((sr_mod_oper_get_xpath_sub_t *)(conn->ext_shm.addr + oper_get_subs[idx1].xpath_subs))[i];
-+    while (i < cached_sub_count) {
++    for (i=0; i < cached_sub_count; i++) {
 +        xpath_sub = &(cached_subs[idx1].xpath_subs[i]);
  
          /* check subscription aliveness */
          if (!sr_conn_is_alive(xpath_sub->cid)) {
-             /* recover the subscription */
--            if ((err_info = sr_shmext_oper_get_sub_stop(conn, mod->shm_mod, idx1, i, 1, SR_LOCK_READ, 1))) {
-+            if ((err_info = sr_shmext_oper_get_sub_stop(conn, mod->shm_mod, idx1, i, SR_LOCK_NONE, xpath_sub->sub_id))) {
-                 sr_errinfo_free(&err_info);
-             }
- 
-@@ -2098,6 +2101,8 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
-             if ((err_info = sr_shmsub_oper_poll_get_sub_change_notify_evpipe(conn, mod->ly_mod->name, xpath))) {
-                 sr_errinfo_free(&err_info);
-             }
-+            /* these are cached subs, we must advance as stop only fixes the shm */
-+            i++;
-             continue;
-         }
- 
 diff --git a/src/shm_sub.h b/src/shm_sub.h
-index 0cee3e6..42cf05d 100644
+index 0625a5d..8958a46 100644
 --- a/src/shm_sub.h
 +++ b/src/shm_sub.h
 @@ -176,7 +176,7 @@ sr_error_info_t *sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_
@@ -478,7 +335,7 @@ index 0cee3e6..42cf05d 100644
  
  /**
 diff --git a/src/shm_types.h b/src/shm_types.h
-index a16fef5..d8a3392 100644
+index 6b4ea95..f3ec49e 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
 @@ -238,6 +238,15 @@ typedef struct {
@@ -498,7 +355,7 @@ index a16fef5..d8a3392 100644
   * @brief Ext SHM module operational poll subscription.
   */
 diff --git a/src/subscr.c b/src/subscr.c
-index ed9f88d..e856911 100644
+index c618bb6..3699b42 100644
 --- a/src/subscr.c
 +++ b/src/subscr.c
 @@ -46,7 +46,7 @@ sr_subscr_change_sub_add(sr_subscription_ctx_t *subscr, uint32_t sub_id, sr_sess

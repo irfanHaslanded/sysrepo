@@ -7,15 +7,14 @@ set by detecting when the shared memory prefix is set to be different
 from the default (via environment variable) and not attempting to
 change the group of data files in this case.
 ---
- src/common.c              | 2 +-
- src/plugins/common_json.c | 7 +++++++
- 2 files changed, 8 insertions(+), 1 deletion(-)
+ src/common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/common.c b/src/common.c
-index 6a5db84..bcbe1da 100644
+index a41a254..6ef6c43 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5645,7 +5645,7 @@ sr_is_prod_env(void)
+@@ -5712,7 +5712,7 @@ sr_is_prod_env(void)
      static int sr_prod_env = -1;
  
      if (sr_prod_env < 0) {
@@ -24,28 +23,3 @@ index 6a5db84..bcbe1da 100644
      }
      return sr_prod_env;
  }
-diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index f18887c..169b242 100644
---- a/src/plugins/common_json.c
-+++ b/src/plugins/common_json.c
-@@ -125,6 +125,12 @@ sr_error_info_t *
- srpjson_shm_prefix(const char *plg_name, const char **prefix)
- {
-     sr_error_info_t *err_info = NULL;
-+    static char * srlyb_shm_prefix_cached = NULL;
-+
-+    if (srlyb_shm_prefix_cached) {
-+        *prefix = srlyb_shm_prefix_cached;
-+        return err_info;
-+    }
- 
-     *prefix = getenv(SR_SHM_PREFIX_ENV);
-     if (*prefix == NULL) {
-@@ -135,6 +141,7 @@ srpjson_shm_prefix(const char *plg_name, const char **prefix)
-         return err_info;
-     }
- 
-+    srlyb_shm_prefix_cached = *prefix;
-     return NULL;
- }
- 

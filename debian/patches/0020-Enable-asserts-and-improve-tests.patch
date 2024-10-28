@@ -51,7 +51,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 4ed3279..42e8d10 100644
+index 3d685f7..b38b657 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -71,10 +71,10 @@ index 4ed3279..42e8d10 100644
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
      set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ab1d975..f75d9f4 100644
+index 1c9846a..83455b5 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7348,7 +7348,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7473,7 +7473,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -83,7 +83,7 @@ index ab1d975..f75d9f4 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7358,8 +7358,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7483,8 +7483,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -94,7 +94,7 @@ index ab1d975..f75d9f4 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7373,6 +7374,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7498,6 +7499,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;
@@ -103,7 +103,7 @@ index ab1d975..f75d9f4 100644
          if ((ret = sr_set_module_ds_access(conn, module_name, i, owner, group, perm))) {
              return ret;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 179efaa..9bbb669 100644
+index f630800..079117c 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -55,9 +55,13 @@ if(ENABLE_TESTS)
@@ -122,7 +122,7 @@ index 179efaa..9bbb669 100644
 +    endforeach(test_file)
  
      foreach(test_name IN LISTS tests)
-         add_executable(${test_name} ${test_sources} ${test_name}.c)
+         # link srobj to get the number of DS plugins available
 @@ -125,7 +129,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)

@@ -302,7 +302,7 @@ sr_connect(const sr_conn_options_t opts, sr_conn_ctx_t **conn_p)
             goto cleanup_unlock;
         }
 
-        err_info = sr_shmext_rpc_sub_add(conn, &shm_rpc->lock, &shm_rpc->subs, &shm_rpc->sub_count, rpc_path, 0,
+        err_info = sr_shmext_rpc_sub_add(conn, &shm_rpc->subs, &shm_rpc->sub_count, rpc_path, 0,
                 rpc_path, SR_RPC_FACTORY_RESET_INT_PRIO, 0, -1, 0);
 
         /* RPC SUB WRITE UNLOCK */
@@ -491,36 +491,29 @@ API int
 sr_get_plugins(sr_conn_ctx_t *conn, const char ***ds_plugins, const char ***ntf_plugins)
 {
     sr_error_info_t *err_info = NULL;
-    uint32_t i, idx;
+    uint32_t i;
 
     SR_CHECK_ARG_APIRET(!conn, NULL, err_info);
 
     if (ds_plugins) {
-        *ds_plugins = malloc((sr_ds_plugin_int_count() + conn->ds_handle_count + 1) * sizeof **ds_plugins);
+        /* internal plugins are copied into every connection */
+        *ds_plugins = malloc((conn->ds_handle_count + 1) * sizeof **ds_plugins);
         SR_CHECK_MEM_GOTO(!*ds_plugins, err_info, cleanup);
 
-        idx = 0;
-        for (i = 0; i < sr_ds_plugin_int_count(); ++i) {
-            (*ds_plugins)[idx++] = sr_internal_ds_plugins[i]->name;
-        }
         for (i = 0; i < conn->ds_handle_count; ++i) {
-            (*ds_plugins)[idx++] = conn->ds_handles[i].plugin->name;
+            (*ds_plugins)[i] = conn->ds_handles[i].plugin->name;
         }
-        (*ds_plugins)[idx] = NULL;
+        (*ds_plugins)[i] = NULL;
     }
 
     if (ntf_plugins) {
-        *ntf_plugins = malloc((sr_ntf_plugin_int_count() + conn->ntf_handle_count + 1) * sizeof **ntf_plugins);
+        *ntf_plugins = malloc((conn->ntf_handle_count + 1) * sizeof **ntf_plugins);
         SR_CHECK_MEM_GOTO(!*ntf_plugins, err_info, cleanup);
 
-        idx = 0;
-        for (i = 0; i < sr_ntf_plugin_int_count(); ++i) {
-            (*ntf_plugins)[idx++] = sr_internal_ntf_plugins[i]->name;
-        }
         for (i = 0; i < conn->ntf_handle_count; ++i) {
-            (*ntf_plugins)[idx++] = conn->ntf_handles[i].plugin->name;
+            (*ntf_plugins)[i] = conn->ntf_handles[i].plugin->name;
         }
-        (*ntf_plugins)[idx] = NULL;
+        (*ntf_plugins)[i] = NULL;
     }
 
 cleanup:
@@ -647,8 +640,8 @@ cleanup:
     sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
     if (cb_err_info) {
         /* return callback error if some was generated */
-        sr_errinfo_merge(&err_info, cb_err_info);
-        sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+        assert(!err_info);
+        err_info = cb_err_info;
     }
     return sr_api_ret(NULL, err_info);
 }
@@ -1220,14 +1213,35 @@ sr_session_get_connection(sr_session_ctx_t *session)
 API const char *
 sr_get_repo_path(void)
 {
+    static char sr_repo_path[SR_PATH_MAX] = "";
     char *value;
+
+    if (sr_repo_path[0]) {
+        return sr_repo_path;
+    }
 
     value = getenv(SR_REPO_PATH_ENV);
     if (value) {
-        return value;
+        if (strlen(value) < SR_PATH_MAX) {
+            snprintf(sr_repo_path, SR_PATH_MAX, "%s", value);
+        } else {
+            SR_LOG_WRN(SR_REPO_PATH_ENV " (%s) longer than %u, using default %s instead",
+                    value, SR_PATH_MAX, SR_REPO_PATH);
+        }
+    }
+    if (!sr_repo_path[0]) {
+        if (strlen(SR_REPO_PATH) >= SR_PATH_MAX) {
+            value = "/etc/sysrepo";
+            sr_log(SR_LL_ERR, "SR_REPO_PATH (%s) is longer than maximum allowed %u - defaulting to %s",
+                    SR_REPO_PATH, SR_PATH_MAX, value);
+
+        } else {
+            value = SR_REPO_PATH;
+        }
+        snprintf(sr_repo_path, SR_PATH_MAX, "%s", value);
     }
 
-    return SR_REPO_PATH;
+    return sr_repo_path;
 }
 
 /**
@@ -2826,7 +2840,7 @@ sr_get_item(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
     *value = malloc(sizeof **value);
     SR_CHECK_MEM_GOTO(!*value, err_info, cleanup);
 
-    if ((err_info = sr_val_ly2sr(set->dnodes[0], *value))) {
+    if ((err_info = sr_val_ly2sr(set->dnodes[0], 0, *value))) {
         goto cleanup;
     }
 
@@ -2877,6 +2891,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms, 
     sr_error_info_t *err_info = NULL;
     struct ly_set *set = NULL;
     struct sr_mod_info_s mod_info;
+    struct lyd_node *node;
     uint32_t i;
 
     SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
@@ -2912,6 +2927,23 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms, 
         goto cleanup;
     }
 
+    /* ignore unwanted results */
+    if (session->ds == SR_DS_OPERATIONAL) {
+        i = 0;
+        while (i < set->count) {
+            node = set->dnodes[i];
+            if ((node->schema->flags & LYS_CONFIG_R) && (opts & SR_OPER_NO_STATE)) {
+                /* ignored state node */
+                ly_set_rm_index_ordered(set, i, NULL);
+            } else if ((node->schema->flags & LYS_CONFIG_W) && (opts & SR_OPER_NO_CONFIG)) {
+                /* ignored config node */
+                ly_set_rm_index_ordered(set, i, NULL);
+            } else {
+                ++i;
+            }
+        }
+    }
+
     /* apply NACM */
     if ((err_info = sr_nacm_get_node_set_read_filter(session, set))) {
         goto cleanup;
@@ -2923,7 +2955,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms, 
     }
 
     for (i = 0; i < set->count; ++i) {
-        if ((err_info = sr_val_ly2sr(set->dnodes[i], (*values) + i))) {
+        if ((err_info = sr_val_ly2sr(set->dnodes[i], opts & SR_OPER_WITH_ORIGIN, (*values) + i))) {
             goto cleanup;
         }
         ++(*value_cnt);
@@ -2944,6 +2976,76 @@ cleanup:
         *value_cnt = 0;
     }
     return sr_api_ret(session, err_info);
+}
+
+/**
+ * @brief Trim all configuration/state nodes/origin from the data, recursively.
+ *
+ * @param[in] subtree Subtree root of the data to trim.
+ * @param[in] get_oper_opts Get oper data options.
+ * @param[in,out] first First top-level sibling, may be adjusted.
+ * @return 1 if @p subtree was trimmed;
+ * @return 0 otherwise.
+ */
+static int
+sr_oper_data_trim_r(struct lyd_node *subtree, sr_get_oper_flag_t get_oper_opts, struct lyd_node **first)
+{
+    struct lyd_node *next, *elem;
+
+    if (!(get_oper_opts & (SR_OPER_NO_STATE | SR_OPER_NO_CONFIG))) {
+        /* nothing to trim */
+        return 0;
+    }
+
+    if (lysc_is_key(subtree->schema)) {
+        return 0;
+    }
+
+    if (subtree->schema->flags & LYS_CONFIG_R) {
+        /* state subtree */
+        if (get_oper_opts & SR_OPER_NO_STATE) {
+            /* free it whole */
+            sr_lyd_free_tree_safe(subtree, first);
+            return 1;
+        }
+
+        /* no need to go into state children */
+        return 0;
+    }
+
+    /* trim all our children */
+    LY_LIST_FOR_SAFE(lyd_child_no_keys(subtree), next, elem) {
+        sr_oper_data_trim_r(elem, get_oper_opts, first);
+    }
+
+    if ((subtree->schema->flags & LYS_CONFIG_W) && (get_oper_opts & SR_OPER_NO_CONFIG) && !lyd_child_no_keys(subtree)) {
+        /* config-only subtree (config node with no children) */
+        sr_lyd_free_tree_safe(subtree, first);
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Trim all configuration/state nodes/origin from the data based on options.
+ *
+ * @param[in] set Set of results to consider.
+ * @param[in] get_oper_opts Get oper data options.
+ * @param[in,out] first First top-level sibling, may be adjusted.
+ */
+static void
+sr_oper_data_trim(struct ly_set *set, sr_get_oper_flag_t get_oper_opts, struct lyd_node **first)
+{
+    uint32_t i = 0;
+
+    while (i < set->count) {
+        if (sr_oper_data_trim_r(set->dnodes[i], get_oper_opts, first)) {
+            ly_set_rm_index_ordered(set, i, NULL);
+        } else {
+            ++i;
+        }
+    }
 }
 
 API int
@@ -2989,6 +3091,11 @@ sr_get_subtree(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms,
         goto cleanup;
     }
 
+    /* trim unwanted data, after filtering */
+    if (session->ds == SR_DS_OPERATIONAL) {
+        sr_oper_data_trim(set, 0, &mod_info.data);
+    }
+
     /* apply NACM #1, get rid of whole denied results */
     if ((err_info = sr_nacm_get_node_set_read_filter(session, set))) {
         goto cleanup;
@@ -3001,8 +3108,9 @@ sr_get_subtree(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms,
         goto cleanup;
     }
 
-    /* set result */
-    if ((err_info = sr_lyd_dup(set->dnodes[0], NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_PARENTS, 0, &(*subtree)->tree))) {
+    /* set result, without origin */
+    if ((err_info = sr_lyd_dup(set->dnodes[0], NULL, LYD_DUP_RECURSIVE | LYD_DUP_WITH_PARENTS | LYD_DUP_NO_META, 0,
+            &(*subtree)->tree))) {
         goto cleanup;
     }
 
@@ -3098,6 +3206,11 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
         goto cleanup;
     }
 
+    /* trim unwanted data, after filtering */
+    if (session->ds == SR_DS_OPERATIONAL) {
+        sr_oper_data_trim(set, opts, &mod_info.data);
+    }
+
     /* get rid of all redundant results that are descendants of another result */
     if ((err_info = sr_xpath_set_filter_subtrees(set))) {
         goto cleanup;
@@ -3106,6 +3219,10 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
     /* create a hash table for finding existing parents */
     ht = lyht_new(1, sizeof rec, sr_lyht_value_get_data_equal_cb, NULL, 1);
     SR_CHECK_MEM_GOTO(!ht, err_info, cleanup);
+
+    /* prepare duplication options */
+    dup_opts = (max_depth ? 0 : LYD_DUP_RECURSIVE) | LYD_DUP_WITH_PARENTS | LYD_DUP_WITH_FLAGS |
+            ((opts & SR_OPER_WITH_ORIGIN) ? 0 : LYD_DUP_NO_META);
 
     for (i = 0; i < set->count; ++i) {
         /* check whether a parent does not exist yet in the result */
@@ -3120,7 +3237,6 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
         }
 
         /* duplicate subtree and connect it to an existing parent, if any */
-        dup_opts = (max_depth ? 0 : LYD_DUP_RECURSIVE) | LYD_DUP_WITH_PARENTS | LYD_DUP_WITH_FLAGS;
         if ((err_info = sr_lyd_dup(set->dnodes[i], parent, dup_opts, 0, &node))) {
             goto cleanup;
         }
@@ -3129,7 +3245,7 @@ sr_get_data(sr_session_ctx_t *session, const char *xpath, uint32_t max_depth, ui
         for (node_parent = node; lyd_parent(node_parent) != parent; node_parent = lyd_parent(node_parent)) {}
 
         /* duplicate only to the specified depth */
-        if (max_depth && (err_info = sr_lyd_dup_r(set->dnodes[i], max_depth, node))) {
+        if (max_depth && (err_info = sr_lyd_dup_r(set->dnodes[i], max_depth, dup_opts, node))) {
             lyd_free_tree(node_parent);
             goto cleanup;
         }
@@ -3225,6 +3341,11 @@ sr_get_node(sr_session_ctx_t *session, const char *path, uint32_t timeout_ms, sr
     /* filter the required data */
     if ((err_info = sr_modinfo_get_filter(&mod_info, path, session, &set))) {
         goto cleanup;
+    }
+
+    /* trim unwanted data, after filtering */
+    if (session->ds == SR_DS_OPERATIONAL) {
+        sr_oper_data_trim(set, 0, &mod_info.data);
     }
 
     /* apply NACM */
@@ -3791,7 +3912,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
     }
 
     if (!mod_info->diff) {
-        SR_LOG_INF("No \"%s\" datastore changes to apply.", sr_ds2str(mod_info->ds));
+        SR_LOG_DBG("No \"%s\" datastore changes to apply.", sr_ds2str(mod_info->ds));
         goto store;
     }
 
@@ -3855,7 +3976,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
 
     if (!mod_info->diff) {
         /* diff can disappear after validation */
-        SR_LOG_INF("No \"%s\" datastore changes to apply.", sr_ds2str(mod_info->ds));
+        SR_LOG_DBG("No \"%s\" datastore changes to apply after validation.", sr_ds2str(mod_info->ds));
         goto store;
     }
 
@@ -3877,7 +3998,7 @@ sr_changes_notify_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *sessio
     }
 
     if (!mod_info->diff) {
-        SR_LOG_INF("No \"%s\" datastore changes to apply.", sr_ds2str(mod_info->ds));
+        SR_LOG_DBG("No \"%s\" datastore changes to apply after update.", sr_ds2str(mod_info->ds));
         goto store;
     }
 
@@ -3994,9 +4115,10 @@ cleanup:
     }
     if (cb_err_info) {
         /* return callback error if some was generated */
-        sr_errinfo_merge(&err_info, cb_err_info);
-        sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+        assert(!err_info);
+        err_info = cb_err_info;
     }
+    SR_LOG_DBG("Applying \"%s\" datastore changes %s.", sr_ds2str(session->ds), err_info ? "failed" : "success");
     return sr_api_ret(session, err_info);
 }
 
@@ -4093,8 +4215,8 @@ cleanup:
     sr_modinfo_erase(&mod_info);
     if (cb_err_info) {
         /* return callback error if some was generated */
-        sr_errinfo_merge(&err_info, cb_err_info);
-        sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+        assert(!err_info);
+        err_info = cb_err_info;
     }
     return err_info;
 }
@@ -5621,7 +5743,7 @@ sr_change_ly2sr(const struct lyd_node *node, const char *value_str, const char *
     }
 
     /* fill the sr value */
-    if ((err_info = sr_val_ly2sr(node_ptr, sr_val))) {
+    if ((err_info = sr_val_ly2sr(node_ptr, 0, sr_val))) {
         goto cleanup;
     }
 
@@ -5984,12 +6106,16 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
 
     /* add RPC/action subscription into ext SHM and create separate specific SHM segment */
     if (is_ext) {
-        if ((err_info = sr_shmext_rpc_sub_add(conn, &shm_mod->rpc_ext_lock, &shm_mod->rpc_ext_subs,
+        /* Remove any dead subscriptions */
+        sr_shmext_rpc_sub_remove_dead(conn, &shm_mod->rpc_ext_subs, &shm_mod->rpc_ext_sub_count);
+        if ((err_info = sr_shmext_rpc_sub_add(conn, &shm_mod->rpc_ext_subs,
                 &shm_mod->rpc_ext_sub_count, path, sub_id, xpath, priority, 0, (*subscription)->evpipe_num, conn->cid))) {
             goto cleanup_unlock2;
         }
     } else {
-        if ((err_info = sr_shmext_rpc_sub_add(conn, &shm_rpc->lock, &shm_rpc->subs, &shm_rpc->sub_count, path, sub_id,
+        /* Remove any dead subscriptions */
+        sr_shmext_rpc_sub_remove_dead(conn, &shm_rpc->subs, &shm_rpc->sub_count);
+        if ((err_info = sr_shmext_rpc_sub_add(conn, &shm_rpc->subs, &shm_rpc->sub_count, path, sub_id,
                 xpath, priority, 0, (*subscription)->evpipe_num, conn->cid))) {
             goto cleanup_unlock2;
         }
@@ -6110,7 +6236,7 @@ sr_rpc_send(sr_session_ctx_t *session, const char *path, const sr_val_t *input, 
             SR_CHECK_MEM_GOTO(!*output, err_info, cleanup);
 
             /* fill it */
-            if ((err_info = sr_val_ly2sr(elem, &(*output)[*output_cnt]))) {
+            if ((err_info = sr_val_ly2sr(elem, 0, &(*output)[*output_cnt]))) {
                 goto cleanup;
             }
 
@@ -6258,14 +6384,14 @@ _sr_rpc_send_tree(sr_session_ctx_t *session, struct sr_mod_info_s *mod_info, con
     }
 
     /* publish RPC in an event and wait for a reply from the last subscriber */
-    if ((err_info = sr_shmsub_rpc_notify(session->conn, &shm_rpc->lock, &shm_rpc->subs, &shm_rpc->sub_count, path, input,
+    if ((err_info = sr_shmsub_rpc_notify(session->conn, &shm_rpc->subs, &shm_rpc->sub_count, path, input,
             session->orig_name, session->orig_data, timeout_ms, &event_id, &(*output)->tree, &cb_err_info))) {
         goto cleanup_rpcsub_unlock;
     }
 
     if (cb_err_info) {
         /* "rpc" event failed, publish "abort" event and finish */
-        err_info = sr_shmsub_rpc_notify_abort(session->conn, &shm_rpc->lock, &shm_rpc->subs, &shm_rpc->sub_count, path,
+        err_info = sr_shmsub_rpc_notify_abort(session->conn, &shm_rpc->subs, &shm_rpc->sub_count, path,
                 input, session->orig_name, session->orig_data, timeout_ms, event_id);
         goto cleanup_rpcsub_unlock;
     }
@@ -6305,8 +6431,8 @@ cleanup_rpcsub_unlock:
 cleanup:
     if (cb_err_info) {
         /* return callback error if some was generated */
-        sr_errinfo_merge(&err_info, cb_err_info);
-        sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+        assert(!err_info);
+        err_info = cb_err_info;
     }
     if (err_info) {
         sr_release_data(*output);
@@ -6374,7 +6500,7 @@ _sr_rpc_ext_send_tree(sr_session_ctx_t *session, const struct lyd_node *ext_pare
     }
 
     /* publish RPC in an event and wait for a reply from the last subscriber */
-    if ((err_info = sr_shmsub_rpc_notify(session->conn, &shm_mod->rpc_ext_lock, &shm_mod->rpc_ext_subs,
+    if ((err_info = sr_shmsub_rpc_notify(session->conn, &shm_mod->rpc_ext_subs,
             &shm_mod->rpc_ext_sub_count, path, input, session->orig_name, session->orig_data, timeout_ms, &event_id,
             &(*output)->tree, &cb_err_info))) {
         goto cleanup_rpcsub_unlock;
@@ -6382,7 +6508,7 @@ _sr_rpc_ext_send_tree(sr_session_ctx_t *session, const struct lyd_node *ext_pare
 
     if (cb_err_info) {
         /* "rpc" event failed, publish "abort" event and finish */
-        err_info = sr_shmsub_rpc_notify_abort(session->conn, &shm_mod->rpc_ext_lock, &shm_mod->rpc_ext_subs,
+        err_info = sr_shmsub_rpc_notify_abort(session->conn, &shm_mod->rpc_ext_subs,
                 &shm_mod->rpc_ext_sub_count, path, input, session->orig_name, session->orig_data, timeout_ms, event_id);
         goto cleanup_rpcsub_unlock;
     }
@@ -6417,8 +6543,8 @@ cleanup_rpcsub_unlock:
 cleanup:
     if (cb_err_info) {
         /* return callback error if some was generated */
-        sr_errinfo_merge(&err_info, cb_err_info);
-        sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+        assert(!err_info);
+        err_info = cb_err_info;
     }
     if (err_info) {
         sr_release_data(*output);

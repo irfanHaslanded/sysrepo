@@ -19,7 +19,7 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  12 files changed, 240 insertions(+), 88 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index b3cd6f7..a50f573 100644
+index 635ed10..b577771 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -61,6 +61,41 @@
@@ -64,7 +64,7 @@ index b3cd6f7..a50f573 100644
  /**
   * @brief Internal datastore plugin array.
   */
-@@ -2197,8 +2232,57 @@ sr_munlock(pthread_mutex_t *lock)
+@@ -2274,8 +2309,57 @@ sr_munlock(pthread_mutex_t *lock)
      }
  }
  
@@ -123,7 +123,7 @@ index b3cd6f7..a50f573 100644
  {
      sr_error_info_t *err_info = NULL;
  
-@@ -2213,7 +2297,10 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
+@@ -2290,7 +2374,10 @@ sr_rwlock_init(sr_rwlock_t *rwlock, int shared)
      memset(rwlock->readers, 0, sizeof rwlock->readers);
      rwlock->upgr = 0;
      rwlock->writer = 0;
@@ -135,7 +135,7 @@ index b3cd6f7..a50f573 100644
      return NULL;
  }
  
-@@ -2232,7 +2319,7 @@ sr_rwlock_destroy(sr_rwlock_t *rwlock)
+@@ -2309,7 +2396,7 @@ sr_rwlock_destroy(sr_rwlock_t *rwlock)
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -144,7 +144,7 @@ index b3cd6f7..a50f573 100644
  {
      sr_error_info_t *err_info = NULL;
      uint32_t i;
-@@ -2240,8 +2327,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
+@@ -2317,8 +2404,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
      /* find this connection or first free item */
      for (i = 0; (i < SR_RWLOCK_READ_LIMIT) && rwlock->readers[i] && (rwlock->readers[i] != cid); ++i) {}
      if (i == SR_RWLOCK_READ_LIMIT) {
@@ -156,7 +156,7 @@ index b3cd6f7..a50f573 100644
          goto cleanup;
      }
  
-@@ -2252,8 +2340,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
+@@ -2329,8 +2417,9 @@ sr_rwlock_reader_add(sr_rwlock_t *rwlock, sr_cid_t cid)
      } else {
          /* recursive read lock on the connection */
          if (rwlock->read_count[i] == UINT8_MAX) {
@@ -168,7 +168,7 @@ index b3cd6f7..a50f573 100644
              goto cleanup;
          }
          ++rwlock->read_count[i];
-@@ -2325,7 +2414,7 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
+@@ -2402,7 +2491,7 @@ sr_rwlock_reader_del(sr_rwlock_t *rwlock, sr_cid_t cid)
      uint32_t i;
  
      /* find a CID match */
@@ -177,7 +177,7 @@ index b3cd6f7..a50f573 100644
      if ((i == SR_RWLOCK_READ_LIMIT) || (rwlock->readers[i] != cid)) {
          /* CID not found */
          SR_ERRINFO_INT(&err_info);
-@@ -2355,7 +2444,7 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
+@@ -2432,7 +2521,7 @@ sr_rwlock_recover(sr_rwlock_t *rwlock, const char *func, sr_lock_recover_cb cb,
      sr_cid_t cid;
  
      /* readers */
@@ -186,7 +186,7 @@ index b3cd6f7..a50f573 100644
          if (!sr_conn_is_alive(rwlock->readers[i])) {
              /* remove the dead reader */
              cid = rwlock->readers[i];
-@@ -2414,6 +2503,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2491,6 +2580,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
      }
  
@@ -194,7 +194,7 @@ index b3cd6f7..a50f573 100644
      if (ret == EOWNERDEAD) {
          /* make it consistent */
          ret = pthread_mutex_consistent(&rwlock->mutex);
-@@ -2531,12 +2621,12 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2608,12 +2698,12 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          rwlock->upgr = cid;
  
          /* add a reader */
@@ -209,7 +209,7 @@ index b3cd6f7..a50f573 100644
          }
  
      } else {
-@@ -2565,7 +2655,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2642,7 +2732,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          }
  
          /* add a reader */
@@ -218,7 +218,7 @@ index b3cd6f7..a50f573 100644
  
          /* MUTEX UNLOCK */
          r = pthread_mutex_unlock(&rwlock->mutex);
-@@ -2573,7 +2663,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2650,7 +2740,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              sr_errinfo_new(&err_info, SR_ERR_INTERNAL, "Unlocking a mutex in %s() failed (%s).", __func__, strerror(r));
          }
      }
@@ -231,7 +231,7 @@ index b3cd6f7..a50f573 100644
      return err_info;
  
  error_cond_unlock:
-@@ -2643,7 +2737,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2720,7 +2814,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
  
      assert(mode && cid);
      assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
@@ -240,7 +240,7 @@ index b3cd6f7..a50f573 100644
      if (mode == SR_LOCK_WRITE) {
          /*
           * upgrade from upgradeable read-lock to write-lock
-@@ -2690,6 +2784,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2767,6 +2861,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          }
          rwlock->upgr = 0;
          rwlock->writer = cid;
@@ -248,7 +248,7 @@ index b3cd6f7..a50f573 100644
  
          /* simply keep the lock */
          return NULL;
-@@ -2763,6 +2858,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2840,6 +2935,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              rwlock->writer = cid;
          }
  
@@ -256,7 +256,7 @@ index b3cd6f7..a50f573 100644
          /* simply keep the lock */
          return NULL;
      }
-@@ -2793,7 +2889,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2870,7 +2966,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      assert(!rwlock->readers[0] && !rwlock->upgr && (rwlock->writer == cid));
  
      /* add a reader */
@@ -265,7 +265,7 @@ index b3cd6f7..a50f573 100644
          /* keep the WRITE lock on error */
          return err_info;
      }
-@@ -2808,7 +2904,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2885,7 +2981,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
  
      /* redundant to broadcast on condition because we were holding write-lock, so something can only be
       * waiting on the mutex, never the condition */
@@ -274,7 +274,7 @@ index b3cd6f7..a50f573 100644
  cleanup_unlock:
      /* MUTEX UNLOCK */
      pthread_mutex_unlock(&rwlock->mutex);
-@@ -2877,6 +2973,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2954,6 +3050,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          sr_cond_broadcast(&rwlock->cond);
      }
  
@@ -282,7 +282,7 @@ index b3cd6f7..a50f573 100644
      /* MUTEX UNLOCK */
      ret = pthread_mutex_unlock(&rwlock->mutex);
      if (ret) {
-@@ -2974,6 +3071,9 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
+@@ -3051,6 +3148,9 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
      void *mem;
      struct sr_oper_poll_cache_s *cache;
  
@@ -292,7 +292,7 @@ index b3cd6f7..a50f573 100644
      /* CONN OPER CACHE WRITE LOCK */
      if ((err_info = sr_rwlock(&conn->oper_cache_lock, SR_CONN_OPER_CACHE_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
              __func__, NULL, NULL))) {
-@@ -3002,10 +3102,14 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
+@@ -3079,10 +3179,14 @@ sr_conn_oper_cache_add(sr_conn_ctx_t *conn, uint32_t sub_id, const char *module_
      SR_CHECK_MEM_GOTO(!cache->module_name, err_info, cleanup);
      cache->path = strdup(path);
      SR_CHECK_MEM_GOTO(!cache->path, err_info, cleanup);
@@ -309,7 +309,7 @@ index b3cd6f7..a50f573 100644
      ++conn->oper_cache_count;
  
  cleanup:
-@@ -5660,3 +5764,15 @@ sr_is_prod_env(void)
+@@ -5727,3 +5831,15 @@ sr_is_prod_env(void)
      }
      return sr_prod_env;
  }
@@ -326,10 +326,10 @@ index b3cd6f7..a50f573 100644
 +    }
 +}
 diff --git a/src/common.h b/src/common.h
-index dbd7a9f..0ccc394 100644
+index efc8cd0..e68df1c 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -60,6 +60,15 @@ struct srplg_ntf_s;
+@@ -63,6 +63,15 @@ struct srplg_ntf_s;
  /* macro for getting ext SHM from a connection */
  #define SR_CONN_EXT_SHM(conn) ((sr_ext_shm_t *)(conn)->ext_shm.addr)
  
@@ -345,7 +345,7 @@ index dbd7a9f..0ccc394 100644
  /** all ext SHM item sizes will be aligned to this number; also represents the allocation unit (B) */
  #define SR_SHM_MEM_ALIGN 8
  
-@@ -786,7 +795,7 @@ void sr_munlock(pthread_mutex_t *lock);
+@@ -810,7 +819,7 @@ void sr_munlock(pthread_mutex_t *lock);
   * @param[in] shared Whether the RW lock will be shared between processes or not.
   * @return err_info, NULL on success.
   */
@@ -367,7 +367,7 @@ index a7dd2de..610a191 100644
  
  /**
 diff --git a/src/modinfo.c b/src/modinfo.c
-index c1ec315..60cfc46 100644
+index 3e43026..d21f260 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1325,7 +1325,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
@@ -380,7 +380,7 @@ index c1ec315..60cfc46 100644
                  }
              }
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 2797cf9..b1a7400 100644
+index a6ee1b2..e9aabad 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,19 @@
@@ -422,7 +422,7 @@ index 2797cf9..b1a7400 100644
      free(msg);
  
      /* fail on an assert if something is wrong */
-@@ -535,7 +551,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -555,7 +571,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
          }
      }
  
@@ -431,7 +431,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -558,12 +574,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -578,12 +594,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -446,7 +446,7 @@ index 2797cf9..b1a7400 100644
                  sizeof(sr_sub_shm_t)))) {
              goto cleanup_unlock;
          }
-@@ -613,7 +629,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -633,7 +649,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
      }
      SR_CHECK_INT_GOTO(i == shm_mod->change_sub[ds].sub_count, err_info, cleanup_changesub_ext_unlock);
  
@@ -455,7 +455,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate memory for the new xpath, if any */
-@@ -630,7 +646,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -650,7 +666,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
          shm_sub[i].xpath = 0;
      }
  
@@ -464,7 +464,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* success */
-@@ -663,14 +679,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -683,14 +699,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
  
      shm_sub = &((sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs))[del_idx];
  
@@ -481,7 +481,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->change_sub[ds].sub_count) {
-@@ -877,7 +893,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -879,7 +895,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          /* use starting priority 1 */
          *prio = 1;
  
@@ -490,7 +490,7 @@ index 2797cf9..b1a7400 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
          /* allocate new subscription and its xpath */
-@@ -893,11 +909,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -895,11 +911,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          shm_sub->xpath_subs = 0;
          shm_sub->xpath_sub_count = 0;
  
@@ -504,7 +504,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new XPath subscription */
-@@ -914,11 +930,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -916,11 +932,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      ATOMIC_STORE_RELAXED(xpath_sub->suspended, 0);
      xpath_sub->cid = conn->cid;
  
@@ -518,7 +518,7 @@ index 2797cf9..b1a7400 100644
              sizeof(sr_sub_shm_t)))) {
          goto cleanup_unlock;
      }
-@@ -968,25 +984,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
+@@ -970,25 +986,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
          goto cleanup;
      }
  
@@ -548,7 +548,7 @@ index 2797cf9..b1a7400 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
      }
  
-@@ -1169,7 +1185,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1135,7 +1151,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
          }
      }
  
@@ -557,7 +557,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its path */
-@@ -1187,7 +1203,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1153,7 +1169,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -566,7 +566,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
  cleanup_unlock:
-@@ -1212,14 +1228,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
+@@ -1178,14 +1194,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
  
      shm_sub = &((sr_mod_oper_poll_sub_t *)(conn->ext_shm.addr + shm_mod->oper_poll_subs))[del_idx];
  
@@ -583,16 +583,16 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      return NULL;
-@@ -1310,7 +1326,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
-         return err_info;
-     }
+@@ -1301,7 +1317,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+ 
+     sr_shmext_notif_sub_remove_dead(conn, shm_mod);
  
 -    SR_LOG_DBG("#SHM before (adding notif sub)");
 +    SR_LOG_SHM_DBG("#SHM before (adding notif sub)");
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -1331,12 +1347,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+@@ -1322,12 +1338,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -607,7 +607,7 @@ index 2797cf9..b1a7400 100644
              goto cleanup_unlock;
          }
  
-@@ -1372,14 +1388,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
+@@ -1363,14 +1379,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
  
      shm_sub = &((sr_mod_notif_sub_t *)(conn->ext_shm.addr + shm_mod->notif_subs))[del_idx];
  
@@ -624,7 +624,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->notif_sub_count) {
-@@ -1573,7 +1589,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+@@ -1542,7 +1558,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
          goto cleanup_unlock;
      }
  
@@ -633,7 +633,7 @@ index 2797cf9..b1a7400 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* add new subscription with its xpath */
-@@ -1592,13 +1608,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, sr_rwlock_t *sub_lock, off_t *subs, u
+@@ -1561,13 +1577,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = sub_cid;
  
@@ -649,7 +649,7 @@ index 2797cf9..b1a7400 100644
              goto cleanup_unlock;
          }
  
-@@ -1640,14 +1656,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
+@@ -1609,14 +1625,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
  
      shm_subs = (sr_mod_rpc_sub_t *)(conn->ext_shm.addr + *subs);
  
@@ -667,7 +667,7 @@ index 2797cf9..b1a7400 100644
  
      for (i = 0; i < *sub_count; ++i) {
 diff --git a/src/shm_main.c b/src/shm_main.c
-index 060252c..4b6a365 100644
+index 905181b..57922f5 100644
 --- a/src/shm_main.c
 +++ b/src/shm_main.c
 @@ -496,15 +496,17 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
@@ -832,7 +832,7 @@ index da9e7df..7906276 100644
  /**
   * @brief Load modules stored in mod SHM into a context.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 7302a98..4bd1108 100644
+index f90f316..d1be1c9 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -854,7 +854,7 @@ index 7302a98..4bd1108 100644
      }
  
 diff --git a/src/shm_sub.h b/src/shm_sub.h
-index c46231e..0cee3e6 100644
+index 62050e9..0625a5d 100644
 --- a/src/shm_sub.h
 +++ b/src/shm_sub.h
 @@ -47,7 +47,7 @@ struct sr_mod_info_s;
@@ -867,7 +867,7 @@ index c46231e..0cee3e6 100644
  /**
   * @brief Open and map an existing subscription SHM.
 diff --git a/src/shm_types.h b/src/shm_types.h
-index bd48960..a16fef5 100644
+index 00e93a9..6b4ea95 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
 @@ -183,6 +183,7 @@ typedef struct {
@@ -879,7 +879,7 @@ index bd48960..a16fef5 100644
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index f75d9f4..4a41caa 100644
+index 83455b5..43127a1 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -69,6 +69,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -939,7 +939,7 @@ index f75d9f4..4a41caa 100644
              goto cleanup_unlock;
          }
  
-@@ -729,7 +730,7 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
+@@ -722,7 +723,7 @@ _sr_session_start(sr_conn_ctx_t *conn, const sr_datastore_t datastore, sr_sub_ev
      if ((err_info = sr_mutex_init(&(*session)->ptr_lock, 0))) {
          goto error;
      }
@@ -948,7 +948,7 @@ index f75d9f4..4a41caa 100644
          goto error;
      }
  
-@@ -1558,7 +1559,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
+@@ -1572,7 +1573,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
      }
  
      /* update SHM modules */
@@ -957,7 +957,7 @@ index f75d9f4..4a41caa 100644
          goto error;
      }
      mod_shm_changed = 1;
-@@ -1602,7 +1603,7 @@ error:
+@@ -1616,7 +1617,7 @@ error:
      lyd_free_siblings(sr_del_mods);
  
      /* revert SHM module changes */
@@ -966,7 +966,7 @@ index f75d9f4..4a41caa 100644
          sr_errinfo_merge(&err_info, tmp_err);
      }
  
-@@ -1870,7 +1871,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
+@@ -1884,7 +1885,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
      }
  
      /* update SHM modules */
@@ -975,7 +975,7 @@ index f75d9f4..4a41caa 100644
          goto cleanup;
      }
  
-@@ -2115,7 +2116,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
+@@ -2129,7 +2130,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
      }
  
      /* update SHM modules */
@@ -984,7 +984,7 @@ index f75d9f4..4a41caa 100644
          goto cleanup;
      }
  
-@@ -2622,7 +2623,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
+@@ -2636,7 +2637,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
      }
  
      /* update SHM modules */
@@ -993,7 +993,7 @@ index f75d9f4..4a41caa 100644
          goto cleanup;
      }
  
-@@ -5231,7 +5232,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5352,7 +5353,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);

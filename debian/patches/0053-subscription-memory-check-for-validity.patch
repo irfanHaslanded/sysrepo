@@ -42,10 +42,10 @@ index eeb2559..a60b8de 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e2ced83..3e6dd5b 100644
+index 2088991..6892d74 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5065,6 +5065,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5186,6 +5186,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
  
      assert(subscription);
  
@@ -55,7 +55,7 @@ index e2ced83..3e6dd5b 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(subscription->conn, SR_LOCK_READ, 0, __func__))) {
          return err_info;
-@@ -5130,6 +5133,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5251,6 +5254,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
      return sr_api_ret(NULL, err_info);
  }
  
@@ -78,7 +78,7 @@ index e2ced83..3e6dd5b 100644
  API int
  sr_module_change_set_order(sr_conn_ctx_t *conn, const char *module_name, sr_datastore_t ds, uint32_t priority)
  {
-@@ -5349,7 +5368,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5470,7 +5489,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
              goto error;
          }
      }
@@ -88,7 +88,7 @@ index e2ced83..3e6dd5b 100644
      free(path);
      return NULL;
  
-@@ -5381,7 +5401,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5502,7 +5522,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      uint32_t xpath_id = 0;
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
@@ -97,7 +97,7 @@ index e2ced83..3e6dd5b 100644
  
      /* xpath = "" is invalid, implicitly convert it to NULL to avoid errors */
      if (xpath && !xpath[0]) {
-@@ -5424,6 +5444,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5545,6 +5565,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), module_name);
      SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
  
@@ -108,7 +108,7 @@ index e2ced83..3e6dd5b 100644
      if (!*subscription) {
          /* create a new subscription */
          if ((err_info = sr_subscr_new(conn, opts, subscription))) {
-@@ -6015,8 +6039,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
+@@ -6136,8 +6160,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
      sr_mod_t *shm_mod = NULL;
      int is_ext;
  
@@ -119,7 +119,7 @@ index e2ced83..3e6dd5b 100644
  
      conn = session->conn;
  
-@@ -6689,7 +6713,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+@@ -6814,7 +6838,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
              (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
              (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
              (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
@@ -128,7 +128,7 @@ index e2ced83..3e6dd5b 100644
      conn = session->conn;
  
      /* CONTEXT LOCK */
-@@ -7190,8 +7214,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7315,8 +7339,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      uint32_t prio = 0;
      uint32_t xpath_id = 0;
  
@@ -139,7 +139,7 @@ index e2ced83..3e6dd5b 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -7312,7 +7336,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7437,7 +7461,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_mod_t *shm_mod;
      struct modsub_operpoll_s *oper_poll_subs;
  

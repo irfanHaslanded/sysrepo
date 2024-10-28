@@ -53,8 +53,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # minor version changes with added functionality (new tool, functionality of the tool or library, ...) and
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
 set(SYSREPO_MAJOR_VERSION 2)
-set(SYSREPO_MINOR_VERSION 11)
-set(SYSREPO_MICRO_VERSION 5)
+set(SYSREPO_MINOR_VERSION 12)
+set(SYSREPO_MICRO_VERSION 0)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
@@ -62,7 +62,7 @@ set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
 set(SYSREPO_MINOR_SOVERSION 27)
-set(SYSREPO_MICRO_SOVERSION 12)
+set(SYSREPO_MICRO_SOVERSION 20)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
@@ -381,19 +381,26 @@ endif()
 use_compat()
 
 # required functions
-set(CMAKE_REQUIRED_DEFINITIONS "-D_GNU_SOURCE;-D_DEFAULT_SOURCE")
+list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_DEFAULT_SOURCE)
+
 check_symbol_exists(eaccess "unistd.h" SR_HAVE_EACCESS)
 if(NOT SR_HAVE_EACCESS)
     message(WARNING "Function eaccess() is not supported, using access() instead which may "
         "change results of access control checks!")
 endif()
 check_symbol_exists(mkstemps "stdlib.h" SR_HAVE_MKSTEMPS)
+
+list(APPEND CMAKE_REQUIRED_LIBRARIES dl)
 check_symbol_exists(dlopen "dlfcn.h" SR_HAVE_DLOPEN)
+list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES dl)
 if(NOT SR_HAVE_DLOPEN)
     message(WARNING "Function dlopen() is not supported, disabling plugin support and 'sysrepo-plugind'.")
     set(ENABLE_SYSREPO_PLUGIND OFF)
 endif()
-unset(CMAKE_REQUIRED_DEFINITIONS)
+
+list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_DEFAULT_SOURCE)
 
 # libmongoc - optional
 find_package(mongoc-1.0 1.24.0 CONFIG)

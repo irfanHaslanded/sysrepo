@@ -20,7 +20,7 @@ index 522a8dd..b440c34 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 3d41b6f..e7aa7a8 100644
+index ef88904..d277cc2 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -441,7 +441,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)
@@ -44,7 +44,7 @@ index 3d41b6f..e7aa7a8 100644
  }
  
  API uint32_t
-@@ -846,6 +851,7 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -839,6 +844,7 @@ _sr_session_stop(sr_session_ctx_t *session)
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      sr_datastore_t ds;
@@ -52,7 +52,7 @@ index 3d41b6f..e7aa7a8 100644
  
      /* subscriptions need to be freed before, with a WRITE lock */
      assert(!session->subscription_count && !session->subscriptions);
-@@ -868,7 +874,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -861,7 +867,13 @@ _sr_session_stop(sr_session_ctx_t *session)
      sr_shmmod_release_locks(session->conn, session->sid);
  
      /* CONTEXT UNLOCK */

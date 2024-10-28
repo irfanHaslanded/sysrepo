@@ -14,10 +14,10 @@ Closes: ENG-5756
  3 files changed, 51 insertions(+), 14 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 24000fd..d844531 100644
+index ebdf0b9..601fc1c 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3189,7 +3189,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
+@@ -3242,7 +3242,7 @@ sr_edit_add_descendant_have_own_op(const struct lyd_node *sibling, enum edit_op
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -26,7 +26,7 @@ index 24000fd..d844531 100644
  {
      sr_error_info_t *err_info = NULL;
      const struct lysc_node *schema;
-@@ -3197,10 +3197,11 @@ sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char
+@@ -3250,10 +3250,11 @@ sr_edit_add_merge_op(struct lyd_node *match, struct lyd_node **root, const char
      union lyd_any_value any_val;
      enum edit_op cur_op;
      int own_oper;
@@ -39,7 +39,7 @@ index 24000fd..d844531 100644
          goto cleanup;
      }
  
-@@ -3723,12 +3724,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3776,12 +3777,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
      const char *meta_val = NULL, *def_origin;
      char *rel_xpath = NULL;
      enum edit_op op;
@@ -55,7 +55,7 @@ index 24000fd..d844531 100644
          opts |= LYD_NEW_PATH_OPAQ;
      }
  
-@@ -3741,10 +3743,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
+@@ -3794,10 +3796,13 @@ sr_edit_add(sr_session_ctx_t *session, const char *xpath, const char *value, con
          if (match) {
              /* node exists, nothing to create, just merge operations if possible */
              if ((err_info = sr_edit_add_merge_op(match, &session->dt[session->ds].edit->tree, value,
@@ -72,10 +72,10 @@ index 24000fd..d844531 100644
      }
  
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 3e6dd5b..af7a1e2 100644
+index 6892d74..f3bd36b 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -3480,16 +3480,18 @@ cleanup:
+@@ -3601,16 +3601,18 @@ cleanup:
  }
  
  API int
@@ -99,7 +99,7 @@ index 3e6dd5b..af7a1e2 100644
  
      SR_CHECK_ARG_APIRET(!session || !path || SR_EDIT_DS_API_CHECK(session->ds, opts), session, err_info);
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index a96c661..4ded8b4 100644
+index c873f31..be1a9c6 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -162,11 +162,14 @@ clear_up(void **state)

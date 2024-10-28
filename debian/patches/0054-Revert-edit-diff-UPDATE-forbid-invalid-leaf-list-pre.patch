@@ -14,10 +14,10 @@ Closes: ENG-5693
  2 files changed, 11 insertions(+), 18 deletions(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 248592b..24000fd 100644
+index 4276359..ebdf0b9 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3562,24 +3562,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
+@@ -3615,24 +3615,17 @@ sr_edit_add_xpath(const struct ly_ctx *ly_ctx, const struct lyd_node *tree, cons
              /* find dup-inst list with this position, if exists */
              inst_pos = 1;
              *match = NULL;
@@ -53,7 +53,7 @@ index 248592b..24000fd 100644
  
              if (*match) {
 diff --git a/tests/test_oper_push.c b/tests/test_oper_push.c
-index fa32251..a96c661 100644
+index ec1b033..c873f31 100644
 --- a/tests/test_oper_push.c
 +++ b/tests/test_oper_push.c
 @@ -1446,7 +1446,7 @@ test_state_list(void **state)

@@ -10,6 +10,9 @@ SYSREPO_UID = 62410
 
 NPROCS:=$(shell grep -c ^processor /proc/cpuinfo)
 
+# Use the build directory to set LD_LIBRARY_PATH for tests
+SR_BUILD_DIR:=$(shell pwd)/obj-$(DEB_HOST_GNU_TYPE)
+
 %:
 	dh $@ -j --buildsystem=cmake --with graphnos-yang
 
@@ -30,6 +33,6 @@ override_dh_installsystemd:
 
 override_dh_auto_test:
 ifeq ($(filter nocheck,$(DEB_BUILD_OPTIONS)),)
-	make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS=' -j $(NPROCS) -V -E test_notif'
+	LD_LIBRARY_PATH="$(SR_BUILD_DIR)" make -C obj-$(DEB_HOST_GNU_TYPE) test ARGS=' -j $(NPROCS) -V -E test_notif'
 	make -C obj-$(DEB_HOST_GNU_TYPE) test_clean
 endif

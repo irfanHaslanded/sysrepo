@@ -188,8 +188,8 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
 #ifdef SR_HAVE_DLOPEN
     struct dirent *file;
     size_t len;
-    const char *plugins_dir;
-    char *path = NULL;
+    static char plugins_dir[SR_PATH_MAX] = "";
+    char *path = NULL, *tmp;
     void *dlhandle = NULL, *mem;
     uint32_t *ver;
     const struct srplg_ds_s *srpds;
@@ -207,10 +207,19 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
     }
 
 #ifdef SR_HAVE_DLOPEN
-    /* get plugins dir from environment variable, or use default one */
-    plugins_dir = getenv("SR_PLUGINS_PATH");
-    if (!plugins_dir) {
-        plugins_dir = SR_PLG_PATH;
+    if (!plugins_dir[0]) {
+        /* get plugins dir from environment variable, or use default one */
+        tmp = getenv("SR_PLUGINS_PATH");
+        if (!tmp) {
+            tmp = SR_PLG_PATH;
+        }
+
+        if ((len = strlen(tmp)) < SR_PATH_MAX) {
+            snprintf(plugins_dir, SR_PATH_MAX, "%s", tmp);
+        } else {
+            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "SR_PLUGINS_PATH (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
+            goto cleanup;
+        }
     }
 
     /* open directory, if possible */
@@ -246,6 +255,7 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
         ver = dlsym(dlhandle, "srpds_apiver__");
         if (!ver) {
             /* not a DS plugin */
+            SR_LOG_INF("File \"%s\" not a DS plugin, missing API version.", path);
             goto next_file;
         } else if (*ver != SRPLG_DS_API_VERSION) {
             SR_LOG_WRN("Obsolete DS plugin \"%s\" in version %" PRIu32 " found (expected %d).", path, *ver,
@@ -362,8 +372,8 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
 #ifdef SR_HAVE_DLOPEN
     struct dirent *file;
     size_t len;
-    const char *plugins_dir;
-    char *path = NULL;
+    static char plugins_dir[SR_PATH_MAX] = "";
+    char *path = NULL, *tmp;
     void *dlhandle = NULL, *mem;
     uint32_t *ver;
     const struct srplg_ntf_s *srpntf;
@@ -381,10 +391,19 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
     }
 
 #ifdef SR_HAVE_DLOPEN
-    /* get plugins dir from environment variable, or use default one */
-    plugins_dir = getenv("SR_PLUGINS_PATH");
-    if (!plugins_dir) {
-        plugins_dir = SR_PLG_PATH;
+    if (!plugins_dir[0]) {
+        /* get plugins dir from environment variable, or use default one */
+        tmp = getenv("SR_PLUGINS_PATH");
+        if (!tmp) {
+            tmp = SR_PLG_PATH;
+        }
+
+        if ((len = strlen(tmp)) < SR_PATH_MAX) {
+            snprintf(plugins_dir, SR_PATH_MAX, "%s", tmp);
+        } else {
+            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "SR_PLUGINS_PATH (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
+            goto cleanup;
+        }
     }
 
     /* open directory, if possible */
@@ -1024,6 +1043,39 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
     return err_info;
 }
 
+const char *
+sr_shm_dir_get(void)
+{
+    static char sr_shm_dir_str[SR_PATH_MAX] = "";
+    const char *tmp = NULL;
+
+    if (sr_shm_dir_str[0]) {
+        return sr_shm_dir_str;
+    }
+
+    /* first time only */
+    if (!(tmp = getenv("SYSREPO_SHM_DIR"))) {
+        tmp = NULL;
+    } else if (strlen(tmp) >= SR_PATH_MAX) {
+        SR_LOG_WRN("SYSREPO_SHM_DIR env variable longer than %u, using default %s instead",
+                SR_PATH_MAX, SR_SHM_DIR);
+        tmp = NULL;
+    }
+
+    if (!tmp) {
+        tmp = SR_SHM_DIR;
+        if (strlen(tmp) >= SR_PATH_MAX) {
+            tmp = "/dev/shm";
+            sr_log(SR_LL_ERR, "SR_SHM_DIR (%s) is longer than maximum allowed %u - defaulting to %s",
+                    SR_SHM_DIR, SR_PATH_MAX, tmp);
+        }
+    }
+
+    snprintf(sr_shm_dir_str, SR_PATH_MAX, "%s", tmp);
+
+    return sr_shm_dir_str;
+}
+
 /**
  * @brief Get global SHM prefix prepended to all SHM files.
  *
@@ -1033,16 +1085,33 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
 static sr_error_info_t *
 sr_shm_prefix(const char **prefix)
 {
+    static char sr_shm_prefix_val[SR_PATH_MAX] = "";
+    const char *tmp = NULL;
     sr_error_info_t *err_info = NULL;
 
-    *prefix = getenv(SR_SHM_PREFIX_ENV);
-    if (*prefix == NULL) {
-        *prefix = SR_SHM_PREFIX_DEFAULT;
-    } else if (strchr(*prefix, '/') != NULL) {
-        *prefix = NULL;
+    if (sr_shm_prefix_val[0]) {
+        *prefix = sr_shm_prefix_val;
+        return err_info;
+    }
+
+    /* first time */
+    tmp = getenv(SR_SHM_PREFIX_ENV);
+    if (tmp == NULL) {
+        tmp = SR_SHM_PREFIX_DEFAULT;
+    }
+
+    if (strlen(tmp) >= SR_PATH_MAX) {
+        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "%s cannot be longer than %u.", SR_SHM_PREFIX_ENV, SR_PATH_MAX);
+    } else if (strchr(tmp, '/') != NULL) {
         sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "%s cannot contain slashes.", SR_SHM_PREFIX_ENV);
     }
 
+    if (err_info) {
+        *prefix = NULL;
+    } else {
+        snprintf(sr_shm_prefix_val, SR_PATH_MAX, "%s", tmp);
+        *prefix = sr_shm_prefix_val;
+    }
     return err_info;
 }
 
@@ -1057,7 +1126,7 @@ sr_path_main_shm(char **path)
         return err_info;
     }
 
-    if (asprintf(path, "%s/%s_main", SR_SHM_DIR, prefix) == -1) {
+    if (asprintf(path, "%s/%s_main", sr_shm_dir_get(), prefix) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1076,7 +1145,7 @@ sr_path_mod_shm(char **path)
         return err_info;
     }
 
-    if (asprintf(path, "%s/%s_mod", SR_SHM_DIR, prefix) == -1) {
+    if (asprintf(path, "%s/%s_mod", sr_shm_dir_get(), prefix) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1095,7 +1164,7 @@ sr_path_ext_shm(char **path)
         return err_info;
     }
 
-    if (asprintf(path, "%s/%s_ext", SR_SHM_DIR, prefix) == -1) {
+    if (asprintf(path, "%s/%s_ext", sr_shm_dir_get(), prefix) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1116,9 +1185,9 @@ sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char
     }
 
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
     } else {
-        ret = asprintf(path, "%s/%ssub_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
+        ret = asprintf(path, "%s/%ssub_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
     }
 
     if (ret == -1) {
@@ -1140,9 +1209,9 @@ sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2,
     }
 
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, SR_SHM_DIR, prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
     } else {
-        ret = asprintf(path, "%s/%ssub_data_%s.%s", SR_SHM_DIR, prefix, mod_name, suffix1);
+        ret = asprintf(path, "%s/%ssub_data_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
     }
 
     if (ret == -1) {
@@ -2117,15 +2186,23 @@ _sr_mutex_init(pthread_mutex_t *lock, int shared, int robust)
 
         if (shared && (ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED))) {
             pthread_mutexattr_destroy(&attr);
-            sr_errinfo_new(&err_info, SR_ERR_SYS, "Changing pthread attr failed (%s).", strerror(ret));
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Setting mutex shared failed (%s).", strerror(ret));
             return err_info;
         }
 
         if (robust && (ret = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST))) {
             pthread_mutexattr_destroy(&attr);
-            sr_errinfo_new(&err_info, SR_ERR_SYS, "Changing pthread attr failed (%s).", strerror(ret));
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Setting mutex robust failed (%s).", strerror(ret));
             return err_info;
         }
+
+#ifndef NDEBUG
+        if ((ret = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK))) {
+            pthread_mutexattr_destroy(&attr);
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Setting mutex error_check failed (%s).", strerror(ret));
+            return err_info;
+        }
+#endif
 
         if ((ret = pthread_mutex_init(lock, &attr))) {
             pthread_mutexattr_destroy(&attr);
@@ -3969,10 +4046,10 @@ sr_ev2api(sr_sub_event_t ev)
 }
 
 sr_error_info_t *
-sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)
+sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val)
 {
     sr_error_info_t *err_info = NULL;
-    char *ptr, *origin;
+    char *ptr, *origin = NULL;
     const struct lyd_node_term *leaf;
     const struct lyd_value *val;
     struct lyd_node_any *any;
@@ -4136,7 +4213,9 @@ store_value:
     }
 
     /* origin */
-    sr_edit_diff_get_origin(node, &origin, NULL);
+    if (with_origin) {
+        sr_edit_diff_get_origin(node, &origin, NULL);
+    }
     sr_val->origin = origin;
 
     return NULL;
@@ -4248,11 +4327,14 @@ sr_val_sr2ly(struct ly_ctx *ctx, const char *xpath, const char *val_str, int dfl
 }
 
 sr_error_info_t *
-sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, struct lyd_node *trg_parent)
+sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, uint32_t options, struct lyd_node *trg_parent)
 {
     sr_error_info_t *err_info = NULL;
     const struct lyd_node *src_child;
     struct lyd_node *trg_child;
+
+    /* fix invalid options */
+    options &= ~(LYD_DUP_RECURSIVE | LYD_DUP_WITH_PARENTS);
 
     if (!depth || (src_parent->schema->nodetype & (LYS_LEAF | LYS_LEAFLIST | LYS_ANYDATA))) {
         return NULL;
@@ -4261,7 +4343,7 @@ sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, struct lyd_node 
     /* skip keys, they are already duplicated */
     src_child = lyd_child_no_keys(src_parent);
     while (src_child) {
-        if ((err_info = sr_lyd_dup(src_child, NULL, LYD_DUP_WITH_FLAGS, 0, &trg_child))) {
+        if ((err_info = sr_lyd_dup(src_child, NULL, options, 0, &trg_child))) {
             return err_info;
         }
 
@@ -4269,7 +4351,7 @@ sr_lyd_dup_r(const struct lyd_node *src_parent, uint32_t depth, struct lyd_node 
             SR_ERRINFO_INT(&err_info);
             return err_info;
         }
-        if ((err_info = sr_lyd_dup_r(src_child, depth - 1, trg_child))) {
+        if ((err_info = sr_lyd_dup_r(src_child, depth - 1, options, trg_child))) {
             return err_info;
         }
 
@@ -5381,8 +5463,10 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
         const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
 {
     sr_error_info_t *err_info = NULL;
-    struct lyd_node *mod_data;
+    struct lyd_node *mod_data, *root, *elem;
+    struct lyd_meta *meta;
     int modified;
+    sr_cid_t dead_cid = 0;
 
     if (ds == SR_DS_CANDIDATE) {
         if ((err_info = ds_handle[ds]->plugin->candidate_modified_cb(ly_mod, ds_handle[ds]->plg_data, &modified))) {
@@ -5405,54 +5489,37 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
         return err_info;
     }
 
+    if (mod_data && (ds == SR_DS_OPERATIONAL)) {
+trim_retry:
+        if (dead_cid) {
+            /* this connection is dead, remove its stored edit */
+            SR_LOG_INF("Recovering module \"%s\" stored operational data of CID %" PRIu32 ".", ly_mod->name, dead_cid);
+            if ((err_info = sr_edit_oper_del(&mod_data, dead_cid, NULL, NULL))) {
+                return err_info;
+            }
+        }
+
+        /* find edit belonging to a dead connection, if any */
+        LY_LIST_FOR(mod_data, root) {
+            LYD_TREE_DFS_BEGIN(root, elem) {
+                meta = lyd_find_meta(elem->meta, NULL, "sysrepo:cid");
+                if (meta && !sr_conn_is_alive(meta->value.uint32)) {
+                    dead_cid = meta->value.uint32;
+
+                    /* retry the whole check until there are no dead connections */
+                    goto trim_retry;
+                }
+                LYD_TREE_DFS_END(root, elem);
+            }
+        }
+    }
+
     /* append module data */
     if (mod_data) {
         lyd_insert_sibling(*data, mod_data, data);
     }
 
     return NULL;
-}
-
-sr_error_info_t *
-sr_module_file_oper_data_load(struct sr_mod_info_mod_s *mod, struct lyd_node **edit)
-{
-    sr_error_info_t *err_info = NULL;
-    struct lyd_node *root, *elem;
-    struct lyd_meta *meta;
-    sr_cid_t dead_cid = 0;
-
-    assert(!*edit);
-
-    /* load the operational data (edit) */
-    if ((err_info = mod->ds_handle[SR_DS_OPERATIONAL]->plugin->load_cb(mod->ly_mod, SR_DS_OPERATIONAL, NULL, 0,
-            mod->ds_handle[SR_DS_OPERATIONAL]->plg_data, edit))) {
-        return err_info;
-    }
-
-trim_retry:
-    if (dead_cid) {
-        /* this connection is dead, remove its stored edit */
-        SR_LOG_INF("Recovering module \"%s\" stored operational data of CID %" PRIu32 ".", mod->ly_mod->name, dead_cid);
-        if ((err_info = sr_edit_oper_del(edit, dead_cid, NULL, NULL))) {
-            return err_info;
-        }
-    }
-
-    /* find edit belonging to a dead connection, if any */
-    LY_LIST_FOR(*edit, root) {
-        LYD_TREE_DFS_BEGIN(root, elem) {
-            meta = lyd_find_meta(elem->meta, NULL, "sysrepo:cid");
-            if (meta && !sr_conn_is_alive(meta->value.uint32)) {
-                dead_cid = meta->value.uint32;
-
-                /* retry the whole check until there are no dead connections */
-                goto trim_retry;
-            }
-            LYD_TREE_DFS_END(root, elem);
-        }
-    }
-
-    return err_info;
 }
 
 sr_error_info_t *

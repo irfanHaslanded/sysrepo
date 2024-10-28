@@ -5,14 +5,14 @@ Subject: Enable per module rwlock debugging Allow tracking context lock
 cherry-picked from 0055-Enable-per-module-rwlock-debugging.patch
 ---
  src/common.c                 |  7 +++++--
- src/common.h                 |  5 +++++
+ src/common.h                 |  6 ++++++
  src/executables/sysrepoctl.c | 40 +++++++++++++++++++++++++++++++++++++++-
  src/sysrepo.c                | 32 ++++++++++++++++++++++++++++++++
  src/sysrepo.h                | 17 +++++++++++++++++
- 5 files changed, 98 insertions(+), 3 deletions(-)
+ 5 files changed, 99 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index a50f573..2fd3241 100644
+index b577771..db3f2ff 100644
 --- a/src/common.c
 +++ b/src/common.c
 @@ -90,7 +90,10 @@ sr_log_rwlock_details(sr_rwlock_t *rwlock, sr_lock_mode_t mode, sr_cid_t cid, co
@@ -27,7 +27,7 @@ index a50f573..2fd3241 100644
      }
  
      _SR_LOG_RWLOCK(rwlock, mode, cid, func_name, buf);
-@@ -5766,7 +5769,7 @@ sr_is_prod_env(void)
+@@ -5833,7 +5836,7 @@ sr_is_prod_env(void)
  }
  
  void
@@ -37,19 +37,22 @@ index a50f573..2fd3241 100644
      if (enable) {
          /* Set the MSB to enable debug logs */
 diff --git a/src/common.h b/src/common.h
-index 0ccc394..e13c63e 100644
+index e68df1c..7b81068 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1405,4 +1405,9 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -254,6 +254,12 @@ typedef enum sr_val_ly2sr_opts_e {
   */
- sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
+ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_origin, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
  
 +/**
 + * @brief Enable/Disable rwlock debug logs
 + * */
 +void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
 +
- #endif /* _COMMON_H */
++
+ /*
+  * From sysrepo.c
+  */
 diff --git a/src/executables/sysrepoctl.c b/src/executables/sysrepoctl.c
 index b968055..ee05f0c 100644
 --- a/src/executables/sysrepoctl.c
@@ -137,10 +140,10 @@ index b968055..ee05f0c 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4a41caa..3b5d15e 100644
+index 43127a1..73515fa 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7383,3 +7383,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7508,3 +7508,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }

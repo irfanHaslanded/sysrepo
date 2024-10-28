@@ -14,10 +14,10 @@ Closes: ENG-6310
  1 file changed, 9 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index fc6840d..d15c86b 100644
+index dbaae23..a24aead 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -4044,6 +4044,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+@@ -4165,6 +4165,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
      sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
      struct sr_mod_info_s mod_info;
      uint32_t mi_opts;
@@ -25,7 +25,7 @@ index fc6840d..d15c86b 100644
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds), session, err_info);
  
-@@ -4073,6 +4074,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+@@ -4194,6 +4195,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
          goto cleanup;
      }
  
@@ -35,7 +35,7 @@ index fc6840d..d15c86b 100644
      /* create diff */
      if (mod_info.ds == SR_DS_OPERATIONAL) {
          err_info = sr_modinfo_edit_merge(&mod_info, session->dt[session->ds].edit->tree, 1);
-@@ -4095,12 +4099,17 @@ cleanup:
+@@ -4216,13 +4220,18 @@ cleanup:
          /* free applied edit */
          sr_release_data(session->dt[session->ds].edit);
          session->dt[session->ds].edit = NULL;
@@ -44,12 +44,13 @@ index fc6840d..d15c86b 100644
      }
      if (cb_err_info) {
          /* return callback error if some was generated */
-         sr_errinfo_merge(&err_info, cb_err_info);
-         sr_errinfo_new(&err_info, SR_ERR_CALLBACK_FAILED, "User callback failed.");
+         assert(!err_info);
+         err_info = cb_err_info;
      }
-+
 +    free(edit_json);
 +    free(data_json);
-     SR_LOG_DBG("%s for %s %s.", __func__, sr_ds2str(session->ds), err_info? "failed" : "success");
+     SR_LOG_DBG("Applying \"%s\" datastore changes %s.", sr_ds2str(session->ds), err_info ? "failed" : "success");
++
      return sr_api_ret(session, err_info);
  }
+ 

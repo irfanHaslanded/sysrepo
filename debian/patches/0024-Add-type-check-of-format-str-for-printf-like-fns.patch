@@ -18,12 +18,11 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  CMakeLists.txt                        |  2 +-
  src/executables/srpd_oper_poll_diff.c |  3 +--
  src/modinfo.c                         | 20 ++++++++++----------
- src/plugins/common_json.c             |  2 +-
  tests/test_massive_scale.c            | 15 ---------------
- 5 files changed, 13 insertions(+), 29 deletions(-)
+ 4 files changed, 12 insertions(+), 28 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 42e8d10..8b2b3cd 100644
+index b38b657..7ad6b84 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -77,7 +77,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
@@ -57,10 +56,10 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 60cfc46..f3b2c00 100644
+index d21f260..3a5b8f1 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1687,20 +1687,20 @@ cleanup:
+@@ -1632,20 +1632,20 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -85,7 +84,7 @@ index 60cfc46..f3b2c00 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1719,7 +1719,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1664,7 +1664,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
              continue;
          }
  
@@ -95,7 +94,7 @@ index 60cfc46..f3b2c00 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1727,7 +1728,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1672,7 +1673,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
      if (!i && (cid = rwlock->writer)) {
@@ -105,7 +104,7 @@ index 60cfc46..f3b2c00 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -2116,8 +2118,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -2061,8 +2063,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          shm_lock = &shm_mod->data_lock_info[ds];
  
          /* data-lock */
@@ -115,7 +114,7 @@ index 60cfc46..f3b2c00 100644
  
          if (err_info) {
              return err_info;
-@@ -2163,8 +2164,7 @@ ds_unlock:
+@@ -2108,8 +2109,7 @@ ds_unlock:
  
      /* change-sub-lock */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -125,19 +124,6 @@ index 60cfc46..f3b2c00 100644
              return err_info;
          }
      }
-diff --git a/src/plugins/common_json.c b/src/plugins/common_json.c
-index 169b242..01d6649 100644
---- a/src/plugins/common_json.c
-+++ b/src/plugins/common_json.c
-@@ -125,7 +125,7 @@ sr_error_info_t *
- srpjson_shm_prefix(const char *plg_name, const char **prefix)
- {
-     sr_error_info_t *err_info = NULL;
--    static char * srlyb_shm_prefix_cached = NULL;
-+    static const char * srlyb_shm_prefix_cached = NULL;
- 
-     if (srlyb_shm_prefix_cached) {
-         *prefix = srlyb_shm_prefix_cached;
 diff --git a/tests/test_massive_scale.c b/tests/test_massive_scale.c
 index 891de7a..c131448 100644
 --- a/tests/test_massive_scale.c

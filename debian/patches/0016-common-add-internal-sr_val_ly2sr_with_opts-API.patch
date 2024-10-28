@@ -6,17 +6,17 @@ This will allow the addition of optional behaviours when converting
 libyang data into a sysrepo value.
 ---
  src/common.c |  6 ++++++
- src/common.h | 14 ++++++++++++++
- 2 files changed, 20 insertions(+)
+ src/common.h | 18 ++++++++++++++++++
+ 2 files changed, 24 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index bcbe1da..d6e6bcf 100644
+index 6ef6c43..817e021 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -3970,6 +3970,12 @@ sr_ev2api(sr_sub_event_t ev)
+@@ -4047,6 +4047,12 @@ sr_ev2api(sr_sub_event_t ev)
  
  sr_error_info_t *
- sr_val_ly2sr(const struct lyd_node *node, sr_val_t *sr_val)
+ sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val)
 +{
 +    return sr_val_ly2sr_with_opts(node, SR_VAL_LY2SR_DEFAULT, sr_val);
 +}
@@ -25,15 +25,19 @@ index bcbe1da..d6e6bcf 100644
 +sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val)
  {
      sr_error_info_t *err_info = NULL;
-     char *ptr, *origin;
+     char *ptr, *origin = NULL;
 diff --git a/src/common.h b/src/common.h
-index 19cbab4..a0bd333 100644
+index bb7341c..e77749f 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1379,4 +1379,18 @@ sr_error_info_t *sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_
-  */
- int sr_is_prod_env(void);
+@@ -224,6 +224,24 @@ typedef struct {
+     LYS_INFORMAT format;
+ } sr_int_update_mod_t;
  
++/**
++ * Graphnos specific changes
++ */
++
 +typedef enum sr_val_ly2sr_opts_e {
 +    SR_VAL_LY2SR_DEFAULT = 0,             /**< Standard behaviour */
 +} sr_val_ly2sr_opts_t;
@@ -48,4 +52,6 @@ index 19cbab4..a0bd333 100644
 + */
 +sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val);
 +
- #endif /* _COMMON_H */
+ /*
+  * From sysrepo.c
+  */
