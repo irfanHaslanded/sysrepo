@@ -27,10 +27,10 @@ index 4066da8..43670e2 100644
  /** default timeout for RPC/action subscription callback (ms) */
  #define SR_RPC_CB_TIMEOUT 2000
 diff --git a/src/shm_mod.c b/src/shm_mod.c
-index b6c313a..4b004ec 100644
+index d4facd8..8774646 100644
 --- a/src/shm_mod.c
 +++ b/src/shm_mod.c
-@@ -1188,7 +1188,12 @@ sr_shmmod_lock(const struct lys_module *ly_mod, sr_datastore_t ds, struct sr_mod
+@@ -1193,7 +1193,12 @@ sr_shmmod_lock(const struct lys_module *ly_mod, sr_datastore_t ds, struct sr_mod
  
      if (!timeout_ms) {
          /* default timeout */
