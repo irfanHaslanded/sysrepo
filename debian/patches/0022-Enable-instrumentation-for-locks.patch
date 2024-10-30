@@ -10,13 +10,13 @@ cherry-picked from 0032-Add-instrumentation-of-rwlocks.patch
  src/modinfo.c      |   2 +-
  src/shm_ext.c      |  78 ++++++++++++++++-----------
  src/shm_main.c     |   4 +-
- src/shm_mod.c      |  42 ++++++++-------
+ src/shm_mod.c      |  43 +++++++++------
  src/shm_mod.h      |   4 +-
  src/shm_sub.c      |   4 +-
  src/shm_sub.h      |   2 +-
  src/shm_types.h    |   1 +
  src/sysrepo.c      |  27 +++++-----
- 12 files changed, 240 insertions(+), 88 deletions(-)
+ 12 files changed, 243 insertions(+), 86 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
 index 635ed10..b577771 100644
@@ -690,7 +690,7 @@ index 905181b..57922f5 100644
          ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
          ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
 diff --git a/src/shm_mod.c b/src/shm_mod.c
-index d56cb74..b6c313a 100644
+index d56cb74..d4facd8 100644
 --- a/src/shm_mod.c
 +++ b/src/shm_mod.c
 @@ -143,38 +143,45 @@ sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path)
@@ -757,6 +757,15 @@ index d56cb74..b6c313a 100644
      assert(name);
  
      /* remember mod SHM size */
+@@ -529,7 +537,7 @@ sr_shmmod_add_deps(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
+  * @return err_info, NULL on success.
+  */
+ static sr_error_info_t *
+-sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
++sr_shmmod_add_rpcs(sr_conn_ctx_t *conn, sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node *sr_mod, char *shm_mod_old)
+ {
+     sr_error_info_t *err_info = NULL;
+     struct lyd_node *sr_child, *sr_dep, *sr_op, *sr_op_dep;
 @@ -539,6 +547,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
      sr_mod_shm_t *mod_shm;
      char *shm_end;
@@ -775,19 +784,16 @@ index d56cb74..b6c313a 100644
                  } else if (!strcmp(sr_op_dep->schema->name, "in") || !strcmp(sr_op_dep->schema->name, "out")) {
                      dep_i = 0;
                      LY_LIST_FOR(lyd_child(sr_op_dep), sr_dep) {
-@@ -592,11 +602,6 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
- 
+@@ -593,7 +603,7 @@ sr_shmmod_add_rpcs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_node
      LY_LIST_FOR(lyd_child(sr_mod), sr_child) {
          if (!strcmp(sr_child->schema->name, "rpc")) {
--            /* init lock */
+             /* init lock */
 -            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1))) {
--                return err_info;
--            }
--
-             old_shm_rpc = NULL;
-             LY_LIST_FOR(lyd_child(sr_child), sr_op) {
-                 if (!strcmp(sr_op->schema->name, "path")) {
-@@ -767,7 +772,7 @@ sr_shmmod_add_notifs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_nod
++            if ((err_info = sr_rwlock_init(&shm_rpcs[rpc_i].lock, 1, SR_RWLOCK_NEW_ID(conn), path_name))) {
+                 return err_info;
+             }
+ 
+@@ -767,7 +777,7 @@ sr_shmmod_add_notifs(sr_shm_t *shm_mod, size_t shm_mod_idx, const struct lyd_nod
  }
  
  sr_error_info_t *
@@ -796,7 +802,7 @@ index d56cb74..b6c313a 100644
  {
      sr_error_info_t *err_info = NULL;
      struct ly_set *set = NULL;
-@@ -775,6 +780,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+@@ -775,6 +785,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
      sr_mod_t *smod;
      char *shm_mod_old = NULL;
      uint32_t i;
@@ -804,7 +810,16 @@ index d56cb74..b6c313a 100644
  
      /* backup current SHM mod */
      shm_mod_old = malloc(shm_mod->size);
-@@ -834,7 +840,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+@@ -822,7 +833,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
+         if ((err_info = sr_shmmod_add_deps(shm_mod, i, sr_mod))) {
+             goto cleanup;
+         }
+-        if ((err_info = sr_shmmod_add_rpcs(shm_mod, i, sr_mod, shm_mod_old))) {
++        if ((err_info = sr_shmmod_add_rpcs(conn, shm_mod, i, sr_mod, shm_mod_old))) {
+             goto cleanup;
+         }
+         if ((err_info = sr_shmmod_add_notifs(shm_mod, i, sr_mod))) {
+@@ -834,7 +845,7 @@ sr_shmmod_store_modules(sr_shm_t *shm_mod, const struct lyd_node *sr_mods)
      for (i = 0; i < set->count; ++i) {
          sr_mod = set->dnodes[i];
  
