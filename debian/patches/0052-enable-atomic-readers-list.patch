@@ -753,10 +753,10 @@ index 2cb22d1..d69e300 100644
              sr_munlock(&sub_shm->lock.mutex);
              *lock_lost = 1;
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index 28c5a33..b69439c 100644
+index 6ad7359..16ceb56 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
-@@ -126,7 +126,7 @@ endif()
+@@ -132,7 +132,7 @@ endif()
  # valgrind tests
  if(ENABLE_VALGRIND_TESTS)
      foreach(test_name IN LISTS tests)
