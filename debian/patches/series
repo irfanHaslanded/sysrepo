@@ -50,3 +50,5 @@
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
 0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
 0059-attempt-recovery-on-rwlock-acq-delays.patch
+0053-shm-sub-UPDATE-optional-full-diff-print-parse.patch
+0054-shm-sub-UPDATE-use-specific-diff-for-all-the-change-.patch
