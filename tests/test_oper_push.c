@@ -2599,10 +2599,62 @@ test_oper_list_enabled(void **state)
     sr_unsubscribe(subscr);
 }
 
+static void
+test_change_origin(void **state)
+{
+    struct state *st = (struct state *)*state;
+    int ret;
+    char *str1 = NULL, *str2 = NULL;
+    sr_data_t *data;
+
+    /* switch to operational DS */
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* set some operational data */
+    ret = sr_set_item_str(st->sess, "/mixed-config:test-state/ll[1]", "a1", "default", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* read the data */
+    ret = sr_get_data(st->sess, "/mixed-config:test-state/ll[1]", 0, 0, SR_OPER_WITH_ORIGIN, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+    assert_int_equal(ret, 0);
+
+    sr_release_data(data);
+    str2 = "<test-state xmlns=\"urn:sysrepo:mixed-config\" xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\" or:origin=\"or:intended\">\n"
+    "  <ll or:origin=\"or:default\">a1</ll>\n"
+    "</test-state>\n";
+    assert_string_equal(str1, str2);
+
+    ret = sr_set_item_str(st->sess, "/mixed-config:test-state/ll[1]", "a1", "dynamic", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* read the data */
+    ret = sr_get_data(st->sess, "/mixed-config:test-state/ll[1]", 0, 0, SR_OPER_WITH_ORIGIN, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = lyd_print_mem(&str1, data->tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+    assert_int_equal(ret, 0);
+
+    sr_release_data(data);
+
+    str2 = "<test-state xmlns=\"urn:sysrepo:mixed-config\" xmlns:or=\"urn:ietf:params:xml:ns:yang:ietf-origin\" or:origin=\"or:intended\">\n"
+    "  <ll or:origin=\"or:dynamic\">a1</ll>\n"
+    "</test-state>\n";
+    assert_string_equal(str1, str2);
+}
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_change_origin, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
