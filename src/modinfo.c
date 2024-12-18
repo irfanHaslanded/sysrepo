@@ -632,6 +632,107 @@ cleanup:
     return err_info;
 }
 
+/**
+ * @brief get the xpath if the node is a "/sysrepo:discard-items" node and refers to module_name
+ * NULL otherwise
+ * */
+static const char *
+sr_modinfo_mod_discard_xpath_get(struct lyd_node *node, const char *module_name)
+{
+    const struct lys_module *ly_mod;
+    const char *xpath = NULL;
+
+    if (node->schema) {
+        return NULL;
+    }
+
+    ly_mod = lyd_owner_module(node);
+    if (!ly_mod || strcmp(ly_mod->name, "sysrepo") || strcmp(LYD_NAME(node), "discard-items")) {
+        /* other opaque nodes */
+        return NULL;
+    }
+
+    xpath = lyd_get_value(node);
+    if (!xpath || !xpath[0]) {
+        /* invalid XPath */
+        return NULL;
+    }
+
+    if (!sr_xpath_refs_mod(xpath, module_name)) {
+        /* not interested in other modules at this time */
+        return NULL;
+    }
+
+    return xpath;
+}
+
+/**
+ * @brief
+ * For the given module_name, process "/sysrepo:discard-items" nodes
+ * 1. from mod_info->data -> remove the nodes matching discard xpath
+ * 2. to mod_info->diff add operation="delete" to nodes matching discard xpath
+ * 3. Remove discard-items nodes from mod_info->diff unless operation="create" was specified
+ * */
+static sr_error_info_t *
+sr_modinfo_process_mod_discards(struct sr_mod_info_s *mod_info, const char *module_name)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *next = NULL, *node = NULL;
+    struct ly_set *set = NULL;
+    uint32_t j;
+    const char *xpath = NULL;
+    struct lyd_meta *meta = NULL;
+    enum edit_op op;
+
+    LY_LIST_FOR_SAFE(mod_info->diff, next, node) {
+        xpath = sr_modinfo_mod_discard_xpath_get(node, module_name);
+        if (!xpath) {
+            /* skip irrelevant nodes */
+            continue;
+        }
+
+        if ((op = sr_edit_diff_find_oper(node, 0, NULL) == EDIT_DELETE)) {
+            /* discard-items is being deleted */
+            continue;
+        }
+
+        /* Step 1. from mod_info->data, remove all the discarded nodes */
+        if ((err_info = sr_lyd_xpath_complement(&mod_info->data, xpath))) {
+            return err_info;
+        }
+
+        /* Step 2. into mod_info->diff, add operation delete */
+
+        /* find the nodes matching the xpath from the diff */
+        if ((err_info = sr_lyd_find_xpath(mod_info->diff, xpath, &set))) {
+            return err_info;
+        }
+
+        /* get rid of all redundant results that are descendants of another result */
+        if ((err_info = sr_xpath_set_filter_subtrees(set))) {
+            return err_info;
+        }
+
+        /* Set meta to operation="delete" */
+        for (j = 0; j < set->count; ++j) {
+            meta = lyd_find_meta(set->dnodes[j]->meta, NULL, "yang:operation");
+            if (meta) {
+                lyd_change_meta(meta, "delete");
+            } else if ((err_info = sr_diff_set_oper(set->dnodes[j], "delete"))) {
+                return err_info;
+            }
+        }
+        ly_set_free(set, NULL);
+
+        /* Add a create now, if not previously added */
+        if ((EDIT_CREATE != op) && (err_info = sr_diff_set_oper(node, "create"))) {
+            return err_info;
+        }
+    }
+
+    return err_info;
+}
+
 sr_error_info_t *
 sr_modinfo_oper_edit_apply(struct sr_mod_info_s *mod_info, const struct lyd_node *data, int create_diff)
 {
@@ -674,6 +775,10 @@ sr_modinfo_oper_edit_apply(struct sr_mod_info_s *mod_info, const struct lyd_node
 
             /* merge the whole stored data and set 'none' operation (for filters using non-changed nodes to work) */
             if (create_diff && (err_info = sr_edit_mod_diff_merge(&mod_info->diff, mod->ly_mod, mod_info->data))) {
+                goto cleanup;
+            }
+
+            if ((err_info = sr_modinfo_process_mod_discards(mod_info, mod->ly_mod->name))) {
                 goto cleanup;
             }
         }

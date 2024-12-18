@@ -982,6 +982,15 @@ int sr_oper_delete_item_str(sr_session_ctx_t *session, const char *path, const c
 int sr_discard_items(sr_session_ctx_t *session, const char *xpath);
 
 /**
+ * @brief Same as sr_session_discard_items, except the "discard-items" nodes are not persisted into the operational data SHM.
+ *
+ * When multiple sessions push data matching this xpath, a "delete" is published to the subscribers, but future reads will still see the data.
+ * So, use sr_discard_items instead.
+ *
+ * */
+int sr_session_discard_items(sr_session_ctx_t *session, const char *xpath);
+
+/**
  * @brief Prepare to move/create the instance of an user-ordered list or leaf-list to the specified position.
  * These changes are applied only after calling ::sr_apply_changes().
  *

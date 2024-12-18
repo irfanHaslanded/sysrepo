@@ -2398,7 +2398,8 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
     struct sr_oper_edit_arg arg = {0};
     const char *xpath;
     uint32_t i, j;
-    int found;
+    int found, keep;
+    struct lyd_attr *attr;
 
     assert((op == EDIT_MERGE) || (op == EDIT_REPLACE));
 
@@ -2508,21 +2509,30 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
     for (i = 0; i < opaq_set->count; ++i) {
         node = opaq_set->dnodes[i];
 
-        /* add the opaque node to data */
-        if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &dup))) {
-            goto cleanup;
-        }
-        if ((err_info = sr_lyd_insert_sibling(*data, dup, data))) {
-            goto cleanup;
+        /* Persist only nodes with operation="none" as the second operation */
+        attr = ((struct lyd_node_opaq *)node)->attr;
+        attr = attr ? attr->next : NULL;
+        keep = attr && attr->value && !strcmp("none", attr->value);
+        if (keep) {
+            /* add the opaque node to data */
+            if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &dup))) {
+                goto cleanup;
+            }
+            if ((err_info = sr_lyd_insert_sibling(*data, dup, data))) {
+                goto cleanup;
+            }
         }
 
         /* add the opaque node to diff */
         if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &dup))) {
             goto cleanup;
         }
-        if ((err_info = sr_diff_set_oper(dup, "create"))) {
+
+        /* set create operation now only if persisting this, it will be added later by sr_modinfo_process_mod_discards */
+        if (keep && (err_info = sr_diff_set_oper(dup, "create"))) {
             goto cleanup;
         }
+
         if ((err_info = sr_lyd_insert_sibling(*mod_diff, dup, mod_diff))) {
             goto cleanup;
         }

@@ -3545,9 +3545,10 @@ sr_oper_delete_item_str(sr_session_ctx_t *session, const char *path, const char 
     return sr_delete_item(session, path, opts);
 }
 
-API int
-sr_discard_items(sr_session_ctx_t *session, const char *xpath)
+static int
+_sr_discard_items(sr_session_ctx_t *session, const char *xpath, int persist)
 {
+
     sr_error_info_t *err_info = NULL;
     struct lyd_node *node;
 
@@ -3571,8 +3572,15 @@ sr_discard_items(sr_session_ctx_t *session, const char *xpath)
     if ((err_info = sr_lyd_new_opaq(session->conn->ly_ctx, "discard-items", xpath, "sysrepo", "sysrepo", &node))) {
         goto cleanup;
     }
+
     if ((err_info = sr_edit_set_oper(node, "merge"))) {
         goto cleanup;
+    }
+    if (persist) {
+        /* add a "sysrepo:none" operation to persist this discard */
+        if ((err_info = sr_edit_set_oper(node, "none"))) {
+            goto cleanup;
+        }
     }
     if ((err_info = sr_lyd_insert_sibling(session->dt[session->ds].edit->tree, node, &session->dt[session->ds].edit->tree))) {
         lyd_free_tree(node);
@@ -3585,6 +3593,20 @@ cleanup:
         session->dt[session->ds].edit = NULL;
     }
     return sr_api_ret(session, err_info);
+}
+
+API int
+sr_discard_items(sr_session_ctx_t *session, const char *xpath)
+{
+    return _sr_discard_items(session, xpath, 1);
+}
+
+API int
+sr_session_discard_items(sr_session_ctx_t *session, const char *xpath)
+{
+    /* Should not be used when multiple sessions have pushed operational data to the same module */
+    /* will cause deletes to be informed to subscribers one-time, but the data will be present for subsequent reads */
+    return _sr_discard_items(session, xpath, 0);
 }
 
 API int
