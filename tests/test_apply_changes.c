@@ -8093,12 +8093,110 @@ test_diff_reuse(void **state)
     ret = sr_session_stop(sess);
     assert_int_equal(ret, SR_ERR_OK);
 }
+typedef struct {
+    ATOMIC_T count;
+    ATOMIC_T sleep_us;
+} cb_stats;
+
+static int
+module_update_count_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
+        uint32_t request_id, void *private_data)
+{
+    int ret;
+    (void)sub_id;
+    (void)module_name;
+    (void)xpath;
+    (void)event;
+    (void)request_id;
+    (void)private_data;
+    if (event == SR_EV_UPDATE) {
+        ret = sr_set_item_str(session, "/test:l1[k='other_key']/v", "15", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+        return 0;
+    }
+    cb_stats *stats = (cb_stats *)private_data;
+    ATOMIC_INC_RELAXED(stats->count);
+    return 0;
+}
+static int
+module_change_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath, sr_event_t event,
+        uint32_t request_id, void *private_data)
+{
+    (void)session;
+    (void)sub_id;
+    (void)module_name;
+    (void)xpath;
+    (void)event;
+    (void)request_id;
+    cb_stats *stats = (cb_stats *)private_data;
+    ATOMIC_INC_RELAXED(stats->count);
+
+    /* sleep for sleep_us to add delay in callback if needed */
+    usleep(ATOMIC_LOAD_RELAXED(stats->sleep_us));
+    return 0;
+}
+
+static void
+test_multisub_update(void **arg)
+{
+    struct state *st = (struct state *)*arg;
+    sr_subscription_ctx_t *subscr[3];
+    int ret, i = 0;
+    const int expected_counts[3] = {2, 2, 2};
+    cb_stats stats[3];
+    sr_session_ctx_t *sess;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    memset(stats, 0, sizeof(stats));
+    memset(subscr, 0, sizeof(subscr));
+
+    /* Start some subscriptions to test.yang */
+    ret = sr_module_change_subscribe(sess, "test", "/test:l1[k='interested_key']", module_update_count_cb, &stats[i],
+            0, SR_SUBSCR_UPDATE, &subscr[i]);
+    assert_int_equal(ret, 0);
+    i++;
+
+    ret = sr_module_change_subscribe(sess, "test", "/test:l1[k='other_key']", module_change_cb, &stats[i],
+            0, 0, &subscr[i]);
+    assert_int_equal(ret, 0);
+    i++;
+
+    ret = sr_module_change_subscribe(sess, "test", NULL, module_change_cb, &stats[i],
+            0, 0, &subscr[i]);
+    assert_int_equal(ret, 0);
+
+    ret = sr_set_item_str(sess, "/test:l1[k='interested_key']/v", "25", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    for (i = 0; i < 3; i++) {
+        assert_int_equal(stats[i].count, expected_counts[i]);
+    }
+
+    memset(stats, 0, sizeof(stats));
+    ret = sr_delete_item(sess, "/test:l1[k='other_key']/v", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_delete_item(sess, "/test:l1[k='interested_key']/v", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    for (i = 0; i < 3; i++) {
+        sr_unsubscribe(subscr[i]);
+    }
+    exit(0);
+}
 
 /* MAIN */
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_setup_teardown(test_multisub_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_done, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_update2, setup_f, teardown_f),
