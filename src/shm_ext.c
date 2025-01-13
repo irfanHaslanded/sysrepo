@@ -494,6 +494,7 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
     }
     free(items);
 
+    SR_LOG_DBG("%s cur_off %u shm_ext->size %u", __func__, cur_off, shm_ext->size);
     /* check that no item exists after the mapped segment */
     assert((unsigned)cur_off == shm_ext->size);
     (void)cur_off;
