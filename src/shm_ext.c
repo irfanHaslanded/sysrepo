@@ -49,7 +49,7 @@ sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock
 
     if (ext_lock) {
         /* EXT LOCK */
-        if ((err_info = sr_mlock(&SR_CONN_MAIN_SHM(conn)->ext_lock, SR_EXT_LOCK_TIMEOUT, func, NULL, NULL))) {
+        if ((err_info = sr_rwlock(&SR_CONN_MAIN_SHM(conn)->ext_lock, SR_EXT_LOCK_TIMEOUT, mode, conn->cid, func, NULL, NULL))) {
             return err_info;
         }
     }
@@ -121,7 +121,7 @@ error_ext_remap_unlock:
 error_ext_unlock:
     if (ext_lock) {
         /* EXT UNLOCK */
-        sr_munlock(&SR_CONN_MAIN_SHM(conn)->ext_lock);
+        sr_rwunlock(&SR_CONN_MAIN_SHM(conn)->ext_lock, SR_EXT_LOCK_TIMEOUT, mode, conn->cid, func);
     }
     return err_info;
 }
@@ -160,7 +160,7 @@ cleanup_unlock:
 
     if (ext_lock) {
         /* EXT UNLOCK */
-        sr_munlock(&SR_CONN_MAIN_SHM(conn)->ext_lock);
+        sr_rwunlock(&SR_CONN_MAIN_SHM(conn)->ext_lock, SR_EXT_LOCK_TIMEOUT, mode, conn->cid, func);
     }
 
     sr_errinfo_free(&err_info);

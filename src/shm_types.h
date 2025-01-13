@@ -25,7 +25,7 @@
 #include "common_types.h"
 #include "sysrepo_types.h"
 
-#define SR_SHM_VER 18   /**< Main, mod, and ext SHM version of their expected content structures. */
+#define SR_SHM_VER 19   /**< Main, mod, and ext SHM version of their expected content structures. */
 #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
 
 /**
@@ -190,7 +190,7 @@ typedef struct {
 typedef struct {
     uint32_t shm_ver;           /**< Main and ext SHM version of all expected data stored in them. Is increased with
                                      every change of their structure content (ABI change). */
-    pthread_mutex_t ext_lock;   /**< Process-shared lock for accessing holes and truncating ext SHM. */
+    sr_rwlock_t ext_lock;       /**< Process-shared lock for accessing holes and truncating ext SHM. */
 
     sr_rwlock_t context_lock;   /**< Process-shared lock for accessing connection LY context, lydmods data,
                                      and SHM mod modules. */
