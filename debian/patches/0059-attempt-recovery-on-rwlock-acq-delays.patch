@@ -18,19 +18,19 @@ iteration.
  2 files changed, 9 insertions(+)
 
 diff --git a/src/common.c b/src/common.c
-index fb500cb..47f6450 100644
+index c5d4242..ef0041f 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -61,6 +61,8 @@
- #include "shm_sub.h"
- #include "sysrepo.h"
+@@ -65,6 +65,8 @@
+ 
+ #define SR_IS_YANG_ID_CHAR(c) (isalpha(c) || isdigit(c) || ((c) == '_') || ((c) == '-') || ((c) == '.'))
  
 +#define SR_COND_RETRY_STEP_SEC 3
 +
  #define SR_RWLOCK_ID(rwlock_ptr) (~(1u<<31) & (rwlock_ptr)->id)
  #define _SR_LOG_RWLOCK(ll, rwlock_ptr, mode, cid, func, str)           \
      sr_log(ll, "%s: %s rwlock %" PRIu32 " in mode %d by CID %" PRIu32, \
-@@ -2770,6 +2772,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2673,6 +2675,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
@@ -38,7 +38,7 @@ index fb500cb..47f6450 100644
                  ret = 0;
              }
          }
-@@ -2812,6 +2815,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2715,6 +2718,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
@@ -46,7 +46,7 @@ index fb500cb..47f6450 100644
                  ret = 0;
              }
          }
-@@ -2854,6 +2858,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2757,6 +2761,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
@@ -54,7 +54,7 @@ index fb500cb..47f6450 100644
                  ret = 0;
              }
          }
-@@ -2895,6 +2900,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2798,6 +2803,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay locking");
@@ -62,7 +62,7 @@ index fb500cb..47f6450 100644
                  ret = 0;
              }
          }
-@@ -3025,6 +3031,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2928,6 +2934,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, &timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay relocking");
@@ -70,7 +70,7 @@ index fb500cb..47f6450 100644
                  ret = 0;
              }
          }
-@@ -3091,6 +3098,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2994,6 +3001,7 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              ret = sr_cond_clockwait_retry(&rwlock->cond, &rwlock->mutex, &timeout_abs);
              if (ret == EAGAIN) {
                  SR_RWLOCK_WRN(rwlock, mode, cid, func, "delay relocking");
@@ -79,7 +79,7 @@ index fb500cb..47f6450 100644
              }
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 273f3ca..64a9fb1 100644
+index 81bb49d..dee4bbe 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -381,6 +381,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

@@ -9,10 +9,10 @@ also disable test for urge lock
  2 files changed, 12 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index a85940c..cfed584 100644
+index 052e510..15c8c5c 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -2586,7 +2586,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2489,7 +2489,9 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
      int ret = 0, r, wr_urged;
  
      assert(mode && timeout_abs && cid);
@@ -23,7 +23,7 @@ index a85940c..cfed584 100644
      if (!has_mutex) {
          /* MUTEX LOCK */
          ret = pthread_mutex_clocklock(&rwlock->mutex, COMPAT_CLOCK_ID, timeout_abs);
-@@ -2827,6 +2829,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2730,6 +2732,9 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      struct timespec timeout_abs;
      int ret, wr_urged;
  
@@ -33,7 +33,7 @@ index a85940c..cfed584 100644
      assert(mode && cid);
      assert(((mode != SR_LOCK_WRITE) && (mode != SR_LOCK_WRITE_URGE)) || (timeout_ms > 0));
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "ReLocking");
-@@ -3014,6 +3019,9 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2917,6 +2922,9 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
      int ret = 0;
  
      assert(mode && cid);
@@ -44,10 +44,10 @@ index a85940c..cfed584 100644
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index d16a7fc..377fa34 100644
+index 529b050..79d6e6d 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
-@@ -7994,12 +7994,13 @@ main(void)
+@@ -8123,12 +8123,13 @@ main(void)
          cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),
          cmocka_unit_test_setup_teardown(test_change_schema_mount, setup_f, teardown_f),

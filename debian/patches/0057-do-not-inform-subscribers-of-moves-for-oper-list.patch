@@ -15,10 +15,10 @@ So, ignoring any moves until libyang implements "system" ordering.
  1 file changed, 5 insertions(+)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 601fc1c..dfc85fa 100644
+index 52abe8c..7a21920 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
-@@ -3992,6 +3992,11 @@ sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, s
+@@ -3460,6 +3460,11 @@ sr_diff_set_getnext(struct ly_set *set, uint32_t *idx, struct lyd_node **node, s
              if ((*node)->schema->nodetype & (LYS_LEAF | LYS_ANYDATA)) {
                  *op = SR_OP_MODIFIED;
              } else if ((*node)->schema->nodetype & (LYS_LIST | LYS_LEAFLIST)) {

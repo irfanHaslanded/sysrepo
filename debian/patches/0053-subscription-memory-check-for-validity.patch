@@ -19,7 +19,7 @@ context to add more subscriptions to it.
  3 files changed, 43 insertions(+), 8 deletions(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index eeb2559..a60b8de 100644
+index b0a19c6..c19fdae 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
 @@ -67,6 +67,10 @@ typedef enum {
@@ -33,7 +33,7 @@ index eeb2559..a60b8de 100644
  /**
   * @brief Sysrepo read-write lock.
   */
-@@ -351,6 +355,7 @@ struct sr_subscription_ctx_s {
+@@ -353,6 +357,7 @@ struct sr_subscription_ctx_s {
          sr_shm_t sub_shm;           /**< Subscription SHM. */
      } *rpc_subs;                    /**< RPC/action subscriptions for each operation. */
      uint32_t rpc_sub_count;         /**< RPC/action operation subscription count. */
@@ -42,10 +42,10 @@ index eeb2559..a60b8de 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 2088991..6892d74 100644
+index ef96182..7305760 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5186,6 +5186,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5601,6 +5601,9 @@ _sr_unsubscribe(sr_subscription_ctx_t *subscription)
  
      assert(subscription);
  
@@ -55,7 +55,7 @@ index 2088991..6892d74 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(subscription->conn, SR_LOCK_READ, 0, __func__))) {
          return err_info;
-@@ -5251,6 +5254,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
+@@ -5666,6 +5669,22 @@ sr_unsubscribe(sr_subscription_ctx_t *subscription)
      return sr_api_ret(NULL, err_info);
  }
  
@@ -78,7 +78,7 @@ index 2088991..6892d74 100644
  API int
  sr_module_change_set_order(sr_conn_ctx_t *conn, const char *module_name, sr_datastore_t ds, uint32_t priority)
  {
-@@ -5470,7 +5489,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5885,7 +5904,8 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
              goto error;
          }
      }
@@ -88,7 +88,7 @@ index 2088991..6892d74 100644
      free(path);
      return NULL;
  
-@@ -5502,7 +5522,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5917,7 +5937,7 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      uint32_t xpath_id = 0;
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
@@ -97,7 +97,7 @@ index 2088991..6892d74 100644
  
      /* xpath = "" is invalid, implicitly convert it to NULL to avoid errors */
      if (xpath && !xpath[0]) {
-@@ -5545,6 +5565,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5961,6 +5981,10 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
      shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), module_name);
      SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
  
@@ -108,7 +108,7 @@ index 2088991..6892d74 100644
      if (!*subscription) {
          /* create a new subscription */
          if ((err_info = sr_subscr_new(conn, opts, subscription))) {
-@@ -6136,8 +6160,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
+@@ -6548,8 +6572,8 @@ _sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb callba
      sr_mod_t *shm_mod = NULL;
      int is_ext;
  
@@ -119,7 +119,7 @@ index 2088991..6892d74 100644
  
      conn = session->conn;
  
-@@ -6814,7 +6838,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
+@@ -7226,7 +7250,7 @@ _sr_notif_subscribe(sr_session_ctx_t *session, const char *mod_name, const char
              (start_time && (sr_time_cmp(start_time, &cur_ts) > 0)) ||
              (stop_time && ((start_time && (sr_time_cmp(stop_time, start_time) < 0)) ||
              (!start_time && (sr_time_cmp(stop_time, &cur_ts) < 0)))) ||
@@ -128,7 +128,7 @@ index 2088991..6892d74 100644
      conn = session->conn;
  
      /* CONTEXT LOCK */
-@@ -7315,8 +7339,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7727,8 +7751,8 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
      uint32_t prio = 0;
      uint32_t xpath_id = 0;
  
@@ -139,7 +139,7 @@ index 2088991..6892d74 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -7437,7 +7461,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7849,7 +7873,8 @@ sr_oper_poll_subscribe(sr_session_ctx_t *session, const char *module_name, const
      sr_mod_t *shm_mod;
      struct modsub_operpoll_s *oper_poll_subs;
  
@@ -150,10 +150,10 @@ index 2088991..6892d74 100644
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index f3d8eab..263fbb8 100644
+index c44bf7f..22cb8eb 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1308,6 +1308,11 @@ int sr_subscription_thread_resume(sr_subscription_ctx_t *subscription);
+@@ -1370,6 +1370,11 @@ int sr_subscription_thread_resume(sr_subscription_ctx_t *subscription);
   */
  int sr_unsubscribe(sr_subscription_ctx_t *subscription);
  

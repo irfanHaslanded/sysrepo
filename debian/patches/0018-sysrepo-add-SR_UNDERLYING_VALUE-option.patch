@@ -20,10 +20,10 @@ provide a more convenient alternative, particularly in Rust applications
  6 files changed, 101 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 750ce18..635ed10 100644
+index ad66a37..9c9011e 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -4048,11 +4048,11 @@ sr_ev2api(sr_sub_event_t ev)
+@@ -3951,11 +3951,11 @@ sr_ev2api(sr_sub_event_t ev)
  sr_error_info_t *
  sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val)
  {
@@ -36,12 +36,12 @@ index 750ce18..635ed10 100644
 +sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_origin, sr_val_ly2sr_opts_t opts, sr_val_t *sr_val)
  {
      sr_error_info_t *err_info = NULL;
-     char *ptr, *origin = NULL;
+     char *ptr;
 diff --git a/src/common.h b/src/common.h
-index a883d35..efc8cd0 100644
+index da71f83..3564cfe 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -243,7 +243,7 @@ typedef enum sr_val_ly2sr_opts_e {
+@@ -248,7 +248,7 @@ typedef enum sr_val_ly2sr_opts_e {
   * @param[out] sr_val sysrepo value.
   * @return err_info, NULL on success.
   */
@@ -51,10 +51,10 @@ index a883d35..efc8cd0 100644
  /*
   * From sysrepo.c
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index cd3663e..82f2d42 100644
+index e36ebec..2b0659d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2895,7 +2895,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2855,7 +2855,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      uint32_t i;
  
      SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
@@ -63,7 +63,7 @@ index cd3663e..82f2d42 100644
  
      if (!timeout_ms) {
          timeout_ms = SR_OPER_CB_TIMEOUT;
-@@ -2955,7 +2955,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2915,7 +2915,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      }
  
      for (i = 0; i < set->count; ++i) {
@@ -75,7 +75,7 @@ index cd3663e..82f2d42 100644
          }
          ++(*value_cnt);
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 9232e3c..1daadc5 100644
+index 2ea2da2..b7cf0e1 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -307,8 +307,13 @@ typedef enum sr_get_oper_flag_e {

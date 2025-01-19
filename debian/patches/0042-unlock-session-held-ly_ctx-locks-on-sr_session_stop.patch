@@ -4,14 +4,14 @@ Subject: unlock session held ly_ctx locks on sr_session_stop
 
 ---
  src/common_types.h |  1 +
- src/sysrepo.c      | 16 ++++++++++++++--
- 2 files changed, 15 insertions(+), 2 deletions(-)
+ src/sysrepo.c      | 17 ++++++++++++++---
+ 2 files changed, 15 insertions(+), 3 deletions(-)
 
 diff --git a/src/common_types.h b/src/common_types.h
-index 522a8dd..b440c34 100644
+index dd7f70b..9985bce 100644
 --- a/src/common_types.h
 +++ b/src/common_types.h
-@@ -218,6 +218,7 @@ struct sr_session_ctx_s {
+@@ -220,6 +220,7 @@ struct sr_session_ctx_s {
          } *first;                   /**< First stored notification buffer node. */
          struct sr_sess_notif_buf_node *last;    /**< Last stored notification buffer node. */
      } notif_buf;                    /**< Notification buffering attributes. */
@@ -20,10 +20,10 @@ index 522a8dd..b440c34 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index ef88904..d277cc2 100644
+index 4a79938..afa8acd 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -441,7 +441,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)
+@@ -407,7 +407,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)
          return NULL;
      }
  
@@ -36,7 +36,7 @@ index ef88904..d277cc2 100644
  }
  
  API void
-@@ -463,6 +467,7 @@ sr_session_release_context(sr_session_ctx_t *session)
+@@ -429,6 +433,7 @@ sr_session_release_context(sr_session_ctx_t *session)
      }
  
      sr_release_context(session->conn);
@@ -44,15 +44,16 @@ index ef88904..d277cc2 100644
  }
  
  API uint32_t
-@@ -839,6 +844,7 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -695,7 +700,7 @@ _sr_session_stop(sr_session_ctx_t *session)
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      sr_datastore_t ds;
+-    uint32_t i;
 +    uint32_t i, lycc_lock_count;
  
      /* subscriptions need to be freed before, with a WRITE lock */
      assert(!session->subscription_count && !session->subscriptions);
-@@ -861,7 +867,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -722,7 +727,13 @@ _sr_session_stop(sr_session_ctx_t *session)
      sr_shmmod_release_locks(session->conn, session->sid);
  
      /* CONTEXT UNLOCK */

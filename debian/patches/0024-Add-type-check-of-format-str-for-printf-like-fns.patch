@@ -22,7 +22,7 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  4 files changed, 12 insertions(+), 28 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b38b657..7ad6b84 100644
+index e0b92b4..76cb27b 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -77,7 +77,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
@@ -56,10 +56,10 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index d21f260..3a5b8f1 100644
+index 11dc883..5887fb3 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1632,20 +1632,20 @@ cleanup:
+@@ -1886,20 +1886,20 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -84,7 +84,7 @@ index d21f260..3a5b8f1 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1664,7 +1664,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1918,7 +1918,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
              continue;
          }
  
@@ -94,7 +94,7 @@ index d21f260..3a5b8f1 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -1672,7 +1673,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
+@@ -1926,7 +1927,8 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid, co
  
      /* if there is a read-lock and the writer is set, it is just an urged write-lock being waited on, ignore it */
      if (!i && (cid = rwlock->writer)) {
@@ -104,7 +104,7 @@ index d21f260..3a5b8f1 100644
          if ((err_info = sr_lyd_new_path(ctx_node, NULL, path, NULL, 0, NULL, NULL))) {
              goto cleanup;
          }
-@@ -2061,8 +2063,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -2315,8 +2317,7 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          shm_lock = &shm_mod->data_lock_info[ds];
  
          /* data-lock */
@@ -114,7 +114,7 @@ index d21f260..3a5b8f1 100644
  
          if (err_info) {
              return err_info;
-@@ -2108,8 +2109,7 @@ ds_unlock:
+@@ -2362,8 +2363,7 @@ ds_unlock:
  
      /* change-sub-lock */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {

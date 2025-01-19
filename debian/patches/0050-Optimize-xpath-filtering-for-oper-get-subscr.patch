@@ -31,10 +31,10 @@ subscriptions.
  4 files changed, 224 insertions(+), 14 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 0bc181f..3a0893b 100644
+index 1401942..686c2ca 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -934,6 +934,22 @@ sr_xpath_oper_data_text_atoms_required(const char *request_atom, const char *sub
+@@ -967,6 +967,22 @@ sr_xpath_oper_data_text_atoms_required(const char *request_atom, const char *sub
      return 1;
  }
  
@@ -57,7 +57,7 @@ index 0bc181f..3a0893b 100644
  /**
   * @brief Check whether operational data are required.
   *
-@@ -955,8 +971,8 @@ sr_xpath_oper_data_required(const char *request_xpath, const char *sub_xpath, in
+@@ -988,8 +1004,8 @@ sr_xpath_oper_data_required(const char *request_xpath, const char *sub_xpath, in
  
      *required = 1;
  
@@ -68,7 +68,7 @@ index 0bc181f..3a0893b 100644
          goto cleanup;
      }
  
-@@ -1829,6 +1845,11 @@ sr_modinfo_module_srmon_module_subs(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, stru
+@@ -2083,6 +2099,11 @@ sr_modinfo_module_srmon_module_subs(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, stru
       */
  
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
@@ -80,7 +80,7 @@ index 0bc181f..3a0893b 100644
          /* CHANGE SUB READ LOCK */
          if ((err_info = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
                  __func__, NULL, NULL))) {
-@@ -1899,6 +1920,9 @@ change_sub_unlock:
+@@ -2153,6 +2174,9 @@ change_sub_unlock:
      /*
       * oper get subscriptions
       */
@@ -90,7 +90,7 @@ index 0bc181f..3a0893b 100644
  
      /* OPER GET SUB READ LOCK */
      if ((err_info = sr_rwlock(&shm_mod->oper_get_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
-@@ -1957,9 +1981,13 @@ operget_sub_unlock:
+@@ -2211,9 +2235,13 @@ operget_sub_unlock:
          return err_info;
      }
  
@@ -104,7 +104,7 @@ index 0bc181f..3a0893b 100644
  
      /* OPER POLL SUB READ LOCK */
      if ((err_info = sr_rwlock(&shm_mod->oper_poll_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
-@@ -2010,6 +2038,11 @@ operpoll_sub_unlock:
+@@ -2264,6 +2292,11 @@ operpoll_sub_unlock:
          return err_info;
      }
  
@@ -116,7 +116,7 @@ index 0bc181f..3a0893b 100644
      /*
       * notification subscriptions
       */
-@@ -2070,7 +2103,7 @@ notif_sub_unlock:
+@@ -2324,7 +2357,7 @@ notif_sub_unlock:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -125,7 +125,7 @@ index 0bc181f..3a0893b 100644
  {
      sr_error_info_t *err_info = NULL;
      struct lyd_node *sr_mod, *sr_ds_lock;
-@@ -2085,6 +2118,10 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
+@@ -2339,6 +2372,10 @@ sr_modinfo_module_srmon_module(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, struct ly
          return err_info;
      }
  
@@ -136,7 +136,7 @@ index 0bc181f..3a0893b 100644
      /* last-modified */
      for (ds = 0; ds < SR_DS_COUNT; ++ds) {
          if ((ds == SR_DS_RUNNING) && !shm_mod->plugins[ds]) {
-@@ -2168,6 +2205,7 @@ ds_unlock:
+@@ -2422,6 +2459,7 @@ ds_unlock:
          return err_info;
      }
  
@@ -144,7 +144,7 @@ index 0bc181f..3a0893b 100644
      /* module subscriptions */
      if ((err_info = sr_modinfo_module_srmon_module_subs(conn, shm_mod, sr_mod))) {
          return err_info;
-@@ -2354,6 +2392,36 @@ cleanup:
+@@ -2608,6 +2646,36 @@ cleanup:
      return err_info;
  }
  
@@ -181,7 +181,7 @@ index 0bc181f..3a0893b 100644
  /**
   * @brief Load module data of the sysrepo-monitoring module. They are actually generated.
   *
-@@ -2373,7 +2441,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2627,7 +2695,11 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      const struct lys_module *ly_mod;
      sr_mod_shm_t *mod_shm;
      uint32_t i, j;
@@ -194,7 +194,7 @@ index 0bc181f..3a0893b 100644
  
      mod_shm = SR_CONN_MOD_SHM(mod_info->conn);
      ly_mod = ly_ctx_get_module_implemented(mod_info->conn->ly_ctx, "sysrepo-monitoring");
-@@ -2384,39 +2456,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2638,39 +2710,56 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
          goto cleanup;
      }
  
@@ -259,7 +259,7 @@ index 0bc181f..3a0893b 100644
                      goto cleanup;
                  }
              }
-@@ -2424,19 +2513,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
+@@ -2678,19 +2767,22 @@ sr_modinfo_module_data_load_srmon(struct sr_mod_info_s *mod_info, struct sr_mod_
      }
  
      /* connections */
@@ -285,10 +285,10 @@ index 0bc181f..3a0893b 100644
      lyd_free_siblings(mod_data);
      return err_info;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 14ac7d5..9e850d5 100644
+index 19f7c4a..ef96182 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7651,3 +7651,81 @@ cleanup:
+@@ -8080,3 +8080,81 @@ cleanup:
      }
  }
  
@@ -371,10 +371,10 @@ index 14ac7d5..9e850d5 100644
 +    return sr_api_ret(NULL, err_info);
 +}
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 311632b..f3d8eab 100644
+index 4df9686..c44bf7f 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1909,6 +1909,10 @@ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
+@@ -1972,6 +1972,10 @@ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
   * */
  int sr_module_rwlock_debug(sr_conn_ctx_t *conn, const char *module_name, uint32_t mask);
  

@@ -32,20 +32,17 @@ Added test for sysrepo-shutdown-mgr to oper import test script.
 ENG-6495
 ---
  CMakeLists.txt                         |  10 ++++
- src/common.c                           |   5 +-
- src/common.h                           |   3 +-
- src/context_change.c                   |   8 +--
+ src/common.h                           |   1 +
  src/executables/sysrepo-shutdown-mgr.c | 100 +++++++++++++++++++++++++++++++++
- src/modinfo.c                          |  11 +++-
+ src/modinfo.c                          |   9 ++-
  src/shm_main.c                         |   7 ++-
- src/shm_types.h                        |   5 ++
- src/sysrepo.c                          |   5 +-
- tests/test_sysrepocfg_oper.sh          |  94 +++++++++++++++++++++++++------
- 10 files changed, 217 insertions(+), 31 deletions(-)
+ src/shm_types.h                        |   4 ++
+ tests/test_sysrepocfg_oper.sh          |  93 ++++++++++++++++++++++++------
+ 7 files changed, 204 insertions(+), 20 deletions(-)
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7ad6b84..59e8aec 100644
+index 76cb27b..cf8460f 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -69,7 +66,7 @@ index 7ad6b84..59e8aec 100644
  # include repository files with highest priority
  include_directories("${PROJECT_SOURCE_DIR}/src")
  include_directories("${PROJECT_SOURCE_DIR}/src/plugins")
-@@ -603,6 +610,9 @@ if(ENABLE_SYSREPO_PLUGIND)
+@@ -605,6 +612,9 @@ if(ENABLE_SYSREPO_PLUGIND)
      install(FILES ${PROJECT_SOURCE_DIR}/src/executables/sysrepo-plugind.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
      install(DIRECTORY DESTINATION ${SRPD_PLUGINS_PATH})
  endif()
@@ -79,41 +76,11 @@ index 7ad6b84..59e8aec 100644
  if(SR_HAVE_DLOPEN)
      install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
  endif()
-diff --git a/src/common.c b/src/common.c
-index 8438f96..fb500cb 100644
---- a/src/common.c
-+++ b/src/common.c
-@@ -5782,7 +5782,7 @@ sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
- }
- 
- sr_error_info_t *
--sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
-+sr_module_file_data_append(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
-         const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
- {
-     sr_error_info_t *err_info = NULL;
-@@ -5790,6 +5790,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
-     struct lyd_meta *meta;
-     int modified;
-     sr_cid_t dead_cid = 0;
-+    int dead_cid_check = (ds == SR_DS_OPERATIONAL) && (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect));
- 
-     if (ds == SR_DS_CANDIDATE) {
-         if ((err_info = ds_handle[ds]->plugin->candidate_modified_cb(ly_mod, ds_handle[ds]->plg_data, &modified))) {
-@@ -5812,7 +5813,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
-         return err_info;
-     }
- 
--    if (mod_data && (ds == SR_DS_OPERATIONAL)) {
-+    if (mod_data && dead_cid_check) {
- trim_retry:
-         if (dead_cid) {
-             /* this connection is dead, remove its stored edit */
 diff --git a/src/common.h b/src/common.h
-index f7b5ab2..61bcb98 100644
+index 649b5c8..2a92a14 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -1369,6 +1369,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
+@@ -1385,6 +1385,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
  /**
   * @brief Append stored module data to a data tree.
   *
@@ -121,55 +88,6 @@ index f7b5ab2..61bcb98 100644
   * @param[in] ly_mod libyang module.
   * @param[in] ds_handle Datastore plugin handles of @p ly_mod.
   * @param[in] ds Datastore of the data.
-@@ -1377,7 +1378,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
-  * @param[in,out] data Data tree to append to.
-  * @return err_info, NULL on success.
-  */
--sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[],
-+sr_error_info_t *sr_module_file_data_append(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[],
-         sr_datastore_t ds, const char **xpaths, uint32_t xpath_count, struct lyd_node **data);
- 
- /**
-diff --git a/src/context_change.c b/src/context_change.c
-index 924d820..27144e9 100644
---- a/src/context_change.c
-+++ b/src/context_change.c
-@@ -638,7 +638,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
-         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
-             goto cleanup;
-         }
--        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->start))) {
-+        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->start))) {
-             goto cleanup;
-         }
- 
-@@ -648,7 +648,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
-             if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
-                 goto cleanup;
-             }
--            if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->run))) {
-+            if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->run))) {
-                 goto cleanup;
-             }
-         }
-@@ -658,7 +658,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
-         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
-             goto cleanup;
-         }
--        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->oper))) {
-+        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->oper))) {
-             goto cleanup;
-         }
- 
-@@ -667,7 +667,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
-         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
-             goto cleanup;
-         }
--        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, NULL, 0, &data->fdflt))) {
-+        if ((err_info = sr_module_file_data_append(conn, ly_mod, ds_handle, ds, NULL, 0, &data->fdflt))) {
-             goto cleanup;
-         }
-     }
 diff --git a/src/executables/sysrepo-shutdown-mgr.c b/src/executables/sysrepo-shutdown-mgr.c
 new file mode 100644
 index 0000000..852b124
@@ -277,28 +195,28 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 80d9c84..0229389 100644
+index 3bb21c4..0c5854b 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1225,7 +1225,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1289,6 +1289,8 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
+     struct ly_set *set;
+     uint32_t i, j, merge_opts, oper_push_count = 0;
+     int last_sid = 0, dead_cid = 0;
++    int dead_cid_check =
++        (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect));
  
-     if (!(get_oper_opts & SR_OPER_NO_STORED)) {
-         /* get stored operational edit */
--        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0, &edit))) {
-+        if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0, &edit))) {
-             return err_info;
-         }
-     }
-@@ -2603,7 +2603,7 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
-         }
- 
-         /* get current DS data (ds2 is running when getting operational data) */
--        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, xpaths, xpath_count,
-+        if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, mod_info->ds2, xpaths, xpath_count,
-                 &mod_info->data))) {
-             return err_info;
-         }
-@@ -2867,6 +2867,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
+     /* EXT READ LOCK */
+     if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
+@@ -1303,7 +1305,7 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
+         } else {
+             oper_push_ext = (sr_mod_oper_push_t *)(conn->ext_shm.addr + mod->shm_mod->oper_push_data);
+             for (i = 0; i < mod->shm_mod->oper_push_data_count; ++i) {
+-                if (!sr_conn_is_alive(oper_push_ext[i].cid)) {
++                if (dead_cid_check && !sr_conn_is_alive(oper_push_ext[i].cid)) {
+                     /* remember to remove the dead connections */
+                     dead_cid = 1;
+                 } else {
+@@ -3167,6 +3169,11 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, sr_session_c
          }
      }
  
@@ -310,17 +228,8 @@ index 80d9c84..0229389 100644
      /* load data for each module */
      for (i = 0; i < mod_info->mod_count; ++i) {
          mod = &mod_info->mods[i];
-@@ -2878,7 +2883,7 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, const char *
-         if ((mod_info->ds == SR_DS_OPERATIONAL) && (mod_info->ds2 == SR_DS_OPERATIONAL)) {
-             /* special case when we are not working with data but with edit */
-             assert(!mod->xpath_count);
--            if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0,
-+            if ((err_info = sr_module_file_data_append(conn, mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL, NULL, 0,
-                     &mod_info->data))) {
-                 goto cleanup;
-             }
 diff --git a/src/shm_main.c b/src/shm_main.c
-index 27a8ab4..f2f8763 100644
+index ccceffb..da09db4 100644
 --- a/src/shm_main.c
 +++ b/src/shm_main.c
 @@ -455,6 +455,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
@@ -340,7 +249,7 @@ index 27a8ab4..f2f8763 100644
  
          if ((err_info = sr_mutex_init(&main_shm->ext_lock, 1))) {
              goto cleanup;
-@@ -518,9 +519,9 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
+@@ -519,9 +520,9 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
          sr_remove_evpipes();
      } else {
          /* check version */
@@ -353,19 +262,19 @@ index 27a8ab4..f2f8763 100644
          }
  
 diff --git a/src/shm_types.h b/src/shm_types.h
-index d21eed8..af13222 100644
+index b529279..1ce9b71 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
 @@ -26,6 +26,8 @@
  #include "sysrepo_types.h"
  
- #define SR_SHM_VER 18   /**< Main, mod, and ext SHM version of their expected content structures. */
+ #define SR_SHM_VER 19   /**< Main, mod, and ext SHM version of their expected content structures. */
 +#define SR_DEBIAN_SHM_VER 1 /**< shm version to track debian changes to shm */
 +
  #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
  
  /**
-@@ -183,6 +185,8 @@ typedef struct {
+@@ -199,6 +201,8 @@ typedef struct {
      pthread_mutex_t lydmods_lock;   /**< Process-shared lock for modifying SR internal module data. */
      uint32_t content_id;        /**< Context content ID of the latest context. */
  
@@ -374,32 +283,8 @@ index d21eed8..af13222 100644
      ATOMIC_T new_rwlock_id;     /**< New rwlock ID to track sr_rwlock_t locks */
      ATOMIC_T new_xpath_id;      /**< New rwlock ID to track sr_rwlock_t locks */
      ATOMIC_T new_sr_cid;        /**< Connection ID for a new connection. */
-@@ -191,6 +195,7 @@ typedef struct {
-     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
- 
-     char repo_path[256];        /**< Repository path used when main SHM was created. */
-+
- } sr_main_shm_t;
- 
- /**
-diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 648a90d..7510985 100644
---- a/src/sysrepo.c
-+++ b/src/sysrepo.c
-@@ -403,8 +403,9 @@ sr_disconnect(sr_conn_ctx_t *conn)
-         }
-     }
- 
--    /* free any stored operational data (API function) */
--    if ((rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
-+    /* free any stored operational data (API function) if needed */
-+    if (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect) &&
-+            (rc = sr_discard_oper_changes(conn, NULL, NULL, 0))) {
-         return rc;
-     }
- 
 diff --git a/tests/test_sysrepocfg_oper.sh b/tests/test_sysrepocfg_oper.sh
-index 35cebef..5167ec4 100755
+index 35cebef..5f434ca 100755
 --- a/tests/test_sysrepocfg_oper.sh
 +++ b/tests/test_sysrepocfg_oper.sh
 @@ -1,9 +1,20 @@
@@ -429,7 +314,7 @@ index 35cebef..5167ec4 100755
  cat << EOF > oper.json
  {
    "mixed-config:test-state": {
-@@ -14,18 +25,69 @@ cat << EOF > oper.json
+@@ -14,18 +25,68 @@ cat << EOF > oper.json
  }
  EOF
  
@@ -502,7 +387,6 @@ index 35cebef..5167ec4 100755
 +
 +TestLog 'Check for warning of a dead CID'
 +grep -E '\[WRN\] Connection with CID [0-9]+ is dead.' warning.log
-+grep -F '[INF] Recovering module "mixed-config" stored operational data of CID' warning.log
 +
 +TestLog 'Cleanup'
 +kill -s SIGTERM $shutdown_mgr_pid

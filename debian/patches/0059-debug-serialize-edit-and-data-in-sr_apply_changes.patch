@@ -5,47 +5,78 @@ Subject: debug: serialize edit and data in sr_apply_changes
 When sr_apply_changes fails, it is helpful to have the json for what
 failed to apply. Without it reproducing the problem is time consuming.
 
-If an assertion happens, the json in memory is better to read than
+If an crash happens, the json in memory is better to read than
 going through lyd_node structs in gdb.
 
 Closes: ENG-6310
 ---
- src/sysrepo.c | 9 +++++++++
- 1 file changed, 9 insertions(+)
+ src/sysrepo.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
 
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index dbaae23..a24aead 100644
+index 7305760..6372a3e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -4165,6 +4165,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
-     sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
+@@ -4222,6 +4222,7 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
+     const struct lyd_node *oper_edit;
+     uint32_t mi_opts, i;
+     int update_sm_data = 0;
++    char *edit_json = NULL, *data_json = NULL;
+ 
+     assert(session && (session->ds == SR_DS_OPERATIONAL));
+ 
+@@ -4236,6 +4237,9 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
+         goto cleanup;
+     }
+ 
++    lyd_print_mem(&edit_json, oper_edit, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
++    lyd_print_mem(&data_json, mod_info->data, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
++
+     /* add modules into mod_info, locking, and data */
+     mi_opts = SR_MI_LOCK_UPGRADEABLE | SR_MI_PERM_NO;
+     if ((err_info = sr_modinfo_consolidate(mod_info, SR_LOCK_READ, mi_opts, session, 0, 0, 0))) {
+@@ -4294,6 +4298,11 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
+     }
+ 
+ cleanup:
++    if (err_info && data_json && edit_json) {
++        SR_LOG_WRN("Failed to apply oper changes: data %s edit %s", data_json, edit_json);
++    }
++    free(edit_json);
++    free(data_json);
+     sr_release_data(old_oper_data);
+     lyd_free_siblings(data_diff);
+     lyd_free_siblings(old_oper_ds);
+@@ -4307,6 +4316,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+     sr_error_info_t *err_info = NULL, *err_info2 = NULL;
      struct sr_mod_info_s mod_info;
      uint32_t mi_opts;
 +    char *edit_json = NULL, *data_json = NULL;
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds), session, err_info);
  
-@@ -4194,6 +4195,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
+@@ -4342,6 +4352,9 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
          goto cleanup;
      }
  
 +    lyd_print_mem(&edit_json, session->dt[session->ds].edit->tree, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
-+    lyd_print_mem(&data_json, mod_info.data, LYD_JSON,LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
++    lyd_print_mem(&data_json, mod_info.data, LYD_JSON, LYD_PRINT_SHRINK | LYD_PRINT_WITHSIBLINGS);
 +
      /* create diff */
-     if (mod_info.ds == SR_DS_OPERATIONAL) {
-         err_info = sr_modinfo_edit_merge(&mod_info, session->dt[session->ds].edit->tree, 1);
-@@ -4216,13 +4220,18 @@ cleanup:
+     if ((err_info = sr_modinfo_edit_apply(&mod_info, session->dt[session->ds].edit->tree, 1, &err_info2))) {
+         goto cleanup;
+@@ -4363,12 +4376,19 @@ cleanup:
          /* free applied edit */
          sr_release_data(session->dt[session->ds].edit);
          session->dt[session->ds].edit = NULL;
 +    } else {
-+        SR_LOG_WRN("Failed to apply changes data %s edit %s", data_json, edit_json);
++        if (data_json && edit_json) {
++            SR_LOG_WRN("Failed to apply changes data %s edit %s", data_json, edit_json);
++        }
      }
-     if (cb_err_info) {
+     if (err_info2) {
          /* return callback error if some was generated */
-         assert(!err_info);
-         err_info = cb_err_info;
+         sr_errinfo_merge(&err_info, err_info2);
      }
 +    free(edit_json);
 +    free(data_json);
