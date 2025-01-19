@@ -1,3 +1,193 @@
+sysrepo (3.4.2-1) unstable; urgency=medium
+
+  [ IrfanMohammad ]
+  * update debian/control required libyang version
+  * bugfix initialize rwlock for sr_mod rpc
+  * shm_sub ensure recovery on previous incomplete cleanup
+
+  [ Michal Vasko ]
+  * shm sub UPDATE optional full diff print/parse
+  * shm sub UPDATE use specific diff for all the change events
+  * sysrepo FEATURE changed push oper data functionality
+  * doc BUGFIX minor fixes
+  * doc UPDATE new push oper data page
+  * plugins datastore REFACTOR common functions made public
+  * SOVERSION bump to version 7.28.0
+  * VERSION bump to version 3.0.0
+  * shm types UPDATE always use uint32_t for compatibility
+  * sysrepo UPDATE multi-error validation
+  * SOVERSION bump to version 7.28.1
+  * VERSION bump to version 3.1.0
+  * ly wrap UPDATE print libyang validation warnings
+  * plugins UPDATE macro terminated by ;
+  * ds mongo UPDATE support new push oper data
+  * ds redis UPDATE support new push oper data
+  * doc UPDATE sr_discard_items description updated
+  * sysrepo UPDATE allow diff retrieval for sessions of all the events
+
+  [ IrfanMohammad ]
+  * reuse module sub_shm diff for multiple events
+  * test - reuse_diff and SR_SUBSCR_CHANGE_ALL_MODULES
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 7.28.2
+  * VERSION bump to version 3.2.0
+
+  [ IrfanMohammad ]
+  * tests bugfix cleanup fixture
+  * shm_sub optimize diff parsing
+
+  [ Michal Vasko ]
+  * sysrepocfg UPDATE do not validate values in data
+
+  [ IrfanMohammad ]
+  * bugfix goto in sr_shmsub_change_notify_update
+  * sr_shmsub_change_notify_evpipe track num_notified
+
+  [ Michal Vasko ]
+  * modinfo UPDATE use netconf info in config-change notif
+  * SOVERSION bump to version 7.28.3
+  * VERSION bump to version 3.2.1
+  * sub ntf BUGFIX aply NACM to periodic updates notifications
+  * SOVERSION bump to version 7.28.4
+  * VERSION bump to version 3.2.2
+  * test REFACTOR formatting
+  * sub ntf BUGFIX apply NACM on on-change notifications
+  * test UPDATE sub-ntf NACM test
+  * doc UPDATE mention special YANG Push notif NACM behavior
+  * SOVERSION bump to version 7.28.5
+  * VERSION bump to version 3.2.3
+  * tests UPDATE test module changes
+  * build BUGUFIX conditional service file install
+  * sysrepo BUGFIX trim data after making results disjoint
+  * SOVERSION bump to version 7.28.6
+  * VERSION bump to version 3.2.4
+  * actions UPDATE do not use codeQL
+  * doc BUGFIX wrong func ref
+  * sysrepo FEATURE discard prepared changes based on xpath
+  * SOVERSION bump to version 7.29.0
+  * VERSION bump to version 3.3.0
+
+  [ Irfan ]
+  * modinfo UPDATE check running sub aliveness before copying to oper (#3472)
+
+  [ Michal Vasko ]
+  * shm sub BUGFIX handling no abort events generated
+  * SOVERSION bump to version 7.29.1
+  * VERSION bump to version 3.3.1
+  * shm sub BUGFIX properly handle a notification timeout
+  * SOVERSION bump to version 7.29.2
+  * VERSION bump to version 3.3.2
+  * sysrepo BUGFIX safe node free
+  * edit diff REFACTOR redundant origin copy
+  * edit diff OPTIMIZE do not duplicate origin
+  * edit diff UPDATE handle origin-only oper changes
+  * SOVERSION bump ot version 7.29.3
+  * VERSION bump to version 3.3.3
+  * common UPDATE improve opendir errors
+  * doc UPDATE include a security policy
+
+  [ IrfanMohammad ]
+  * ds_mongo support multiple discard-items
+
+  [ Michal Vasko ]
+  * sysrepo UPDATE check that edit is top-level
+  * edit diff REFACTOR uninitialized vars warn false positives
+
+  [ Irfan ]
+  * tests BUGFIX skip same priority callbacks order check (#3485)
+
+  [ Michal Vasko ]
+  * common UPDATE ignore common sr plugins dir errors
+  * doc BUGFIX clarify error logging
+  * edit diff BUGFIX loop end condition
+  * edit diff UPDATE allow updating leaf values in changes
+  * sysrepo REFACTOR unused param
+  * sysrepo UPDATE allow deleting push oper data
+  * test BUGFIX checking cb called count
+  * SOVERSION bump to version 7.29.4
+  * VERSION bump to version 3.3.4
+  * sysrepo UPDATE notify about oper data discard-items changes
+  * SOVERSION bump to version 7.29.5
+  * VERSION bump ot version 3.3.5
+  * shm mod UPDATE support for DS lock recovery
+  * SOVERSION bump to version 7.29.6
+  * VERSION bump to version 3.3.6
+  * ds json UPDATE use startup backup files
+  * modinfo BUGFIX keeping notify and ds diff the same
+  * ds redis BUGFIX support for multiple discard-items nodes
+  * SOVERSION bump to version 7.29.7
+  * VERSION bump ot version 3.3.7
+  * modinfo UPDATE poll cache works for nested subscriptions, too
+  * SOVERSION bump to version 7.29.8
+  * VERSION bump to version 3.3.8
+
+  [ Petr Gotthard ]
+  * build BUGFIX link libatomic when found
+
+  [ Michal Vasko ]
+  * sysrepo OPTIMIZE do not discard oper changes for sessions without them
+  * sysrepo BUGFIX handle push oper deletions with no data
+  * doc UPDATE clarify sr_delete_item for oper DS
+  * SOVERSION bump to version 7.29.9
+  * VERSION bump to version 3.3.9
+  * ds redis BUGFIX invalid max limit
+  * sysrepo UPDATE distinguish strict deletion for oper DS
+  * sysrepo UPDATE deleting all (leaf-)list instances in push oper data
+  * sysrepo BUGFIX invalid dereference
+  * build UPDATE base ABI check version moved
+  * SOVERSION bump to version 7.29.10
+  * VERSION bump ot version 3.3.10
+  * modinfo BUGFIX add NP containers to push oper data
+  * sysrepo BUGFIX wrong param
+  * SOVERSION bump to version 7.29.11
+  * VERSION bump to version 3.3.11
+  * sysrepo UPDATE generate notifications on module changes
+  * SOVERSION bump to version 7.29.12
+  * VERSION bump to version 3.4.0
+
+  [ IrfanMohammad ]
+  * shmext REFACTOR conn_remap_unlock remove last hole
+  * modinfo UPDATE sess push oper data module cache
+
+  [ Michal Vasko ]
+  * modinfo REFACTOR formatting and missing doxygen
+
+  [ Irfan ]
+  * shm_ext BUGFIX remap READ lock is enough (#3496)
+
+  [ Michal Vasko ]
+  * modinfo OPTIMIZE avoid long ext lock holding
+  * shm sub UPDATE use operation ID instead of request ID
+  * SOVERSION bump to version 7.29.13
+  * VERSION bump to version 3.4.1
+
+  [ Irfan ]
+  * shm_ext REFACTOR redundant subscription recovery (#3499)
+
+  [ Michal Vasko ]
+  * edit diff BUGFIX skip modules without data
+  * doc UPDATE clarify ext SHM locking
+
+  [ Irfan ]
+  * shm ext BUGFIX ext SHM lock is not needed (#3500)
+  * sysrepo BUGFIX push oper data lock fixes (#3501)
+
+  [ Michal Vasko ]
+  * build UPDATE move base ABI version
+  * SOVERSION bump to version 7.29.14
+  * VERSION bump to version 3.4.2
+
+  [ Irfan ]
+  * modinfo OPTIMIZE avoid ext wrlock if possible (#3506)
+  * modinfo OPTIMIZE check session for oper data, not ext SHM (#3505)
+  * modinfo BUGFIX delete ext shm data at sr_session_stop (#3507)
+
+  [ IrfanMohammad ]
+  * update patches for v3.4.2
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Sun, 19 Jan 2025 10:23:31 +0000
+
 sysrepo (2.12.0-1) unstable; urgency=medium
 
   [ Rob Shearman ]
