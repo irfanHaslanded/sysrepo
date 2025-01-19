@@ -6857,17 +6857,12 @@ apply_change_schema_mount_thread(void *arg)
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_apply_changes(sess, 0);
     assert_int_equal(ret, SR_ERR_OK);
-    sr_session_stop(sess);
 
     /* signal that the subscription can be created */
     pthread_barrier_wait(&st->barrier);
 
     /* wait for subscription */
     pthread_barrier_wait(&st->barrier);
-
-    /* create a new session to update LY ext data and get the schema-mount data */
-    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
-    assert_int_equal(ret, SR_ERR_OK);
 
     /* create some running data */
     ret = sr_set_item_str(sess, "/sm:root/ietf-interfaces:interfaces/interface[name='bu']/type",
@@ -6884,11 +6879,6 @@ apply_change_schema_mount_thread(void *arg)
     pthread_barrier_wait(&st->barrier);
 
     /* cleanup */
-    ret = sr_delete_item(sess, "/sm:root", 0);
-    assert_int_equal(ret, SR_ERR_OK);
-    ret = sr_apply_changes(sess, 0);
-    assert_int_equal(ret, SR_ERR_OK);
-
     sr_session_stop(sess);
     return NULL;
 }
@@ -7966,6 +7956,144 @@ test_list_replace(void **state)
     pthread_join(tid[1], NULL);
 }
 
+/* TEST */
+static int
+module_diff_reuse_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *module_name, const char *xpath,
+        sr_event_t event, uint32_t request_id, void *private_data)
+{
+    (void)sub_id;
+    (void)xpath;
+    (void)request_id;
+
+    struct state *st = (struct state *)private_data;
+    const struct lyd_node *diff = NULL;
+    int ret;
+    uint32_t cb_called = ATOMIC_INC_RELAXED(st->cb_called);
+
+    char *diff_str = NULL;
+    const char *intf_diff =
+            "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\" xmlns:yang=\"urn:ietf:params:xml:ns:yang:1\" yang:operation=\"none\">\n"
+            "  <interface yang:operation=\"create\">\n"
+            "    <name>eth52</name>\n"
+            "    <type yang:operation=\"create\" xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type>\n"
+            "  </interface>\n"
+            "</interfaces>\n";
+
+    const char *test_diff = "<l1 xmlns=\"urn:test\" xmlns:yang=\"urn:ietf:params:xml:ns:yang:1\" yang:key=\"\" yang:operation=\"create\">\n"
+            "  <k>key1</k>\n"
+            "  <v yang:operation=\"create\">1</v>\n"
+            "</l1>\n";
+    const char *full_diff =
+            "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\" xmlns:yang=\"urn:ietf:params:xml:ns:yang:1\" yang:operation=\"none\">\n"
+            "  <interface yang:operation=\"create\">\n"
+            "    <name>eth52</name>\n"
+            "    <type yang:operation=\"create\" xmlns:ianaift=\"urn:ietf:params:xml:ns:yang:iana-if-type\">ianaift:ethernetCsmacd</type>\n"
+            "  </interface>\n"
+            "</interfaces>\n"
+            "<l1 xmlns=\"urn:test\" xmlns:yang=\"urn:ietf:params:xml:ns:yang:1\" yang:key=\"\" yang:operation=\"create\">\n"
+            "  <k>key1</k>\n"
+            "  <v yang:operation=\"create\">1</v>\n"
+            "</l1>\n";
+
+    const size_t NUM_SUBS = 7;
+
+    diff = sr_get_change_diff(session);
+    ret = lyd_print_mem(&diff_str, diff, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    if (cb_called < NUM_SUBS) {
+        assert_int_equal(event, SR_EV_CHANGE);
+    } else {
+        assert_int_equal(event, SR_EV_DONE);
+    }
+
+    if (!strcmp(module_name, "test")) {
+        /* test module will always receive module specific diff */
+        assert_string_equal(diff_str, test_diff);
+    } else {
+        switch (cb_called % NUM_SUBS) {
+        case 0:
+        case 1:
+        /* priority 10 module_diff */
+        case 5:
+        case 6:
+            /* priority 30 module diff */
+            assert_string_equal(diff_str, intf_diff);
+            break;
+        case 2:
+        case 3:
+        case 4:
+            /* priority 20 full diff as we have a ALL_MODULES sub */
+            assert_string_equal(diff_str, full_diff);
+            break;
+        default:
+            fail();
+            break;
+        }
+    }
+
+    free(diff_str);
+    return SR_ERR_OK;
+}
+
+static void
+test_diff_reuse(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_subscription_ctx_t *subscr = NULL;
+    sr_session_ctx_t *sess;
+    int ret;
+
+    ret = sr_session_start(st->conn, SR_DS_RUNNING, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+    /* create a subscription requesting an all-modules diff */
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", "/ietf-interfaces:interfaces", module_diff_reuse_cb, st, 20, SR_SUBSCR_CHANGE_ALL_MODULES, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* create normal subscriptions at different priorities */
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_diff_reuse_cb, st, 10, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_diff_reuse_cb, st, 20, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "ietf-interfaces", NULL, module_diff_reuse_cb, st, 30, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "test", NULL, module_diff_reuse_cb, st, 10, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "test", NULL, module_diff_reuse_cb, st, 20, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_module_change_subscribe(sess, "test", NULL, module_diff_reuse_cb, st, 30, 0, &subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* create changes for multiple modules */
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces/interface[name='eth52']/type", "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(sess, "/test:l1[k='key1']/v", "1", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 14);
+
+    ret = sr_unsubscribe(subscr);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_delete_item(sess, "/ietf-interfaces:interfaces", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_delete_item(sess, "/test:l1", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_session_stop(sess);
+    assert_int_equal(ret, SR_ERR_OK);
+}
+
 /* MAIN */
 int
 main(void)
@@ -7991,6 +8119,7 @@ main(void)
         cmocka_unit_test_setup_teardown(test_change_timeout, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_done_timeout, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_filter_orig, setup_f, teardown_f),
+        cmocka_unit_test_setup_teardown(test_diff_reuse, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_order, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_userord, setup_f, teardown_f),
         cmocka_unit_test_setup_teardown(test_change_enabled, setup_f, teardown_f),

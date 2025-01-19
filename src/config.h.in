@@ -97,7 +97,10 @@
 #define SR_INT_MOD_DISABLED_RUNNING "@INTERNAL_MODULE_DISABLED_RUNNING@"
 
 /** where SHM files are stored */
-#define SR_SHM_DIR "@SHM_DIR@"
+#define SR_SHM_PATH "@SHM_DIR@"
+
+/** environment variable overriding the compiled-in value */
+#define SR_SHM_PATH_ENV "SYSREPO_SHM_DIR"
 
 /** default prefix for SHM files in /dev/shm */
 #define SR_SHM_PREFIX_DEFAULT "sr"
@@ -134,6 +137,9 @@
 
 /** default permission of data files of internal modules with some data or features */
 #define SR_INTMOD_WITHDATA_FILE_PERM 00644
+
+/** environment variable overriding the compiled-in value for DS and notification plugins directory */
+#define SR_PLG_PATH_ENV "SYSREPO_PLUGINS_DIR"
 
 /** default plugin for startup datastore */
 #define SR_DEFAULT_STARTUP_DS "@DEFAULT_STARTUP_DS_PLG@"

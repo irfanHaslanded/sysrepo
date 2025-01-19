@@ -4,8 +4,8 @@
  * @brief header for all SHM types
  *
  * @copyright
- * Copyright (c) 2018 - 2023 Deutsche Telekom AG.
- * Copyright (c) 2018 - 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@
 #include "common_types.h"
 #include "sysrepo_types.h"
 
-#define SR_SHM_VER 18   /**< Main, mod, and ext SHM version of their expected content structures. */
+#define SR_SHM_VER 19   /**< Main, mod, and ext SHM version of their expected content structures. */
 #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
 
 /**
@@ -76,6 +76,16 @@ typedef struct {
 } sr_dep_t;
 
 /**
+ * @brief Mod SHM oper push data session entry.
+ */
+typedef struct {
+    sr_cid_t cid;   /**< Connection ID. */
+    uint32_t sid;   /**< Session ID. */
+    uint32_t order; /**< Order (priority) of the data, lower applied first. */
+    int has_data;   /**< Whether the session has any data stored or not. */
+} sr_mod_oper_push_t;
+
+/**
  * @brief Mod SHM RPC/action.
  */
 typedef struct {
@@ -110,6 +120,7 @@ typedef struct {
         sr_rwlock_t data_lock;  /**< Process-shared lock for accessing module instance data. */
 
         pthread_mutex_t ds_lock;    /**< Process-shared lock for accessing DS lock information. */
+        sr_cid_t ds_lock_cid;   /**< CID of the session holding the datastore lock. */
         uint32_t ds_lock_sid;   /**< SID of the module data datastore lock (NETCONF lock), the data can be modified only
                                      by this session. If 0, the DS lock is not held. */
         struct timespec ds_lock_ts; /**< Timestamp of the datastore lock. */
@@ -134,6 +145,10 @@ typedef struct {
     uint16_t dep_count;         /**< Number of module data dependencies. */
     off_t inv_deps;             /**< Array of inverse module data dependencies (off_t *) (offset in mod SHM). */
     uint16_t inv_dep_count;     /**< Number of inverse module data dependencies. */
+
+    off_t oper_push_data;       /**< Array of oper push data entries (offset in ext SHM), protected by operational DS
+                                     mod data locks. */
+    uint32_t oper_push_data_count;  /**< Number of oper poush data entries. */
 
     struct {
         sr_rwlock_t lock;       /**< Process-shared lock for reading or preventing changes (READ) or modifying (WRITE)
@@ -176,7 +191,8 @@ typedef struct {
 typedef struct {
     uint32_t shm_ver;           /**< Main and ext SHM version of all expected data stored in them. Is increased with
                                      every change of their structure content (ABI change). */
-    pthread_mutex_t ext_lock;   /**< Process-shared lock for accessing holes and truncating ext SHM. */
+    pthread_mutex_t ext_lock;   /**< Process-shared lock for accessing holes and truncating ext SHM. Accessing ext SHM
+                                     structures requires another dedicated lock. */
 
     sr_rwlock_t context_lock;   /**< Process-shared lock for accessing connection LY context, lydmods data,
                                      and SHM mod modules. */
@@ -187,6 +203,7 @@ typedef struct {
     ATOMIC_T new_sr_sid;        /**< SID for a new session. */
     ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
     ATOMIC_T new_evpipe_num;    /**< Event pipe number for a new subscription. */
+    ATOMIC_T new_operation_id;  /**< Operation ID to use for each callback of every operation. */
 
     char repo_path[256];        /**< Repository path used when main SHM was created. */
 } sr_main_shm_t;
@@ -353,6 +370,7 @@ typedef struct {
 
     ATOMIC_T priority;          /**< Priority of the subscriber. */
     uint32_t subscriber_count;  /**< Number of subscribers to process this event. */
+    uint32_t operation_id;      /**< Operation ID for the callback. */
 } sr_sub_shm_t;
 
 #endif /* _SHM_TYPES_H */

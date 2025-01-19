@@ -55,11 +55,15 @@
 #include "modinfo.h"
 #include "plugins_datastore.h"
 #include "plugins_notification.h"
+#include "replay.h"
 #include "shm_ext.h"
 #include "shm_main.h"
 #include "shm_mod.h"
 #include "shm_sub.h"
+#include "subscr.h"
 #include "sysrepo.h"
+
+#define SR_IS_YANG_ID_CHAR(c) (isalpha(c) || isdigit(c) || ((c) == '_') || ((c) == '-') || ((c) == '.'))
 
 /**
  * @brief Internal datastore plugin array.
@@ -209,7 +213,7 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
 #ifdef SR_HAVE_DLOPEN
     if (!plugins_dir[0]) {
         /* get plugins dir from environment variable, or use default one */
-        tmp = getenv("SR_PLUGINS_PATH");
+        tmp = getenv(SR_PLG_PATH_ENV);
         if (!tmp) {
             tmp = SR_PLG_PATH;
         }
@@ -217,7 +221,7 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
         if ((len = strlen(tmp)) < SR_PATH_MAX) {
             snprintf(plugins_dir, SR_PATH_MAX, "%s", tmp);
         } else {
-            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "SR_PLUGINS_PATH (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
+            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, SR_PLG_PATH_ENV " (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
             goto cleanup;
         }
     }
@@ -225,8 +229,8 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
     /* open directory, if possible */
     dir = opendir(plugins_dir);
     if (!dir) {
-        if (errno != ENOENT) {
-            SR_ERRINFO_SYSERRNO(&err_info, "opendir");
+        if ((errno != ENOENT) && (errno != ENOTDIR)) {
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Opening dir \"%s\" failed (%s).", plugins_dir, strerror(errno));
         }
         goto cleanup;
     }
@@ -270,9 +274,8 @@ sr_ds_handle_init(struct sr_ds_handle_s **ds_handles, uint32_t *ds_handle_count)
             goto next_file;
         }
         if (!srpds->name || !srpds->install_cb || !srpds->uninstall_cb || !srpds->init_cb || !srpds->store_cb ||
-                !srpds->recover_cb || !srpds->load_cb || !srpds->copy_cb || !srpds->candidate_modified_cb ||
-                !srpds->candidate_reset_cb || !srpds->access_set_cb || !srpds->access_get_cb ||
-                !srpds->access_check_cb || !srpds->last_modif_cb) {
+                !srpds->load_cb || !srpds->copy_cb || !srpds->candidate_modified_cb || !srpds->candidate_reset_cb ||
+                !srpds->access_set_cb || !srpds->access_get_cb || !srpds->access_check_cb || !srpds->last_modif_cb) {
             SR_LOG_WRN("DS plugin \"%s\" with incomplete callback structure.", path);
             goto next_file;
         }
@@ -393,7 +396,7 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
 #ifdef SR_HAVE_DLOPEN
     if (!plugins_dir[0]) {
         /* get plugins dir from environment variable, or use default one */
-        tmp = getenv("SR_PLUGINS_PATH");
+        tmp = getenv(SR_PLG_PATH_ENV);
         if (!tmp) {
             tmp = SR_PLG_PATH;
         }
@@ -401,7 +404,7 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
         if ((len = strlen(tmp)) < SR_PATH_MAX) {
             snprintf(plugins_dir, SR_PATH_MAX, "%s", tmp);
         } else {
-            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "SR_PLUGINS_PATH (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
+            sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, SR_PLG_PATH_ENV " (%s) cannot be longer than %u.", tmp, SR_PATH_MAX);
             goto cleanup;
         }
     }
@@ -409,8 +412,8 @@ sr_ntf_handle_init(struct sr_ntf_handle_s **ntf_handles, uint32_t *ntf_handle_co
     /* open directory, if possible */
     dir = opendir(plugins_dir);
     if (!dir) {
-        if (errno != ENOENT) {
-            SR_ERRINFO_SYSERRNO(&err_info, "opendir");
+        if ((errno != ENOENT) && (errno != ENOTDIR)) {
+            sr_errinfo_new(&err_info, SR_ERR_SYS, "Opening dir \"%s\" failed (%s).", plugins_dir, strerror(errno));
         }
         goto cleanup;
     }
@@ -964,9 +967,9 @@ sr_module_default_mode(const struct lys_module *ly_mod)
     if (!strcmp(ly_mod->name, "sysrepo")) {
         return SR_INTMOD_MAIN_FILE_PERM;
     } else if (sr_is_module_internal(ly_mod)) {
-        if (!strcmp(ly_mod->name, "sysrepo-plugind") || !strcmp(ly_mod->name, "ietf-yang-schema-mount") ||
-                !strcmp(ly_mod->name, "ietf-yang-library") || !strcmp(ly_mod->name, "ietf-netconf-notifications") ||
-                !strcmp(ly_mod->name, "ietf-netconf")) {
+        if (!strcmp(ly_mod->name, "sysrepo-plugind") || !strcmp(ly_mod->name, "sysrepo-notifications") ||
+                !strcmp(ly_mod->name, "ietf-yang-schema-mount") || !strcmp(ly_mod->name, "ietf-yang-library") ||
+                !strcmp(ly_mod->name, "ietf-netconf-notifications") || !strcmp(ly_mod->name, "ietf-netconf")) {
             return SR_INTMOD_WITHDATA_FILE_PERM;
         } else if (!strcmp(ly_mod->name, "ietf-netconf-acm") || !strcmp(ly_mod->name, "sysrepo-monitoring")) {
             return SR_INTMOD_NACM_SRMON_FILE_PERM;
@@ -1043,90 +1046,12 @@ sr_module_get_impl_inv_imports(const struct lys_module *ly_mod, struct ly_set *m
     return err_info;
 }
 
-const char *
-sr_shm_dir_get(void)
-{
-    static char sr_shm_dir_str[SR_PATH_MAX] = "";
-    const char *tmp = NULL;
-
-    if (sr_shm_dir_str[0]) {
-        return sr_shm_dir_str;
-    }
-
-    /* first time only */
-    if (!(tmp = getenv("SYSREPO_SHM_DIR"))) {
-        tmp = NULL;
-    } else if (strlen(tmp) >= SR_PATH_MAX) {
-        SR_LOG_WRN("SYSREPO_SHM_DIR env variable longer than %u, using default %s instead",
-                SR_PATH_MAX, SR_SHM_DIR);
-        tmp = NULL;
-    }
-
-    if (!tmp) {
-        tmp = SR_SHM_DIR;
-        if (strlen(tmp) >= SR_PATH_MAX) {
-            tmp = "/dev/shm";
-            sr_log(SR_LL_ERR, "SR_SHM_DIR (%s) is longer than maximum allowed %u - defaulting to %s",
-                    SR_SHM_DIR, SR_PATH_MAX, tmp);
-        }
-    }
-
-    snprintf(sr_shm_dir_str, SR_PATH_MAX, "%s", tmp);
-
-    return sr_shm_dir_str;
-}
-
-/**
- * @brief Get global SHM prefix prepended to all SHM files.
- *
- * @param[out] prefix SHM prefix to use.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shm_prefix(const char **prefix)
-{
-    static char sr_shm_prefix_val[SR_PATH_MAX] = "";
-    const char *tmp = NULL;
-    sr_error_info_t *err_info = NULL;
-
-    if (sr_shm_prefix_val[0]) {
-        *prefix = sr_shm_prefix_val;
-        return err_info;
-    }
-
-    /* first time */
-    tmp = getenv(SR_SHM_PREFIX_ENV);
-    if (tmp == NULL) {
-        tmp = SR_SHM_PREFIX_DEFAULT;
-    }
-
-    if (strlen(tmp) >= SR_PATH_MAX) {
-        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "%s cannot be longer than %u.", SR_SHM_PREFIX_ENV, SR_PATH_MAX);
-    } else if (strchr(tmp, '/') != NULL) {
-        sr_errinfo_new(&err_info, SR_ERR_INVAL_ARG, "%s cannot contain slashes.", SR_SHM_PREFIX_ENV);
-    }
-
-    if (err_info) {
-        *prefix = NULL;
-    } else {
-        snprintf(sr_shm_prefix_val, SR_PATH_MAX, "%s", tmp);
-        *prefix = sr_shm_prefix_val;
-    }
-    return err_info;
-}
-
 sr_error_info_t *
 sr_path_main_shm(char **path)
 {
     sr_error_info_t *err_info = NULL;
-    const char *prefix;
 
-    err_info = sr_shm_prefix(&prefix);
-    if (err_info) {
-        return err_info;
-    }
-
-    if (asprintf(path, "%s/%s_main", sr_shm_dir_get(), prefix) == -1) {
+    if (asprintf(path, "%s/%s_main", sr_get_shm_path(), sr_get_shm_prefix()) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1138,14 +1063,8 @@ sr_error_info_t *
 sr_path_mod_shm(char **path)
 {
     sr_error_info_t *err_info = NULL;
-    const char *prefix;
 
-    err_info = sr_shm_prefix(&prefix);
-    if (err_info) {
-        return err_info;
-    }
-
-    if (asprintf(path, "%s/%s_mod", sr_shm_dir_get(), prefix) == -1) {
+    if (asprintf(path, "%s/%s_mod", sr_get_shm_path(), sr_get_shm_prefix()) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1157,14 +1076,8 @@ sr_error_info_t *
 sr_path_ext_shm(char **path)
 {
     sr_error_info_t *err_info = NULL;
-    const char *prefix;
 
-    err_info = sr_shm_prefix(&prefix);
-    if (err_info) {
-        return err_info;
-    }
-
-    if (asprintf(path, "%s/%s_ext", sr_shm_dir_get(), prefix) == -1) {
+    if (asprintf(path, "%s/%s_ext", sr_get_shm_path(), sr_get_shm_prefix()) == -1) {
         SR_ERRINFO_MEM(&err_info);
         *path = NULL;
     }
@@ -1176,18 +1089,13 @@ sr_error_info_t *
 sr_path_sub_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char **path)
 {
     sr_error_info_t *err_info = NULL;
-    const char *prefix;
     int ret;
 
-    err_info = sr_shm_prefix(&prefix);
-    if (err_info) {
-        return err_info;
-    }
-
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_%s.%s.%08" PRIx32, sr_get_shm_path(), sr_get_shm_prefix(), mod_name, suffix1,
+                (uint32_t)suffix2);
     } else {
-        ret = asprintf(path, "%s/%ssub_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
+        ret = asprintf(path, "%s/%ssub_%s.%s", sr_get_shm_path(), sr_get_shm_prefix(), mod_name, suffix1);
     }
 
     if (ret == -1) {
@@ -1200,18 +1108,13 @@ sr_error_info_t *
 sr_path_sub_data_shm(const char *mod_name, const char *suffix1, int64_t suffix2, char **path)
 {
     sr_error_info_t *err_info = NULL;
-    const char *prefix;
     int ret;
 
-    err_info = sr_shm_prefix(&prefix);
-    if (err_info) {
-        return err_info;
-    }
-
     if (suffix2 > -1) {
-        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, sr_shm_dir_get(), prefix, mod_name, suffix1, (uint32_t)suffix2);
+        ret = asprintf(path, "%s/%ssub_data_%s.%s.%08" PRIx32, sr_get_shm_path(), sr_get_shm_prefix(), mod_name, suffix1,
+                (uint32_t)suffix2);
     } else {
-        ret = asprintf(path, "%s/%ssub_data_%s.%s", sr_shm_dir_get(), prefix, mod_name, suffix1);
+        ret = asprintf(path, "%s/%ssub_data_%s.%s", sr_get_shm_path(), sr_get_shm_prefix(), mod_name, suffix1);
     }
 
     if (ret == -1) {
@@ -1299,7 +1202,7 @@ sr_remove_evpipes(void)
 
     dir = opendir(sr_get_repo_path());
     if (!dir) {
-        SR_ERRINFO_SYSERRNO(&err_info, "opendir");
+        sr_errinfo_new(&err_info, SR_ERR_SYS, "Opening dir \"%s\" failed (%s).", sr_get_repo_path(), strerror(errno));
         goto cleanup;
     }
 
@@ -2987,7 +2890,7 @@ sr_conn_ext_data_update(sr_conn_ctx_t *conn)
     struct lyd_node *yl_data = NULL, *new_ext_data = NULL;
 
     /* init mod info for cleanup */
-    SR_MODINFO_INIT(mi, conn, SR_DS_OPERATIONAL, SR_DS_RUNNING);
+    SR_MODINFO_INIT(mi, conn, SR_DS_OPERATIONAL, SR_DS_RUNNING, 0);
 
     /* manually get ietf-yang-schema-mount operational data but avoid recursive call of this function */
     ly_mod = ly_ctx_get_module_implemented(conn->ly_ctx, "ietf-yang-schema-mount");
@@ -2995,7 +2898,7 @@ sr_conn_ext_data_update(sr_conn_ctx_t *conn)
     if ((err_info = sr_modinfo_add(ly_mod, NULL, 0, 1, &mi))) {
         goto cleanup;
     }
-    if ((err_info = sr_modinfo_consolidate(&mi, SR_LOCK_READ, SR_MI_DATA_RO | SR_MI_PERM_READ, 0, NULL, NULL,
+    if ((err_info = sr_modinfo_consolidate(&mi, SR_LOCK_READ, SR_MI_DATA_RO | SR_MI_PERM_READ, NULL,
             SR_OPER_CB_TIMEOUT, 0, 0))) {
         goto cleanup;
     }
@@ -3252,11 +3155,11 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
         }
 
         /* remove old data */
-        mod_data = sr_module_data_unlink(&conn->run_cache_data, cmod->mod);
+        mod_data = sr_module_data_unlink(&conn->run_cache_data, cmod->mod, 0);
         lyd_free_siblings(mod_data);
 
         /* replace with loaded current data */
-        if ((err_info = mod->ds_handle[cache_ds]->plugin->load_cb(mod->ly_mod, cache_ds, NULL, 0,
+        if ((err_info = mod->ds_handle[cache_ds]->plugin->load_cb(mod->ly_mod, cache_ds, 0, 0, NULL, 0,
                 mod->ds_handle[cache_ds]->plg_data, &mod_data))) {
             goto cleanup;
         }
@@ -3313,7 +3216,7 @@ sr_conn_run_cache_update_mod(sr_conn_ctx_t *conn, const struct lys_module *ly_mo
     assert(cmod->id != mod_cache_id);
 
     /* remove old data */
-    old_data = sr_module_data_unlink(&conn->run_cache_data, cmod->mod);
+    old_data = sr_module_data_unlink(&conn->run_cache_data, cmod->mod, 0);
     lyd_free_siblings(old_data);
 
     /* replace with current data */
@@ -4049,7 +3952,8 @@ sr_error_info_t *
 sr_val_ly2sr(const struct lyd_node *node, int with_origin, sr_val_t *sr_val)
 {
     sr_error_info_t *err_info = NULL;
-    char *ptr, *origin = NULL;
+    char *ptr;
+    const char *origin = NULL;
     const struct lyd_node_term *leaf;
     const struct lyd_value *val;
     struct lyd_node_any *any;
@@ -4214,9 +4118,9 @@ store_value:
 
     /* origin */
     if (with_origin) {
-        sr_edit_diff_get_origin(node, &origin, NULL);
+        sr_edit_diff_get_origin(node, 1, &origin, NULL);
     }
-    sr_val->origin = origin;
+    sr_val->origin = origin ? strdup(origin) : NULL;
 
     return NULL;
 
@@ -4870,7 +4774,7 @@ sr_xpath_next_identifier(const char *id, int allow_special)
             return id;
         }
         ++id;
-        while (isalpha(id[0]) || isdigit(id[0]) || (id[0] == '_') || (id[0] == '-') || (id[0] == '.')) {
+        while (SR_IS_YANG_ID_CHAR(id[0])) {
             ++id;
         }
     }
@@ -4942,6 +4846,28 @@ sr_xpath_skip_predicate(const char *xpath)
     } while (quot || (xpath[0] != ']'));
 
     return xpath + 1;
+}
+
+int
+sr_xpath_refs_mod(const char *xpath, const char *mod_name)
+{
+    const char *ptr;
+    int found = 0, mod_name_len = strlen(mod_name);
+
+    for (ptr = xpath; ptr[0]; ++ptr) {
+        if ((ptr[0] == '\'') || (ptr[0] == '\"')) {
+            /* skip literal */
+            ptr = strchr(ptr + 1, ptr[0]);
+        }
+
+        if (!strncmp(ptr, mod_name, mod_name_len) && ((ptr == xpath) || !SR_IS_YANG_ID_CHAR(ptr[-1])) &&
+                (ptr[mod_name_len] == ':')) {
+            found = 1;
+            break;
+        }
+    }
+
+    return found;
 }
 
 /**
@@ -5429,18 +5355,29 @@ sr_userord_anchor_meta_name(const struct lysc_node *schema)
 }
 
 struct lyd_node *
-sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
+sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod, int with_discard_items)
 {
     struct lyd_node *next, *node, *mod_data = NULL;
     const struct lys_module *cur_mod;
+    int to_unlink;
 
     assert(data && ly_mod);
 
     LY_LIST_FOR_SAFE(*data, next, node) {
         cur_mod = lyd_owner_module(node);
+        to_unlink = 0;
 
         if (((cur_mod->ctx == ly_mod->ctx) && (cur_mod == ly_mod)) ||
                 ((cur_mod->ctx != ly_mod->ctx) && !strcmp(cur_mod->name, ly_mod->name))) {
+            /* data from this module */
+            to_unlink = 1;
+        } else if (with_discard_items && !strcmp(cur_mod->name, "sysrepo") && !strcmp(LYD_NAME(node), "discard-items") &&
+                sr_xpath_refs_mod(lyd_get_value(node), ly_mod->name)) {
+            /* discard-items referencing this module */
+            to_unlink = 1;
+        }
+
+        if (to_unlink) {
             /* properly unlink this node */
             if (node == *data) {
                 *data = next;
@@ -5449,7 +5386,7 @@ sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
 
             /* connect it to other data from this module */
             lyd_insert_sibling(mod_data, node, &mod_data);
-        } else if (mod_data) {
+        } else if (mod_data && !with_discard_items) {
             /* we went through all the data from this module */
             break;
         }
@@ -5460,13 +5397,11 @@ sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod)
 
 sr_error_info_t *
 sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
-        const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
+        sr_cid_t cid, uint32_t sid, const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
 {
     sr_error_info_t *err_info = NULL;
-    struct lyd_node *mod_data, *root, *elem;
-    struct lyd_meta *meta;
+    struct lyd_node *mod_data;
     int modified;
-    sr_cid_t dead_cid = 0;
 
     if (ds == SR_DS_CANDIDATE) {
         if ((err_info = ds_handle[ds]->plugin->candidate_modified_cb(ly_mod, ds_handle[ds]->plg_data, &modified))) {
@@ -5485,33 +5420,9 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
     }
 
     /* get the data */
-    if ((err_info = ds_handle[ds]->plugin->load_cb(ly_mod, ds, xpaths, xpath_count, ds_handle[ds]->plg_data, &mod_data))) {
+    if ((err_info = ds_handle[ds]->plugin->load_cb(ly_mod, ds, cid, sid, xpaths, xpath_count, ds_handle[ds]->plg_data,
+            &mod_data))) {
         return err_info;
-    }
-
-    if (mod_data && (ds == SR_DS_OPERATIONAL)) {
-trim_retry:
-        if (dead_cid) {
-            /* this connection is dead, remove its stored edit */
-            SR_LOG_INF("Recovering module \"%s\" stored operational data of CID %" PRIu32 ".", ly_mod->name, dead_cid);
-            if ((err_info = sr_edit_oper_del(&mod_data, dead_cid, NULL, NULL))) {
-                return err_info;
-            }
-        }
-
-        /* find edit belonging to a dead connection, if any */
-        LY_LIST_FOR(mod_data, root) {
-            LYD_TREE_DFS_BEGIN(root, elem) {
-                meta = lyd_find_meta(elem->meta, NULL, "sysrepo:cid");
-                if (meta && !sr_conn_is_alive(meta->value.uint32)) {
-                    dead_cid = meta->value.uint32;
-
-                    /* retry the whole check until there are no dead connections */
-                    goto trim_retry;
-                }
-                LYD_TREE_DFS_END(root, elem);
-            }
-        }
     }
 
     /* append module data */
@@ -5561,7 +5472,7 @@ sr_conn_info(sr_cid_t **cids, pid_t **pids, uint32_t *count, sr_cid_t **dead_cid
             goto cleanup;
         }
 
-        sr_errinfo_new(&err_info, SR_ERR_SYS, "Opening directory \"%s\" failed (%s).", path, strerror(errno));
+        sr_errinfo_new(&err_info, SR_ERR_SYS, "Opening dir \"%s\" failed (%s).", path, strerror(errno));
         goto cleanup;
     }
 
@@ -5632,80 +5543,6 @@ cleanup:
     return err_info;
 }
 
-sr_error_info_t *
-sr_conn_push_oper_mod_add(sr_conn_ctx_t *conn, const char *mod_name)
-{
-    sr_error_info_t *err_info = NULL;
-    uint32_t i;
-    void *mem;
-
-    /* OPER PUSH MOD LOCK */
-    if ((err_info = sr_mlock(&conn->oper_push_mod_lock, -1, __func__, NULL, NULL))) {
-        return err_info;
-    }
-
-    for (i = 0; i < conn->oper_push_mod_count; ++i) {
-        if (!strcmp(conn->oper_push_mods[i], mod_name)) {
-            /* already added */
-            goto cleanup;
-        }
-    }
-
-    /* add new module */
-    mem = realloc(conn->oper_push_mods, (i + 1) * sizeof *conn->oper_push_mods);
-    SR_CHECK_MEM_GOTO(!mem, err_info, cleanup);
-    conn->oper_push_mods = mem;
-
-    conn->oper_push_mods[i] = strdup(mod_name);
-    SR_CHECK_MEM_GOTO(!conn->oper_push_mods[i], err_info, cleanup);
-    ++conn->oper_push_mod_count;
-
-cleanup:
-    /* OPER PUSH MOD UNLOCK */
-    sr_munlock(&conn->oper_push_mod_lock);
-
-    return err_info;
-}
-
-sr_error_info_t *
-sr_conn_push_oper_mod_del(sr_conn_ctx_t *conn, const char *mod_name)
-{
-    sr_error_info_t *err_info = NULL;
-    uint32_t i;
-
-    /* OPER PUSH MOD LOCK */
-    if ((err_info = sr_mlock(&conn->oper_push_mod_lock, -1, __func__, NULL, NULL))) {
-        return err_info;
-    }
-
-    for (i = 0; i < conn->oper_push_mod_count; ++i) {
-        if (!strcmp(conn->oper_push_mods[i], mod_name)) {
-            /* found */
-            break;
-        }
-    }
-    if (i == conn->oper_push_mod_count) {
-        sr_errinfo_new(&err_info, SR_ERR_INTERNAL,
-                "Module \"%s\" not found in the push oper module cache of a connection.", mod_name);
-        goto cleanup;
-    }
-
-    free(conn->oper_push_mods[i]);
-    --conn->oper_push_mod_count;
-    if (i < conn->oper_push_mod_count) {
-        conn->oper_push_mods[i] = conn->oper_push_mods[conn->oper_push_mod_count];
-    } else if (!conn->oper_push_mod_count) {
-        free(conn->oper_push_mods);
-        conn->oper_push_mods = NULL;
-    }
-
-cleanup:
-    /* OPER PUSH MOD UNLOCK */
-    sr_munlock(&conn->oper_push_mod_lock);
-
-    return err_info;
-}
-
 int
 sr_is_prod_env(void)
 {
@@ -5715,4 +5552,295 @@ sr_is_prod_env(void)
         sr_prod_env = !getenv("SR_ENV_RUN_TESTS");
     }
     return sr_prod_env;
+}
+
+/**
+ * @brief Check whether a 'sysrepo-notifications' notification even need to be generated.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[out] subs_or_replay Set if there are any subscribers or replay is enabled for the module.
+ * @return err_info, NULL on success.
+ */
+static sr_error_info_t *
+sr_generate_notif_has_subs_or_replay(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, int *subs_or_replay)
+{
+    sr_error_info_t *err_info = NULL;
+    sr_mod_notif_sub_t *notif_subs;
+    uint32_t notif_sub_count;
+
+    /* EXT READ LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
+        goto cleanup;
+    }
+
+    /* get subscriber count */
+    err_info = sr_notif_find_subscriber(conn, "sysrepo-notifications", &notif_subs, &notif_sub_count, NULL);
+
+    /* EXT READ UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 0, __func__);
+
+    if (err_info) {
+        goto cleanup;
+    }
+
+    /* check replay support and subscribers */
+    if (!shm_mod->replay_supp && !notif_sub_count) {
+        /* no subscribers and replay off */
+        *subs_or_replay = 0;
+    } else {
+        *subs_or_replay = 1;
+    }
+
+cleanup:
+    return err_info;
+}
+
+/**
+ * @brief Send a generated notification.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] notif Notification to send.
+ * @return err_info, NULL on success.
+ */
+static sr_error_info_t *
+sr_generate_notif_send(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const struct lyd_node *notif)
+{
+    sr_error_info_t *err_info = NULL;
+    struct timespec notif_ts_mono, notif_ts_real;
+    uint32_t operation_id;
+
+    /* NOTIF SUB READ LOCK */
+    if ((err_info = sr_rwlock(&shm_mod->notif_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid,
+            __func__, NULL, NULL))) {
+        goto cleanup;
+    }
+
+    /* remember when the notification was generated */
+    sr_timeouttime_get(&notif_ts_mono, 0);
+    sr_realtime_get(&notif_ts_real);
+
+    /* generate a new operation ID */
+    operation_id = ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_operation_id);
+
+    /* send the notification (non-validated, must be valid) */
+    err_info = sr_shmsub_notif_notify(conn, notif, notif_ts_mono, notif_ts_real, NULL, NULL, operation_id, 0, 0);
+
+    /* NOTIF SUB READ UNLOCK */
+    sr_rwunlock(&shm_mod->notif_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
+
+    if (err_info) {
+        goto cleanup;
+    }
+
+    /* store the notification for a replay */
+    if ((err_info = sr_replay_store(conn, NULL, notif, notif_ts_real))) {
+        goto cleanup;
+    }
+
+cleanup:
+    return err_info;
+}
+
+void
+sr_generate_notif_module_change_installed(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_mods, uint32_t new_mod_count)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *notif = NULL;
+    sr_mod_t *shm_mod;
+    uint32_t i;
+    int subs_or_replay;
+
+    /* get this module */
+    shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), "sysrepo-notifications");
+    SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+
+    /* check whether to even generate any notifications */
+    if ((err_info = sr_generate_notif_has_subs_or_replay(conn, shm_mod, &subs_or_replay)) || !subs_or_replay) {
+        goto cleanup;
+    }
+
+    for (i = 0; i < new_mod_count; ++i) {
+        /* generate the notifcation */
+        if ((err_info = sr_lyd_new_path(NULL, conn->ly_ctx, "/sysrepo-notifications:module-change", NULL, 0, NULL,
+                &notif))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "name", new_mods[i].ly_mod->name))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "revision", new_mods[i].ly_mod->revision))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "change", "installed"))) {
+            goto cleanup;
+        }
+
+        /* send it */
+        if ((err_info = sr_generate_notif_send(conn, shm_mod, notif))) {
+            goto cleanup;
+        }
+
+        lyd_free_siblings(notif);
+        notif = NULL;
+    }
+
+cleanup:
+    lyd_free_siblings(notif);
+    sr_errinfo_free(&err_info);
+}
+
+void
+sr_generate_notif_module_change_uninstalled(sr_conn_ctx_t *conn, struct ly_set *mod_set)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *notif = NULL;
+    const struct lys_module *ly_mod;
+    sr_mod_t *shm_mod;
+    uint32_t i;
+    int subs_or_replay;
+
+    /* get this module */
+    shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), "sysrepo-notifications");
+    SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+
+    /* check whether to even generate any notifications */
+    if ((err_info = sr_generate_notif_has_subs_or_replay(conn, shm_mod, &subs_or_replay)) || !subs_or_replay) {
+        goto cleanup;
+    }
+
+    for (i = 0; i < mod_set->count; ++i) {
+        ly_mod = mod_set->objs[i];
+
+        /* generate the notifcation */
+        if ((err_info = sr_lyd_new_path(NULL, conn->ly_ctx, "/sysrepo-notifications:module-change", NULL, 0, NULL,
+                &notif))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "name", ly_mod->name))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "revision", ly_mod->revision))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "change", "uninstalled"))) {
+            goto cleanup;
+        }
+
+        /* send it */
+        if ((err_info = sr_generate_notif_send(conn, shm_mod, notif))) {
+            goto cleanup;
+        }
+
+        lyd_free_siblings(notif);
+        notif = NULL;
+    }
+
+cleanup:
+    lyd_free_siblings(notif);
+    sr_errinfo_free(&err_info);
+}
+
+void
+sr_generate_notif_module_change_updated(sr_conn_ctx_t *conn, struct ly_set *old_mod_set, struct ly_set *upd_mod_set)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *notif = NULL;
+    const struct lys_module *ly_mod;
+    sr_mod_t *shm_mod;
+    uint32_t i;
+    int subs_or_replay;
+
+    /* get this module */
+    shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), "sysrepo-notifications");
+    SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+
+    /* check whether to even generate any notifications */
+    if ((err_info = sr_generate_notif_has_subs_or_replay(conn, shm_mod, &subs_or_replay)) || !subs_or_replay) {
+        goto cleanup;
+    }
+
+    for (i = 0; i < upd_mod_set->count; ++i) {
+        ly_mod = upd_mod_set->objs[i];
+
+        /* generate the notifcation */
+        if ((err_info = sr_lyd_new_path(NULL, conn->ly_ctx, "/sysrepo-notifications:module-change", NULL, 0, NULL,
+                &notif))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "name", ly_mod->name))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "revision", ly_mod->revision))) {
+            goto cleanup;
+        }
+        if ((err_info = sr_lyd_new_term(notif, NULL, "change", "updated"))) {
+            goto cleanup;
+        }
+
+        ly_mod = old_mod_set->objs[i];
+        if ((err_info = sr_lyd_new_term(notif, NULL, "old-revision", ly_mod->revision))) {
+            goto cleanup;
+        }
+
+        /* send it */
+        if ((err_info = sr_generate_notif_send(conn, shm_mod, notif))) {
+            goto cleanup;
+        }
+
+        lyd_free_siblings(notif);
+        notif = NULL;
+    }
+
+cleanup:
+    lyd_free_siblings(notif);
+    sr_errinfo_free(&err_info);
+}
+
+void
+sr_generate_notif_module_change_feature(sr_conn_ctx_t *conn, const struct lys_module *ly_mod, const char *feature_name,
+        int enabled)
+{
+    sr_error_info_t *err_info = NULL;
+    struct lyd_node *notif = NULL;
+    sr_mod_t *shm_mod;
+    int subs_or_replay;
+
+    /* get this module */
+    shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), "sysrepo-notifications");
+    SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+
+    /* check whether to even generate any notifications */
+    if ((err_info = sr_generate_notif_has_subs_or_replay(conn, shm_mod, &subs_or_replay)) || !subs_or_replay) {
+        goto cleanup;
+    }
+
+    /* generate the notifcation */
+    if ((err_info = sr_lyd_new_path(NULL, conn->ly_ctx, "/sysrepo-notifications:module-change", NULL, 0, NULL,
+            &notif))) {
+        goto cleanup;
+    }
+    if ((err_info = sr_lyd_new_term(notif, NULL, "name", ly_mod->name))) {
+        goto cleanup;
+    }
+    if ((err_info = sr_lyd_new_term(notif, NULL, "revision", ly_mod->revision))) {
+        goto cleanup;
+    }
+    if ((err_info = sr_lyd_new_term(notif, NULL, "change", enabled ? "feature-enabled" : "feature-disabled"))) {
+        goto cleanup;
+    }
+
+    if ((err_info = sr_lyd_new_term(notif, NULL, "feature-name", feature_name))) {
+        goto cleanup;
+    }
+
+    /* send it */
+    if ((err_info = sr_generate_notif_send(conn, shm_mod, notif))) {
+        goto cleanup;
+    }
+
+cleanup:
+    lyd_free_siblings(notif);
+    sr_errinfo_free(&err_info);
 }

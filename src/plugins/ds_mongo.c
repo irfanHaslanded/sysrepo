@@ -31,7 +31,6 @@
 #include <mongoc/mongoc.h>
 
 #include "common_db.h"
-#include "common_json.h"
 #include "compat.h"
 #include "config.h"
 #include "plugins_datastore.h"
@@ -106,6 +105,36 @@ srpds_ds2database(sr_datastore_t ds)
 }
 
 /**
+ * @brief Get the name of the collection.
+ *
+ * @param[in] mod_name Mdoule name.
+ * @param[in] cid Connection ID.
+ * @param[in] sid Session ID.
+ * @param[in] is_oper Whether the collection is for operational data and unique for @p cid and @p sid.
+ * @param[out] collection_name Generated collection name.
+ * @return NULL on success;
+ * @return Sysrepo error info on error.
+ */
+static sr_error_info_t *
+srpds_get_oper_collection_name(const char *mod_name, sr_cid_t cid, uint32_t sid, int is_oper, char **collection_name)
+{
+    sr_error_info_t *err_info = NULL;
+    int r;
+
+    if (is_oper) {
+        r = asprintf(collection_name, "%s_%s-%" PRIu32 " - %" PRIu32, sr_get_shm_prefix(), mod_name, cid, sid);
+    } else {
+        r = asprintf(collection_name, "%s_%s", sr_get_shm_prefix(), mod_name);
+    }
+    if (r == -1) {
+        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
+        return err_info;
+    }
+
+    return NULL;
+}
+
+/**
  * @brief Try a general command in order to establish whether authentication is required.
  *
  * @param[in] client Connected client.
@@ -130,7 +159,7 @@ srpds_check_auth(mongoc_client_t *client, int *auth_prob)
             /* authentication failed | authorization failed */
             *auth_prob = 1;
         } else {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_client_command_simple()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_client_command_simple()", error.message);
             goto cleanup;
         }
     }
@@ -191,7 +220,7 @@ srpds_client_init(mongoc_client_pool_t **pool)
     /* authentication failed */
     if (auth_prob) {
         ERRINFO(&err_info, plugin_name, SR_ERR_UNAUTHORIZED, "Authentication",
-                "Please create a client in MongoDB with username and password provided during compilation")
+                "Please create a client in MongoDB with username and password provided during compilation");
         goto cleanup;
     }
 
@@ -206,6 +235,8 @@ cleanup:
  *
  * @param[in] mod Given module.
  * @param[in] ds Given datastore.
+ * @param[in] cid Connection ID.
+ * @param[in] sid Session ID.
  * @param[in] installed Whether module was already installed.
  * @param[in] pdata Plugin connection data.
  * @param[out] mdata Module data.
@@ -213,22 +244,19 @@ cleanup:
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_data_init(const struct lys_module *mod, sr_datastore_t ds, int installed, mongo_plg_conn_data_t *pdata, mongo_data_t *mdata)
+srpds_data_init(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid, int installed,
+        mongo_plg_conn_data_t *pdata, mongo_data_t *mdata)
 {
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
-    char *shm_prefix = NULL;
+    int is_oper;
 
     mdata->client = mongoc_client_pool_pop(pdata->pool);
     mdata->datastore = mongoc_client_get_database(mdata->client, srpds_ds2database(ds));
 
-    /* get the module name */
-    if ((err_info = srpjson_shm_prefix(plugin_name, &shm_prefix))) {
-        goto cleanup;
-    }
-
-    if (asprintf(&(mdata->module_name), "%s_%s", shm_prefix ? shm_prefix : "", mod->name) == -1) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+    /* get the module name (collection name) */
+    is_oper = ((ds == SR_DS_OPERATIONAL) && cid && sid) ? 1 : 0;
+    if ((err_info = srpds_get_oper_collection_name(mod->name, cid, sid, is_oper, &mdata->module_name))) {
         goto cleanup;
     }
 
@@ -239,7 +267,7 @@ srpds_data_init(const struct lys_module *mod, sr_datastore_t ds, int installed, 
         mdata->module = mongoc_database_create_collection(mdata->datastore, mdata->module_name, NULL, &error);
         if (!mdata->module) {
             ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_database_create_collection()",
-                    error.message)
+                    error.message);
             goto cleanup;
         }
     }
@@ -298,24 +326,24 @@ srpds_get_access(mongoc_collection_t *module, char **owner, char **group, mode_t
 
     if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
 
         if (bson_iter_next(&iter) && owner) {
             str = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(str, strlen(str), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             *owner = strdup(str);
             if (!*owner) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno));
                 goto cleanup;
             }
         }
@@ -323,12 +351,12 @@ srpds_get_access(mongoc_collection_t *module, char **owner, char **group, mode_t
         if (bson_iter_next(&iter) && group) {
             str = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(str, strlen(str), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             *group = strdup(str);
             if (!*group) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno));
                 goto cleanup;
             }
         }
@@ -339,7 +367,7 @@ srpds_get_access(mongoc_collection_t *module, char **owner, char **group, mode_t
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -390,7 +418,7 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
 
     /* create new data node for lyd_find_path to work correctly */
     if (lyd_new_path(NULL, ctx, "/ietf-yang-library:yang-library", NULL, 0, &ctx_node) != LY_SUCCESS) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_new_path()", "")
+        ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_new_path()", "");
         goto cleanup;
     }
 
@@ -408,14 +436,14 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
         /* copy the path for further manipulation */
         path = strdup(xpaths[i]);
         if (!path) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "strdup()", strerror(errno));
             goto cleanup;
         }
 
         /* all relative paths should be transformed into absolute */
         if (path[0] != '/') {
             if (asprintf(&tmp, "/%s", path) == -1) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
                 goto cleanup;
             }
             free(path);
@@ -434,7 +462,7 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
 
         /* add path as regex */
         if (asprintf(&tmp, "^%s", escaped_path) == -1) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
             goto cleanup;
         }
         bson_append_document_begin(&top, "_id", 3, &bottom);
@@ -490,6 +518,7 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
     sr_error_info_t *err_info = NULL;
     bson_error_t error;
     const char *path, *name, *module_name = NULL, *path_to_node, *value = NULL;
+    char *opaq_path;
     struct lys_module *node_module = NULL;
     enum srpds_db_ly_types type;
     int32_t valtype = 0;
@@ -548,19 +577,26 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
 
     while (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         /* get path */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         path = bson_iter_utf8(&iter, NULL);
         if (!bson_utf8_validate(path, strlen(path), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
+        }
+
+        /* remove the opaque node index prefixed if any */
+        if ('O' == path[0]) {
+            path++;
+            strtoul(path, &opaq_path, 16);
+            path = opaq_path;
         }
 
         /* do not load, this is additional data
@@ -578,18 +614,18 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
 
         /* get name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         name = bson_iter_utf8(&iter, NULL);
         if (!bson_utf8_validate(name, strlen(name), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
         }
 
         /* get type */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         type = bson_iter_int32(&iter);
@@ -602,24 +638,24 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
         case SRPDS_DB_LY_ANY:          /* anydata and anyxml */
         case SRPDS_DB_LY_OPAQUE:       /* opaque nodes */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             module_name = bson_iter_utf8(&iter, NULL);
             if (module_name && !bson_utf8_validate(module_name, strlen(module_name), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             break;
         case SRPDS_DB_LY_META:
         case SRPDS_DB_LY_ATTR:
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             path_to_node = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(path_to_node, strlen(path_to_node), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             path = path_to_node;
@@ -636,18 +672,18 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
         case SRPDS_DB_LY_META:
         case SRPDS_DB_LY_ATTR:
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             value = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(value, strlen(value), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             break;
         case SRPDS_DB_LY_LIST:
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             value = bson_iter_utf8(&iter, NULL);
@@ -664,7 +700,7 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
         case SRPDS_DB_LY_TERM:         /* leafs and leaf-lists */
         case SRPDS_DB_LY_ANY:          /* anydata and anyxml */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             dflt_flag = bson_iter_as_bool(&iter);
@@ -677,7 +713,7 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
         switch (type) {
         case SRPDS_DB_LY_ANY:  /* anydata and anyxml */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             valtype = bson_iter_int32(&iter);
@@ -705,7 +741,7 @@ srpds_load_oper(mongoc_collection_t *module, const struct lys_module *mod, bson_
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -798,18 +834,18 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
 
     while (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         /* get path */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         path = bson_iter_utf8(&iter, NULL);
         if (!bson_utf8_validate(path, strlen(path), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
         }
 
@@ -830,30 +866,30 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
 
         /* get name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         name = bson_iter_utf8(&iter, NULL);
         if (!bson_utf8_validate(name, strlen(name), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
         }
 
         /* get type */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         type = bson_iter_int32(&iter);
 
         /* get module name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         module_name = bson_iter_utf8(&iter, NULL);
         if (module_name && !bson_utf8_validate(module_name, strlen(module_name), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
         }
 
@@ -863,7 +899,7 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         case SRPDS_DB_LY_ANY:          /* anydata and anyxml */
         case SRPDS_DB_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             dflt_flag = bson_iter_as_bool(&iter);
@@ -871,7 +907,7 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         case SRPDS_DB_LY_LIST:     /* lists */
         case SRPDS_DB_LY_LIST_UO:  /* user-ordered lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             value = bson_iter_utf8(&iter, NULL);
@@ -889,18 +925,18 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         case SRPDS_DB_LY_ANY:          /* anydata and anyxml */
         case SRPDS_DB_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             value = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(value, strlen(value), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             break;
         case SRPDS_DB_LY_LIST_UO:  /* user-ordered lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             order = bson_iter_int64(&iter);
@@ -913,25 +949,25 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         switch (type) {
         case SRPDS_DB_LY_ANY:  /* anydata and anyxml */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             valtype = bson_iter_int32(&iter);
             break;
         case SRPDS_DB_LY_LIST_UO:  /* user-ordered lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             path_no_pred = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(path_no_pred, strlen(path_no_pred), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             break;
         case SRPDS_DB_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             order = bson_iter_int64(&iter);
@@ -943,12 +979,12 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
         switch (type) {
         case SRPDS_DB_LY_LEAFLIST_UO:  /* user-ordered leaf-lists */
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             path_no_pred = bson_iter_utf8(&iter, NULL);
             if (!bson_utf8_validate(path_no_pred, strlen(path_no_pred), 0)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
                 goto cleanup;
             }
             break;
@@ -975,7 +1011,7 @@ srpds_load_conv(mongoc_collection_t *module, const struct lys_module *mod, sr_da
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -1012,7 +1048,7 @@ srpds_docs_init(bson_t ***docs, uint32_t *size)
 
     ptr = (bson_t **)calloc(1000, sizeof *ptr);
     if (!ptr) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "calloc()", "")
+        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "calloc()", "");
         return err_info;
     }
     *docs = ptr;
@@ -1040,7 +1076,7 @@ srpds_docs_add(bson_t ***docs, uint32_t *size, uint32_t *index, bson_t *doc)
     if (*index >= *size) {
         ptr = (bson_t **)realloc(*docs, *size * 2 * sizeof *ptr);
         if (!ptr) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "realloc()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "realloc()", "");
             return err_info;
         }
 
@@ -1163,7 +1199,7 @@ srpds_add_operation(bson_t *bson_query, struct mongo_diff_inner_data *inner)
     sr_error_info_t *err_info = NULL;
 
     if (!bson_query) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "Adding operation to a list", "")
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "Adding operation to a list", "");
         return err_info;
     }
     if ((err_info = srpds_docs_add(&(inner->docs), &(inner->size), &(inner->idx), bson_query))) {
@@ -1195,7 +1231,7 @@ srpds_update_maxord(mongoc_collection_t *module, const char *path_no_pred, uint6
         /* update maximum order of the list
          * list's maximum order is stored here */
         if (asprintf(&final_path, "#%s", path_no_pred) == -1) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
             goto cleanup;
         }
 
@@ -1205,7 +1241,7 @@ srpds_update_maxord(mongoc_collection_t *module, const char *path_no_pred, uint6
         /* replace command */
         bson_query = BCON_NEW("$set", "{", "value", BCON_INT64(max_order), "}");
         if (!mongoc_collection_update_one(module, bson_query_key, bson_query, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
             goto cleanup;
         }
     }
@@ -1236,7 +1272,7 @@ srpds_set_maxord(mongoc_collection_t *module, const char *path_no_pred)
 
     /* set maximum order of the list */
     if (asprintf(&final_path, "#%s", path_no_pred) == -1) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
         goto cleanup;
     }
 
@@ -1244,7 +1280,7 @@ srpds_set_maxord(mongoc_collection_t *module, const char *path_no_pred)
      * inserted -> previous max order has to be deleted and a new one inserted */
     bson_query_del = BCON_NEW("_id", BCON_UTF8(final_path));
     if (!mongoc_collection_delete_one(module, bson_query_del, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_one()", error.message);
         goto cleanup;
     }
 
@@ -1252,7 +1288,7 @@ srpds_set_maxord(mongoc_collection_t *module, const char *path_no_pred)
      * to easily insert elements here */
     bson_query = BCON_NEW("_id", BCON_UTF8(final_path), "value", BCON_INT64(SRPDS_DB_UO_ELEMS_GAP_SIZE));
     if (!mongoc_collection_insert_one(module, bson_query, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message);
         goto cleanup;
     }
 
@@ -1300,7 +1336,7 @@ srpds_get_maxord(mongoc_collection_t *module, const char *path_no_pred, uint64_t
         /* get maximum order of the list
          * list's maximum order is stored here */
         if (asprintf(&final_path, "#%s", path_no_pred) == -1) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
             goto cleanup;
         }
 
@@ -1309,27 +1345,27 @@ srpds_get_maxord(mongoc_collection_t *module, const char *path_no_pred, uint64_t
 
         if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
             if (!bson_iter_init(&iter, doc2)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
                 goto cleanup;
             }
 
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             }
             if (!bson_iter_next(&iter)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
                 goto cleanup;
             } else {
                 *out_max_order = bson_iter_int64(&iter);
             }
         } else {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NOT_FOUND, "Finding maximum order of the list", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_NOT_FOUND, "Finding maximum order of the list", "");
             goto cleanup;
         }
 
         if (mongoc_cursor_error(cursor, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
             goto cleanup;
         }
     }
@@ -1364,7 +1400,7 @@ srpds_load_prev(mongoc_collection_t *module, uint16_t nodetype, const char *prev
 
     /* prepare path of the previous element */
     if (asprintf(&prev_path, "%s%s", path_no_pred, prev_pred) == -1) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
         goto cleanup;
     }
 
@@ -1373,50 +1409,50 @@ srpds_load_prev(mongoc_collection_t *module, uint16_t nodetype, const char *prev
 
     if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         /* path */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* type */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* module_name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* predicate or dflt_flag */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* value */
         if ((nodetype == LYS_LEAFLIST) && !bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* order */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         *order = bson_iter_int64(&iter);
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -1456,43 +1492,43 @@ srpds_load_next(mongoc_collection_t *module, uint16_t nodetype, const char *prev
 
     if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         /* path */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* type */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* module_name */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* predicate or dflt_flag */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* value */
         if ((nodetype == LYS_LEAFLIST) && !bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         /* order */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         order_cur = bson_iter_int64(&iter);
@@ -1502,7 +1538,7 @@ srpds_load_next(mongoc_collection_t *module, uint16_t nodetype, const char *prev
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -1561,24 +1597,24 @@ srpds_shift_uo_list_recursively(mongoc_collection_t *module, const char *path_no
         found = 1;
 
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         /* get path of the next element */
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         path = bson_iter_utf8(&iter, NULL);
         if (!bson_utf8_validate(path, strlen(path), 0)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_utf8()", "");
             goto cleanup;
         }
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -1596,7 +1632,7 @@ srpds_shift_uo_list_recursively(mongoc_collection_t *module, const char *path_no
         /* replace command */
         bson_query_rep = BCON_NEW("$set", "{", "order", BCON_INT64(next_elem_order + 1), "}");
         if (!mongoc_collection_update_one(module, bson_query_key, bson_query_rep, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
             goto cleanup;
         }
     }
@@ -1679,7 +1715,7 @@ srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const cha
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
             if (!mongoc_collection_update_one(module, bson_query_uo_key, bson_query_uo_rep, NULL, NULL, &error)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
                 goto cleanup;
             }
         } else {
@@ -1693,7 +1729,7 @@ srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const cha
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
             if (!mongoc_collection_update_one(module, bson_query_uo_key, bson_query_uo_rep, NULL, NULL, &error)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
                 goto cleanup;
             }
         }
@@ -1733,7 +1769,7 @@ srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const cha
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
             if (!mongoc_collection_update_one(module, bson_query_uo_key, bson_query_uo_rep, NULL, NULL, &error)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
                 goto cleanup;
             }
         } else {
@@ -1747,7 +1783,7 @@ srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const cha
             /* replace command */
             bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(predicate), "}");
             if (!mongoc_collection_update_one(module, bson_query_uo_key, bson_query_uo_rep, NULL, NULL, &error)) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+                ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
                 goto cleanup;
             }
         }
@@ -1784,7 +1820,7 @@ srpds_create_uo_op(mongoc_collection_t *module, struct lyd_node *node, const cha
         break;
     }
     if (!mongoc_collection_insert_one(module, bson_query_uo, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message);
         goto cleanup;
     }
 
@@ -1825,7 +1861,7 @@ srpds_delete_uo_op(mongoc_collection_t *module, const char *path, const char *pa
     /* change the next element's prev */
     bson_query_uo_rep = BCON_NEW("$set", "{", "prev", BCON_UTF8(orig_value_pred), "}");
     if (!mongoc_collection_update_one(module, bson_query_uo_key, bson_query_uo_rep, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
         goto cleanup;
     }
 
@@ -1835,19 +1871,19 @@ srpds_delete_uo_op(mongoc_collection_t *module, const char *path, const char *pa
             goto cleanup;
         }
         if (asprintf(&regex, "^%s", escaped) == -1) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
             goto cleanup;
         }
         bson_query_uo = BCON_NEW("_id", "{", "$regex", BCON_UTF8(regex), "$options", "s", "}");
         if (!mongoc_collection_delete_many(module, bson_query_uo, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message);
             goto cleanup;
         }
     } else {
         /* delete command for userordered lists and leaf-lists */
         bson_query_uo = BCON_NEW("_id", BCON_UTF8(path));
         if (!mongoc_collection_delete_one(module, bson_query_uo, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_one()", error.message);
             goto cleanup;
         }
     }
@@ -2107,7 +2143,7 @@ srpds_delete_op(mongoc_collection_t *module, struct lyd_node *node, const char *
             goto cleanup;
         }
         if (asprintf(&regex, "^%s", escaped) == -1) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
             goto cleanup;
         }
         if ((err_info = srpds_add_operation(BCON_NEW("_id", "{", "$regex", BCON_UTF8(regex), "$options", "s", "}"),
@@ -2272,7 +2308,7 @@ srpds_load_diff_recursively(mongoc_collection_t *module, const struct lyd_node *
             }
             break;
         case 0:
-            ERRINFO(&err_info, plugin_name, SR_ERR_UNSUPPORTED, "Operation for a node", "Unsupported operation")
+            ERRINFO(&err_info, plugin_name, SR_ERR_UNSUPPORTED, "Operation for a node", "Unsupported operation");
             goto cleanup;
         }
 
@@ -2347,7 +2383,7 @@ srpds_store_all(mongoc_collection_t *module, const struct lyd_node *mod_diff)
     for (i = 0; i < diff_data.cre.idx; ++i) {
         if (!mongoc_bulk_operation_insert_with_opts(bulk, (const bson_t *)(diff_data.cre.docs)[i], NULL, &error)) {
             ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_insert_with_opts()",
-                    error.message)
+                    error.message);
             goto cleanup;
         }
     }
@@ -2356,7 +2392,7 @@ srpds_store_all(mongoc_collection_t *module, const struct lyd_node *mod_diff)
         if (!mongoc_bulk_operation_update_one_with_opts(bulk, (const bson_t *)(diff_data.rep_keys.docs)[i],
                 (const bson_t *)(diff_data.rep.docs)[i], NULL, &error)) {
             ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_update_one_with_opts()",
-                    error.message)
+                    error.message);
             goto cleanup;
         }
     }
@@ -2364,7 +2400,7 @@ srpds_store_all(mongoc_collection_t *module, const struct lyd_node *mod_diff)
     for (i = 0; i < diff_data.del.idx; ++i) {
         if (!mongoc_bulk_operation_remove_one_with_opts(bulk, (const bson_t *)(diff_data.del.docs)[i], NULL, &error)) {
             ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_remove_one_with_opts()",
-                    error.message)
+                    error.message);
             goto cleanup;
         }
     }
@@ -2373,14 +2409,14 @@ srpds_store_all(mongoc_collection_t *module, const struct lyd_node *mod_diff)
         if (!mongoc_bulk_operation_remove_many_with_opts(bulk, (const bson_t *)(diff_data.del_many.docs)[i], NULL,
                 &error)) {
             ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_remove_many_with_opts()",
-                    error.message)
+                    error.message);
             goto cleanup;
         }
     }
 
     if (diff_data.cre.idx || diff_data.rep.idx || diff_data.del.idx || diff_data.del_many.idx) {
         if (!mongoc_bulk_operation_execute(bulk, &reply, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_execute()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_bulk_operation_execute()", error.message);
             goto cleanup;
         }
     }
@@ -2412,7 +2448,7 @@ srpds_set_last_modif_flag(mongoc_collection_t *module)
     doc = BCON_NEW("_id", BCON_UTF8("0"));
     update = BCON_NEW("$set", "{", "sec", BCON_INT64((int64_t)(spec.tv_sec)), "nsec", BCON_INT64((int64_t)(spec.tv_nsec)), "}");
     if (!mongoc_collection_update_one(module, doc, update, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
         goto cleanup;
     }
 
@@ -2440,7 +2476,7 @@ srpds_set_candidate_modified_flag(mongoc_collection_t *module, int modified)
     doc = BCON_NEW("_id", BCON_UTF8("1"));
     update = BCON_NEW("$set", "{", "modified", BCON_BOOL(modified), "}");
     if (!mongoc_collection_update_one(module, doc, update, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
         goto cleanup;
     }
 
@@ -2467,7 +2503,7 @@ srpds_insert_last_modif_flag(mongoc_collection_t *module, struct timespec *spec)
 
     doc = BCON_NEW("_id", BCON_UTF8("0"), "sec", BCON_INT64(spec->tv_sec), "nsec", BCON_INT64(spec->tv_nsec));
     if (!mongoc_collection_insert_one(module, doc, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message);
         goto cleanup;
     }
 
@@ -2493,7 +2529,7 @@ srpds_insert_candidate_modified_flag(mongoc_collection_t *module, int modified)
 
     doc = BCON_NEW("_id", BCON_UTF8("1"), "modified", BCON_BOOL(modified));
     if (!mongoc_collection_insert_one(module, doc, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message);
         goto cleanup;
     }
 
@@ -2526,13 +2562,13 @@ srpds_add_meta(struct lyd_meta *meta, const char *path, struct mongo_diff_data *
         if (strcmp(meta->annotation->module->name, "yang") || strcmp(meta->name, "lyds_tree")) {
             /* concatenate meta name with module name */
             if (asprintf(&meta_name, "%s:%s", meta->annotation->module->name, meta->name) == -1) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
                 goto cleanup;
             }
 
             /* create unique path for new metadata */
             if (asprintf(&path_with_name, "2%s#%s", path, meta_name) == -1) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
                 goto cleanup;
             }
 
@@ -2585,13 +2621,13 @@ srpds_add_attr(struct lyd_attr *attr, const char *path, struct mongo_diff_data *
         if (strcmp(attr->name.module_name, "yang") || strcmp(attr->name.name, "lyds_tree")) {
             /* concatenate attr name with module name */
             if (asprintf(&attr_name, "%s:%s", attr->name.module_name, attr->name.name) == -1) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
                 goto cleanup;
             }
 
             /* create unique path for new attribute */
             if (asprintf(&path_with_name, "3%s#%s", path, attr_name) == -1) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno))
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
                 goto cleanup;
             }
 
@@ -2635,19 +2671,20 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
     const struct lyd_node *sibling = mod_data;
     struct lyd_node *child = NULL;
     struct lyd_node_opaq *opaque = NULL; // for opaque nodes
-    char *path = NULL;
+    char *path = NULL, *opaq_path = NULL;
     const char *value, *module_name;
     char *any_value = NULL;
     bson_t *bson_query = NULL;
 
     char *keys = NULL;
     uint32_t keys_length = 0;
+    uint32_t opaq_index = 0;
 
     while (sibling) {
         /* get path */
         path = lyd_path(sibling, LYD_PATH_STD, NULL, 0);
         if (!path) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_path()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_path()", "");
             return err_info;
         }
 
@@ -2655,7 +2692,7 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
         if (sibling->schema && (sibling->schema->nodetype & LYD_NODE_ANY)) {
             /* lyd_node_any */
             if (lyd_any_value_str(sibling, &any_value) != LY_SUCCESS) {
-                ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_any_value_str()", "")
+                ERRINFO(&err_info, plugin_name, SR_ERR_LY, "lyd_any_value_str()", "");
                 goto cleanup;
             }
             value = any_value;
@@ -2721,8 +2758,16 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
                 goto cleanup;
             }
         } else {
-            bson_query = BCON_NEW("_id", BCON_UTF8(path), "name", BCON_UTF8(opaque->name.name), "type", BCON_INT32(SRPDS_DB_LY_OPAQUE),
+            /* prefix paths with an opaq_index in hex prefixed with 'O' */
+            if (asprintf(&opaq_path, "O%x%s", ++opaq_index, path) == -1) {
+                ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
+                goto cleanup;
+            }
+
+            bson_query = BCON_NEW("_id", BCON_UTF8(opaq_path), "name", BCON_UTF8(opaque->name.name), "type", BCON_INT32(SRPDS_DB_LY_OPAQUE),
                     "module_name", BCON_UTF8(module_name), "value", BCON_UTF8(value));
+            free(opaq_path);
+            opaq_path = NULL;
 
             /* create new opaque node */
             if ((err_info = srpds_add_operation(bson_query, &(diff_data->cre)))) {
@@ -2749,6 +2794,7 @@ srpds_load_oper_recursively(const struct lyd_node *mod_data, struct mongo_diff_d
 
 cleanup:
     free(path);
+    free(opaq_path);
     free(keys);
     if (err_info) {
         bson_destroy(bson_query);
@@ -2784,7 +2830,7 @@ srpds_store_oper(mongoc_collection_t *module, const struct lyd_node *mod_data)
     del_query = BCON_NEW("_id", "{", "$regex", "^[^4]", "$options", "s", "}");
     if (!mongoc_collection_delete_many(module, del_query, NULL,
             NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message);
         goto cleanup;
     }
 
@@ -2792,7 +2838,7 @@ srpds_store_oper(mongoc_collection_t *module, const struct lyd_node *mod_data)
     if (diff_data.cre.idx) {
         if (!mongoc_collection_insert_many(module, (const bson_t **) diff_data.cre.docs,
                 diff_data.cre.idx, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_many()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_many()", error.message);
             goto cleanup;
         }
     }
@@ -2820,7 +2866,7 @@ srpds_mongo_candidate_modified(const struct lys_module *mod, void *plg_data, int
 
     assert(mod && modified);
 
-    if ((err_info = srpds_data_init(mod, SR_DS_CANDIDATE, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, SR_DS_CANDIDATE, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -2829,24 +2875,24 @@ srpds_mongo_candidate_modified(const struct lys_module *mod, void *plg_data, int
 
     if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
 
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
         *modified = bson_iter_bool(&iter);
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -2873,7 +2919,7 @@ srpds_mongo_copy(const struct lys_module *mod, sr_datastore_t trg_ds, sr_datasto
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, src_ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, src_ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -2898,11 +2944,11 @@ srpds_mongo_copy(const struct lys_module *mod, sr_datastore_t trg_ds, sr_datasto
 
     while (mongoc_cursor_next(cursor, (const bson_t **)&doc)) {}
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_aggregate()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_aggregate()", error.message);
         goto cleanup;
     }
     srpds_data_destroy(pdata, &mdata);
-    if ((err_info = srpds_data_init(mod, trg_ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, trg_ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -2929,8 +2975,8 @@ cleanup:
  *
  */
 sr_error_info_t *
-srpds_mongo_store(const struct lys_module *mod, sr_datastore_t ds, const struct lyd_node *mod_diff,
-        const struct lyd_node *mod_data, void *plg_data)
+srpds_mongo_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
+        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, void *plg_data)
 {
     mongo_data_t mdata;
     mongo_plg_conn_data_t *pdata = (mongo_plg_conn_data_t *)plg_data;
@@ -2953,7 +2999,7 @@ srpds_mongo_store(const struct lys_module *mod, sr_datastore_t ds, const struct 
         }
     }
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, cid, sid, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3011,7 +3057,7 @@ srpds_mongo_conn_init(sr_conn_ctx_t *conn, void **plg_data)
     pthread_mutex_lock(&(plugin_data.lock));
     if (!plugin_data.is_mongoc_initialized) {
         if (atexit(terminate)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_SYS, "atexit()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_SYS, "atexit()", "");
             goto cleanup;
         }
         mongoc_init();
@@ -3023,7 +3069,7 @@ srpds_mongo_conn_init(sr_conn_ctx_t *conn, void **plg_data)
 
     data = calloc(1, sizeof *data);
     if (!data) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "calloc()", "")
+        ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "calloc()", "");
         goto cleanup;
     }
 
@@ -3072,7 +3118,7 @@ srpds_mongo_install(const struct lys_module *mod, sr_datastore_t ds, const char 
 
     assert(mod && perm);
 
-    if ((err_info = srpds_data_init(mod, ds, 0, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 0, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3087,7 +3133,7 @@ srpds_mongo_install(const struct lys_module *mod, sr_datastore_t ds, const char 
     }
     if (!mongoc_collection_create_indexes_with_opts(mdata.module, im, idx_cnt, NULL /* opts */, NULL /* reply */, &error)) {
         ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_create_indexes_with_opts",
-                error.message)
+                error.message);
         goto cleanup;
     }
 
@@ -3108,7 +3154,7 @@ srpds_mongo_install(const struct lys_module *mod, sr_datastore_t ds, const char 
     /* insert owner, group and permissions */
     bson_query = BCON_NEW("_id", "4", "owner", BCON_UTF8(owner), "group", BCON_UTF8(group), "perm", BCON_INT32((int32_t)perm));
     if (!mongoc_collection_insert_one(mdata.module, bson_query, NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_insert_one()", error.message);
         goto cleanup;
     }
 
@@ -3154,7 +3200,7 @@ srpds_mongo_access_get(const struct lys_module *mod, sr_datastore_t ds, void *pl
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3182,7 +3228,7 @@ srpds_mongo_access_set(const struct lys_module *mod, sr_datastore_t ds, const ch
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3193,7 +3239,7 @@ srpds_mongo_access_set(const struct lys_module *mod, sr_datastore_t ds, const ch
     if (owner) {
         bson_query = BCON_NEW("$set", "{", "owner", BCON_UTF8(owner), "}");
         if (!mongoc_collection_update_one(mdata.module, bson_query_key, bson_query, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
             goto cleanup;
         }
         bson_destroy(bson_query);
@@ -3203,7 +3249,7 @@ srpds_mongo_access_set(const struct lys_module *mod, sr_datastore_t ds, const ch
     if (group) {
         bson_query = BCON_NEW("$set", "{", "group", BCON_UTF8(group), "}");
         if (!mongoc_collection_update_one(mdata.module, bson_query_key, bson_query, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
             goto cleanup;
         }
         bson_destroy(bson_query);
@@ -3213,7 +3259,7 @@ srpds_mongo_access_set(const struct lys_module *mod, sr_datastore_t ds, const ch
     if (perm) {
         bson_query = BCON_NEW("$set", "{", "perm", BCON_INT32(perm), "}");
         if (!mongoc_collection_update_one(mdata.module, bson_query_key, bson_query, NULL, NULL, &error)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message)
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_update_one()", error.message);
             goto cleanup;
         }
     }
@@ -3242,7 +3288,7 @@ srpds_mongo_access_check(const struct lys_module *mod, sr_datastore_t ds, void *
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3329,13 +3375,13 @@ srpds_mongo_uninstall(const struct lys_module *mod, sr_datastore_t ds, void *plg
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
     /* owner, group and permissions are part of the data */
     if (!mongoc_collection_drop_with_opts(mdata.module, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_drop_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_drop_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -3349,8 +3395,8 @@ cleanup:
  *
  */
 sr_error_info_t *
-srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, const char **xpaths, uint32_t xpath_count, void *plg_data,
-        struct lyd_node **mod_data)
+srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid, const char **xpaths,
+        uint32_t xpath_count, void *plg_data, struct lyd_node **mod_data)
 {
     mongo_data_t mdata;
     mongo_plg_conn_data_t *pdata = (mongo_plg_conn_data_t *)plg_data;
@@ -3359,9 +3405,10 @@ srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, const char **x
     int is_valid = 0;
 
     assert(mod && mod_data);
+
     *mod_data = NULL;
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, cid, sid, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3394,18 +3441,6 @@ cleanup:
  * @brief Comment for this function can be found in "plugins_datastore.h".
  *
  */
-void
-srpds_mongo_recover(const struct lys_module *mod, sr_datastore_t ds, void *plg_data)
-{
-    (void) plg_data;
-    (void) mod;
-    (void) ds;
-}
-
-/**
- * @brief Comment for this function can be found in "plugins_datastore.h".
- *
- */
 sr_error_info_t *
 srpds_mongo_last_modif(const struct lys_module *mod, sr_datastore_t ds, void *plg_data, struct timespec *mtime)
 {
@@ -3420,7 +3455,7 @@ srpds_mongo_last_modif(const struct lys_module *mod, sr_datastore_t ds, void *pl
 
     assert(mod && mtime);
 
-    if ((err_info = srpds_data_init(mod, ds, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, ds, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3429,12 +3464,12 @@ srpds_mongo_last_modif(const struct lys_module *mod, sr_datastore_t ds, void *pl
 
     if (mongoc_cursor_next(cursor, (const bson_t **) &doc2)) {
         if (!bson_iter_init(&iter, doc2)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_init()", "");
             goto cleanup;
         }
 
         if (!bson_iter_next(&iter)) {
-            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "")
+            ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "bson_iter_next()", "");
             goto cleanup;
         }
 
@@ -3448,7 +3483,7 @@ srpds_mongo_last_modif(const struct lys_module *mod, sr_datastore_t ds, void *pl
     }
 
     if (mongoc_cursor_error(cursor, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_find_with_opts()", error.message);
         goto cleanup;
     }
 
@@ -3474,7 +3509,7 @@ srpds_mongo_candidate_reset(const struct lys_module *mod, void *plg_data)
 
     assert(mod);
 
-    if ((err_info = srpds_data_init(mod, SR_DS_CANDIDATE, 1, pdata, &mdata))) {
+    if ((err_info = srpds_data_init(mod, SR_DS_CANDIDATE, 0, 0, 1, pdata, &mdata))) {
         goto cleanup;
     }
 
@@ -3482,7 +3517,7 @@ srpds_mongo_candidate_reset(const struct lys_module *mod, void *plg_data)
 
     if (!mongoc_collection_delete_many(mdata.module, doc,
             NULL, NULL, &error)) {
-        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message)
+        ERRINFO(&err_info, plugin_name, SR_ERR_OPERATION_FAILED, "mongoc_collection_delete_many()", error.message);
         goto cleanup;
     }
 
@@ -3508,7 +3543,6 @@ const struct srplg_ds_s srpds_mongo = {
     .conn_init_cb = srpds_mongo_conn_init,
     .conn_destroy_cb = srpds_mongo_conn_destroy,
     .store_cb = srpds_mongo_store,
-    .recover_cb = srpds_mongo_recover,
     .load_cb = srpds_mongo_load,
     .copy_cb = srpds_mongo_copy,
     .candidate_modified_cb = srpds_mongo_candidate_modified,

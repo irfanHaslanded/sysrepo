@@ -168,10 +168,6 @@ struct sr_conn_ctx_s {
     } *oper_caches;                 /**< Operational get subscription data caches. */
     uint32_t oper_cache_count;      /**< Operational get subscription data cache count. */
     sr_rwlock_t oper_cache_lock;    /**< Operational get subscription data cache lock. */
-
-    char **oper_push_mods;          /**< Modules whose pushed oper data were modified by this connection. */
-    uint32_t oper_push_mod_count;   /**< Count of modules with modified push oper data. */
-    pthread_mutex_t oper_push_mod_lock; /**< Session-shared lock for modifying oper_push_mods. */
 };
 
 /**
@@ -184,6 +180,12 @@ struct sr_session_ctx_s {
     char *user;                     /**< Session (system) user. */
     char *nacm_user;                /**< Optional NACM user. If set, NACM is applied. */
     sr_error_info_t *err_info;      /**< Session error information. */
+
+    struct sr_oper_push_cache_s {
+        char *name;                 /**< Module name whose push oper data were ever modified by this session. */
+        int has_data;               /**< Flag if there are any actual data currently. */
+    } *oper_push_mods;
+    uint32_t oper_push_mod_count;   /**< Count of modules with modified push oper data by this session. */
 
     char *orig_name;                /**< Originator name used for all events sent on this session. */
     void *orig_data;                /**< Originator data used for all events sent on this session. */

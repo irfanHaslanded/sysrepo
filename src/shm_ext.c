@@ -4,8 +4,8 @@
  * @brief ext SHM routines
  *
  * @copyright
- * Copyright (c) 2018 - 2023 Deutsche Telekom AG.
- * Copyright (c) 2018 - 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2018 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2018 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -131,8 +131,8 @@ sr_shmext_conn_remap_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lo
 {
     sr_error_info_t *err_info = NULL;
     sr_ext_hole_t *iter, *last = NULL;
-    uint32_t last_size;
-    size_t shm_file_size = 0;
+    uint32_t new_size;
+    char *last_hole_end;
 
     /* make ext SHM smaller if there is a memory hole at its end */
     if (((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) && ext_lock) {
@@ -140,17 +140,15 @@ sr_shmext_conn_remap_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lo
             last = iter;
         }
 
-        if (last && ((uint32_t)((char *)last - conn->ext_shm.addr) + last->size == conn->ext_shm.size)) {
-            if ((err_info = sr_file_get_size(conn->ext_shm.fd, &shm_file_size))) {
-                goto cleanup_unlock;
-            }
+        /* cast `last` as a char* for correct pointer arithmetic. */
+        last_hole_end = last ? ((char *)last + last->size) : NULL;
 
+        if (last_hole_end == conn->ext_shm.addr + conn->ext_shm.size) {
             /* remove the hole */
-            last_size = last->size;
+            new_size = conn->ext_shm.size - last->size;
             sr_ext_hole_del(SR_CONN_EXT_SHM(conn), last);
-
             /* remap (and truncate) ext SHM */
-            if ((err_info = sr_shm_remap(&conn->ext_shm, shm_file_size - last_size))) {
+            if ((err_info = sr_shm_remap(&conn->ext_shm, new_size))) {
                 goto cleanup_unlock;
             }
         }
@@ -192,6 +190,10 @@ sr_shmext_open(sr_shm_t *shm, int zero)
     }
     if (zero) {
         ((sr_ext_shm_t *)shm->addr)->first_hole_off = 0;
+
+        /* check that ext SHM is properly initialized */
+        assert(shm->size == SR_SHM_SIZE(sizeof(sr_ext_shm_t)));
+        assert(!sr_ext_hole_next(NULL, ((sr_ext_shm_t *)shm->addr)));
     }
 
     return NULL;
@@ -310,6 +312,16 @@ sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext)
 
     for (idx = 0; idx < mod_shm->mod_count; ++idx) {
         shm_mod = SR_SHM_MOD_IDX(mod_shm, idx);
+
+        if (shm_mod->oper_push_data) {
+            /* add oper push data sessions */
+            if (sr_shmext_print_add_item(&items, &item_count, shm_mod->oper_push_data,
+                    SR_SHM_SIZE(shm_mod->oper_push_data_count * sizeof(sr_mod_oper_push_t)),
+                    "oper push data sessions (%" PRIu32 ", mod \"%s\")", shm_mod->oper_push_data_count,
+                    ((char *)mod_shm) + shm_mod->name)) {
+                goto error;
+            }
+        }
 
         for (ds = 0; ds < SR_DS_COUNT; ++ds) {
             if (shm_mod->change_sub[ds].sub_count) {
@@ -1468,8 +1480,8 @@ sr_shmext_rpc_sub_remove_dead(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_co
     sr_mod_rpc_sub_t *shm_sub;
     char *path = NULL;
 
-    /* EXT WRITE LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_WRITE, 1, __func__))) {
+    /* EXT READ LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
         sr_errinfo_free(&err_info);
         return;
     }
@@ -1494,8 +1506,8 @@ sr_shmext_rpc_sub_remove_dead(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_co
         path = NULL;
     }
 
-    /* EXT WRITE UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_WRITE, 1, __func__);
+    /* EXT READ UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
 }
 
 sr_error_info_t *
@@ -1721,319 +1733,6 @@ sr_shmext_rpc_sub_stop(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count,
     }
 
     return err_info;
-}
-
-/**
- * @brief Recover all change subscriptions for a datastore.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_mod SHM mod with the subscriptions.
- * @param[in] ds Datastore to use.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_change(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t ds)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    uint32_t count;
-
-    /* CHANGE SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
-            __func__, NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (count = shm_mod->change_sub[ds].sub_count; count; --count) {
-        if ((tmp_err = sr_shmext_change_sub_stop(conn, shm_mod, ds, count - 1, 1, 1))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        }
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* CHANGE SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_mod->change_sub[ds].lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
-
-    return err_info;
-}
-
-/**
- * @brief Recover all oper get subscriptions.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_mod SHM mod with the subscriptions.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_oper_get(sr_conn_ctx_t *conn, sr_mod_t *shm_mod)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    sr_mod_oper_get_sub_t *shm_sub;
-    uint32_t i, count;
-
-    /* OPER GET SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_mod->oper_get_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid,
-            __func__, NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (i = 0; i < shm_mod->oper_get_sub_count; ++i) {
-        shm_sub = &((sr_mod_oper_get_sub_t *)(conn->ext_shm.addr + shm_mod->oper_get_subs))[i];
-
-        for (count = shm_sub->xpath_sub_count; count; --count) {
-            if ((tmp_err = sr_shmext_oper_get_sub_stop(conn, shm_mod, i, count - 1, 1, 1))) {
-                sr_errinfo_merge(&err_info, tmp_err);
-            }
-        }
-
-        /* operational get subscriptions change */
-        if ((tmp_err = sr_shmsub_oper_poll_get_sub_change_notify_evpipe(conn, conn->mod_shm.addr + shm_mod->name,
-                conn->ext_shm.addr + shm_sub->xpath))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        }
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* OPER GET SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_mod->oper_get_lock, 0, SR_LOCK_WRITE, conn->cid, __func__);
-
-    return err_info;
-}
-
-/**
- * @brief Recover all oper poll subscriptions.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_mod SHM mod with the subscriptions.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_oper_poll(sr_conn_ctx_t *conn, sr_mod_t *shm_mod)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    uint32_t count;
-
-    /* OPER POLL SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_mod->oper_poll_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__,
-            NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (count = shm_mod->oper_poll_sub_count; count; --count) {
-        if ((tmp_err = sr_shmext_oper_poll_sub_stop(conn, shm_mod, count - 1, 1, 1))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        }
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* OPER POLL SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_mod->oper_poll_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
-
-    return err_info;
-}
-
-/**
- * @brief Recover all notification subscriptions.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_mod SHM mod with the subscriptions.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_notif(sr_conn_ctx_t *conn, sr_mod_t *shm_mod)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    uint32_t count;
-
-    /* NOTIF SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_mod->notif_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__,
-            NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (count = shm_mod->notif_sub_count; count; --count) {
-        if ((tmp_err = sr_shmext_notif_sub_stop(conn, shm_mod, count - 1, 1, 1))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        }
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* NOTIF SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_mod->notif_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
-
-    return err_info;
-}
-
-/**
- * @brief Recover all extension RPC subscriptions.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_mod SHM mod with the subscriptions.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_rpc_ext(sr_conn_ctx_t *conn, sr_mod_t *shm_mod)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    sr_mod_rpc_sub_t *shm_subs;
-    uint32_t count;
-    char *path = NULL;
-
-    /* RPC SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_mod->rpc_ext_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__,
-            NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (count = shm_mod->rpc_ext_sub_count; count; --count) {
-        shm_subs = (sr_mod_rpc_sub_t *)(conn->ext_shm.addr + shm_mod->rpc_ext_subs);
-        if ((tmp_err = sr_get_trim_predicates(conn->ext_shm.addr + shm_subs[count - 1].xpath, &path))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        } else {
-            if ((tmp_err = sr_shmext_rpc_sub_stop(conn, &shm_mod->rpc_ext_subs,
-                    &shm_mod->rpc_ext_sub_count, path, count - 1, 1, 1))) {
-                sr_errinfo_merge(&err_info, tmp_err);
-            }
-        }
-        free(path);
-        path = NULL;
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* RPC SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_mod->rpc_ext_lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
-
-    return err_info;
-}
-
-/**
- * @brief Recover all RPC subscriptions.
- *
- * @param[in] conn Connection to use.
- * @param[in] shm_rpc SHM rpc with the subscriptions.
- * @return err_info, NULL on success.
- */
-static sr_error_info_t *
-sr_shmext_recover_sub_rpc(sr_conn_ctx_t *conn, sr_rpc_t *shm_rpc)
-{
-    sr_error_info_t *err_info = NULL, *tmp_err;
-    uint32_t count;
-
-    /* RPC SUB WRITE LOCK */
-    if ((err_info = sr_rwlock(&shm_rpc->lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__,
-            NULL, NULL))) {
-        return err_info;
-    }
-
-    /* EXT READ LOCK */
-    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
-        goto cleanup_unlock1;
-    }
-
-    for (count = shm_rpc->sub_count; count; --count) {
-        if ((tmp_err = sr_shmext_rpc_sub_stop(conn, &shm_rpc->subs, &shm_rpc->sub_count,
-                conn->mod_shm.addr + shm_rpc->path, count - 1, 1, 1))) {
-            sr_errinfo_merge(&err_info, tmp_err);
-        }
-    }
-
-    /* EXT READ UNLOCK */
-    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
-
-cleanup_unlock1:
-    /* RPC SUB WRITE UNLOCK */
-    sr_rwunlock(&shm_rpc->lock, SR_SHMEXT_SUB_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
-
-    return err_info;
-}
-
-void
-sr_shmext_recover_sub_all(sr_conn_ctx_t *conn)
-{
-    sr_error_info_t *err_info = NULL;
-    sr_datastore_t ds;
-    sr_mod_t *shm_mod;
-    sr_rpc_t *shm_rpc;
-    uint32_t i, j;
-
-    /* go through all the modules, RPCs and recover their subscriptions */
-    for (i = 0; i < SR_CONN_MOD_SHM(conn)->mod_count; ++i) {
-        shm_mod = SR_SHM_MOD_IDX(conn->mod_shm.addr, i);
-
-        /* change subs */
-        for (ds = 0; ds < SR_DS_COUNT; ++ds) {
-            if ((err_info = sr_shmext_recover_sub_change(conn, shm_mod, ds))) {
-                sr_errinfo_free(&err_info);
-            }
-        }
-
-        /* oper get subs */
-        if ((err_info = sr_shmext_recover_sub_oper_get(conn, shm_mod))) {
-            sr_errinfo_free(&err_info);
-        }
-
-        /* oper poll subs */
-        if ((err_info = sr_shmext_recover_sub_oper_poll(conn, shm_mod))) {
-            sr_errinfo_free(&err_info);
-        }
-
-        /* notif subs */
-        if ((err_info = sr_shmext_recover_sub_notif(conn, shm_mod))) {
-            sr_errinfo_free(&err_info);
-        }
-
-        /* RPC ext subs */
-        if ((err_info = sr_shmext_recover_sub_rpc_ext(conn, shm_mod))) {
-            sr_errinfo_free(&err_info);
-        }
-
-        /* RPC subs */
-        shm_rpc = (sr_rpc_t *)(conn->mod_shm.addr + shm_mod->rpcs);
-        for (j = 0; j < shm_mod->rpc_count; ++j) {
-            if ((err_info = sr_shmext_recover_sub_rpc(conn, &shm_rpc[i]))) {
-                sr_errinfo_free(&err_info);
-            }
-        }
-    }
 }
 
 /**
@@ -2850,5 +2549,300 @@ cleanup_rpcsub_unlock:
         sr_rwunlock(&shm_rpc->lock, 0, SR_LOCK_WRITE, conn->cid, __func__);
     }
 
+    return err_info;
+}
+
+/**
+ * @brief Learn indices of existing/new push oper data entry and their order.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] mod_name Module name.
+ * @param[in] sid Session ID of the oper data.
+ * @param[in,out] order Push oper data entry order for this session.
+ * @param[out] found_i Index where the entry was found, -1 if not found.
+ * @param[out] insert_i Index where the entry should be inserted, if differs from @p found_i.
+ * @return err_info, NULL on success.
+ */
+static sr_error_info_t *
+sr_shmext_oper_push_update_get_idx(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid,
+        uint32_t *order, int32_t *found_i, int32_t *insert_i)
+{
+    sr_error_info_t *err_info = NULL;
+    sr_mod_oper_push_t *oper_push = NULL;
+    uint32_t i;
+
+    *found_i = -1;
+    *insert_i = -1;
+
+    for (i = 0; i < shm_mod->oper_push_data_count; ++i) {
+        oper_push = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[i];
+
+        if (oper_push->sid == sid) {
+            /* found the item */
+            *found_i = i;
+
+            if (!*order) {
+                /* not changing the order */
+                *order = oper_push->order;
+            }
+            if (oper_push->order == *order) {
+                /* order is not changed, the item does not need to be moved */
+                *insert_i = i;
+            }
+        } else if (oper_push->order == *order) {
+            sr_errinfo_new(&err_info, SR_ERR_EXISTS, "Operational push data with order \"%" PRIu32
+                    "\" for module \"%s\" already exist.", *order, mod_name);
+            goto cleanup;
+        }
+
+        if (*order && (*insert_i == -1) && (oper_push->order > *order)) {
+            /* first item with higher order */
+            *insert_i = i;
+        }
+    }
+
+    if (!*order) {
+        /* item not found, generate its order */
+        if (shm_mod->oper_push_data_count) {
+            /* oper_push is the last item */
+            *order = oper_push->order + 1;
+        } else {
+            *order = 1;
+        }
+    }
+
+    if (*insert_i == -1) {
+        /* highest order set or no order, inserting at the end in both cases */
+        *insert_i = shm_mod->oper_push_data_count;
+    }
+
+cleanup:
+    return err_info;
+}
+
+sr_error_info_t *
+sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid, uint32_t order,
+        int has_data, sr_lock_mode_t has_mod_locks)
+{
+    sr_error_info_t *err_info = NULL;
+    struct sr_mod_lock_s *shm_lock;
+    sr_mod_oper_push_t *old_item, *new_item, tmp;
+    int32_t found_i, insert_i;
+
+    assert((has_mod_locks == SR_LOCK_NONE) || (has_mod_locks == SR_LOCK_WRITE));
+
+    shm_lock = &shm_mod->data_lock_info[SR_DS_OPERATIONAL];
+
+    if (!has_mod_locks) {
+        /* SHM MOD WRITE LOCK */
+        if ((err_info = sr_shmmod_lock(shm_lock, SR_CHANGE_CB_TIMEOUT, SR_LOCK_WRITE, SR_CHANGE_CB_TIMEOUT,
+                conn->cid, 0, 0, mod_name))) {
+            goto cleanup;
+        }
+    }
+
+    /* EXT WRITE LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_WRITE, 1, __func__))) {
+        goto cleanup_shmmod_unlock;
+    }
+
+    /* learn what exactly do we need to do based on the relevant indices */
+    if ((err_info = sr_shmext_oper_push_update_get_idx(conn, shm_mod, mod_name, sid, &order, &found_i, &insert_i))) {
+        goto cleanup_shmmod_unlock;
+    }
+
+    if (found_i == -1) {
+        SR_LOG_DBG("#SHM before (adding oper push session)");
+        sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+
+        /* session not added yet, add it */
+        if ((err_info = sr_shmrealloc_add(&conn->ext_shm, &shm_mod->oper_push_data, &shm_mod->oper_push_data_count, 0,
+                sizeof *new_item, insert_i, (void **)&new_item, 0, NULL))) {
+            goto cleanup_ext_shmmod_unlock;
+        }
+
+        /* fill the new item with the defaults */
+        new_item->cid = conn->cid;
+        new_item->sid = sid;
+        new_item->order = 0;
+        new_item->has_data = 0;
+
+        SR_LOG_DBG("#SHM after (adding oper push session)");
+        sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+
+        found_i = insert_i;
+    } else if (found_i != insert_i) {
+        /* move the items to keep ascending order */
+        old_item = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[found_i];
+        new_item = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[insert_i];
+        tmp = *old_item;
+
+        if (found_i > insert_i) {
+            memmove(new_item + 1, new_item, (found_i - insert_i) * sizeof *old_item);
+        } else {
+            memmove(old_item, old_item + 1, (insert_i - found_i - 1) * sizeof *old_item);
+        }
+
+        *new_item = tmp;
+    }
+
+    /* update relevant members, order is always correct and may be equal to the current value */
+    new_item = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[insert_i];
+    assert(new_item->cid == conn->cid);
+    assert(new_item->sid == sid);
+    new_item->order = order;
+    if (has_data > -1) {
+        new_item->has_data = has_data;
+    }
+
+cleanup_ext_shmmod_unlock:
+    /* EXT WRITE UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_WRITE, 1, __func__);
+
+cleanup_shmmod_unlock:
+    if (!has_mod_locks) {
+        /* SHM MOD WRITE UNLOCK */
+        sr_rwunlock(&shm_lock->data_lock, SR_MOD_LOCK_TIMEOUT, SR_LOCK_WRITE, conn->cid, __func__);
+    }
+
+cleanup:
+    return err_info;
+}
+
+sr_error_info_t *
+sr_shmext_oper_push_get(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid, uint32_t *order,
+        int *has_data, sr_lock_mode_t has_mod_locks)
+{
+    sr_error_info_t *err_info = NULL;
+    struct sr_mod_lock_s *shm_lock;
+    sr_mod_oper_push_t *oper_push;
+    uint32_t i;
+
+    assert(order || has_data);
+    assert((has_mod_locks == SR_LOCK_NONE) || (has_mod_locks == SR_LOCK_READ));
+
+    if (order) {
+        *order = 0;
+    }
+    if (has_data) {
+        *has_data = -1;
+    }
+
+    shm_lock = &shm_mod->data_lock_info[SR_DS_OPERATIONAL];
+
+    if (!has_mod_locks) {
+        /* SHM MOD READ LOCK */
+        if ((err_info = sr_shmmod_lock(shm_lock, SR_CHANGE_CB_TIMEOUT, SR_LOCK_READ, SR_CHANGE_CB_TIMEOUT,
+                conn->cid, 0, 0, mod_name))) {
+            goto cleanup;
+        }
+    }
+
+    /* EXT READ LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
+        goto cleanup_shmmod_unlock;
+    }
+
+    /* find the session in mod oper push data */
+    for (i = 0; i < shm_mod->oper_push_data_count; ++i) {
+        oper_push = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[i];
+        if (oper_push->sid == sid) {
+            if (order) {
+                *order = oper_push->order;
+            }
+            if (has_data) {
+                *has_data = oper_push->has_data;
+            }
+            break;
+        }
+    }
+
+    /* EXT READ UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 0, __func__);
+
+cleanup_shmmod_unlock:
+    if (!has_mod_locks) {
+        /* SHM MOD READ UNLOCK */
+        sr_rwunlock(&shm_lock->data_lock, SR_MOD_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, __func__);
+    }
+
+cleanup:
+    return err_info;
+}
+
+sr_error_info_t *
+sr_shmext_oper_push_del(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *UNUSED(mod_name), uint32_t sid,
+        sr_lock_mode_t has_mod_locks)
+{
+    sr_error_info_t *err_info = NULL;
+    sr_mod_oper_push_t *oper_push;
+    uint32_t i;
+
+    assert(has_mod_locks == SR_LOCK_WRITE);
+    (void)has_mod_locks;
+
+    /* EXT READ LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 1, __func__))) {
+        goto cleanup;
+    }
+
+    /* find the session in mod oper push data */
+    for (i = 0; i < shm_mod->oper_push_data_count; ++i) {
+        oper_push = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[i];
+        if (oper_push->sid == sid) {
+            break;
+        }
+    }
+    SR_CHECK_INT_GOTO(i == shm_mod->oper_push_data_count, err_info, cleanup_ext_unlock);
+
+    SR_LOG_DBG("#SHM before (removing oper push session)");
+    sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+
+    /* free the item */
+    sr_shmrealloc_del(&conn->ext_shm, &shm_mod->oper_push_data, &shm_mod->oper_push_data_count, sizeof *oper_push, i, 0, 0);
+
+    SR_LOG_DBG("#SHM after (removing oper push session)");
+    sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
+
+cleanup_ext_unlock:
+    /* EXT READ UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
+
+cleanup:
+    return err_info;
+}
+
+sr_error_info_t *
+sr_shmext_oper_push_change_has_data(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sid, int has_data)
+{
+    sr_error_info_t *err_info = NULL;
+    sr_mod_oper_push_t *oper_push;
+    uint32_t i;
+
+    /* We already have a module WRITE lock */
+
+    /* EXT READ LOCK */
+    if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
+        goto cleanup;
+    }
+
+    /* Find the session in mod oper push data */
+    for (i = 0; i < shm_mod->oper_push_data_count; ++i) {
+        oper_push = &((sr_mod_oper_push_t *)(conn->ext_shm.addr + shm_mod->oper_push_data))[i];
+        if (oper_push->sid == sid) {
+            break;
+        }
+    }
+    SR_CHECK_INT_GOTO(i == shm_mod->oper_push_data_count, err_info, cleanup_ext_unlock);
+
+    /* set has_data */
+    oper_push->has_data = has_data;
+
+cleanup_ext_unlock:
+    /* EXT READ UNLOCK */
+    sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 0, __func__);
+
+cleanup:
     return err_info;
 }

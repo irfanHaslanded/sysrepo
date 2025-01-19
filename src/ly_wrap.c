@@ -601,12 +601,21 @@ sr_lyd_validate_module_final(struct lyd_node *data, const struct lys_module *mod
 {
     sr_error_info_t *err_info = NULL;
     uint32_t temp_lo = LY_LOSTORE;
+    const struct ly_err_item *e;
 
     ly_temp_log_options(&temp_lo);
+
+    /* clear any previous errors and warnings */
+    ly_err_clean(mod->ctx, NULL);
 
     if (lyd_validate_module_final(data, mod, options)) {
         sr_errinfo_new_ly(&err_info, mod->ctx, NULL, SR_ERR_VALIDATION_FAILED);
         goto cleanup;
+    }
+
+    /* print any warnings (such as about obsolete data being instantiated) */
+    for (e = ly_err_first(mod->ctx); e; e = e->next) {
+        SR_LOG_WRN("%s", e->msg);
     }
 
 cleanup:
@@ -619,12 +628,21 @@ sr_lyd_validate_op(struct lyd_node *op, const struct lyd_node *oper_data, enum l
 {
     sr_error_info_t *err_info = NULL;
     uint32_t temp_lo = LY_LOSTORE;
+    const struct ly_err_item *e;
 
     ly_temp_log_options(&temp_lo);
+
+    /* clear any previous errors and warnings */
+    ly_err_clean((struct ly_ctx *)LYD_CTX(op), NULL);
 
     if (lyd_validate_op(op, oper_data, op_type, NULL)) {
         sr_errinfo_new_ly(&err_info, LYD_CTX(op), op, SR_ERR_VALIDATION_FAILED);
         goto cleanup;
+    }
+
+    /* print any warnings (such as about obsolete data being instantiated) */
+    for (e = ly_err_first(LYD_CTX(op)); e; e = e->next) {
+        SR_LOG_WRN("%s", e->msg);
     }
 
 cleanup:
@@ -1015,15 +1033,16 @@ cleanup:
 }
 
 sr_error_info_t *
-sr_lyd_find_xpath(const struct lyd_node *tree, const char *xpath, struct ly_set **set)
+sr_lyd_merge_module(struct lyd_node **target, const struct lyd_node *source, const struct lys_module *mod,
+        lyd_merge_cb merge_cb, void *cb_data, uint32_t options)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t temp_lo = LY_LOSTORE;
 
     ly_temp_log_options(&temp_lo);
 
-    if (lyd_find_xpath(tree, xpath, set)) {
-        sr_errinfo_new_ly(&err_info, LYD_CTX(tree), NULL, SR_ERR_LY);
+    if (lyd_merge_module(target, source, mod, merge_cb, cb_data, options)) {
+        sr_errinfo_new_ly(&err_info, mod->ctx, NULL, SR_ERR_LY);
         goto cleanup;
     }
 
@@ -1033,10 +1052,15 @@ cleanup:
 }
 
 sr_error_info_t *
-sr_lyd_find_xpath_root(const struct lyd_node *tree, const char *xpath, struct ly_set **set)
+sr_lyd_find_xpath(const struct lyd_node *tree, const char *xpath, struct ly_set **set)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t temp_lo = LY_LOSTORE;
+
+    if (!tree) {
+        /* return empty set */
+        return sr_ly_set_new(set);
+    }
 
     ly_temp_log_options(&temp_lo);
 
@@ -1165,10 +1189,14 @@ sr_lyd_insert_sibling(struct lyd_node *sibling, struct lyd_node *node, struct ly
     sr_error_info_t *err_info = NULL;
     uint32_t temp_lo = LY_LOSTORE;
 
+    if (!node) {
+        return NULL;
+    }
+
     ly_temp_log_options(&temp_lo);
 
     if (lyd_insert_sibling(sibling, node, first)) {
-        sr_errinfo_new_ly(&err_info, LYD_CTX(sibling), NULL, SR_ERR_LY);
+        sr_errinfo_new_ly(&err_info, LYD_CTX(node), NULL, SR_ERR_LY);
         goto cleanup;
     }
 
@@ -1497,7 +1525,8 @@ cleanup:
 }
 
 sr_error_info_t *
-sr_ly_canonize_xpath10_value(const struct ly_ctx *ctx, const char *value, struct lysc_prefix *prefixes, char **str)
+sr_ly_canonize_xpath10_value(const struct ly_ctx *ctx, const char *value, LY_VALUE_FORMAT format, void *prefix_data,
+        char **str)
 {
     sr_error_info_t *err_info = NULL;
     const struct lysc_node_leaf *leaf_xpath = NULL;
@@ -1509,8 +1538,8 @@ sr_ly_canonize_xpath10_value(const struct ly_ctx *ctx, const char *value, struct
     assert(leaf_xpath);
 
     /* get the path in canonical (JSON) format */
-    if (leaf_xpath->type->plugin->store(ctx, leaf_xpath->type, value, strlen(value), 0, LY_VALUE_SCHEMA_RESOLVED,
-            prefixes, LYD_HINT_DATA, NULL, &val, NULL, &err)) {
+    if (leaf_xpath->type->plugin->store(ctx, leaf_xpath->type, value, strlen(value), 0, format, prefix_data,
+            LYD_HINT_DATA, NULL, &val, NULL, &err)) {
         if (err) {
             sr_errinfo_new(&err_info, SR_ERR_LY, "%s", err->msg);
         }

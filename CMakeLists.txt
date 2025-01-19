@@ -52,23 +52,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # Generic version of not only the library. Major version is reserved for really big changes of the project,
 # minor version changes with added functionality (new tool, functionality of the tool or library, ...) and
 # micro version is changed with a set of small changes or bugfixes anywhere in the project.
-set(SYSREPO_MAJOR_VERSION 2)
-set(SYSREPO_MINOR_VERSION 12)
-set(SYSREPO_MICRO_VERSION 0)
+set(SYSREPO_MAJOR_VERSION 3)
+set(SYSREPO_MINOR_VERSION 4)
+set(SYSREPO_MICRO_VERSION 2)
 set(SYSREPO_VERSION ${SYSREPO_MAJOR_VERSION}.${SYSREPO_MINOR_VERSION}.${SYSREPO_MICRO_VERSION})
 
 # Version of the library
 # Major version is changed with every backward non-compatible API/ABI change, minor version changes
 # with backward compatible change and micro version is connected with any internal change of the library.
 set(SYSREPO_MAJOR_SOVERSION 7)
-set(SYSREPO_MINOR_SOVERSION 27)
-set(SYSREPO_MICRO_SOVERSION 20)
+set(SYSREPO_MINOR_SOVERSION 29)
+set(SYSREPO_MICRO_SOVERSION 14)
 set(SYSREPO_SOVERSION_FULL ${SYSREPO_MAJOR_SOVERSION}.${SYSREPO_MINOR_SOVERSION}.${SYSREPO_MICRO_SOVERSION})
 set(SYSREPO_SOVERSION ${SYSREPO_MAJOR_SOVERSION})
 
 # Version of libyang library that this sysrepo depends on
-set(LIBYANG_DEP_VERSION 3.0.18)
-set(LIBYANG_DEP_SOVERSION 3.1.7)
+set(LIBYANG_DEP_VERSION 3.7.5)
+set(LIBYANG_DEP_SOVERSION 3.6.7)
 set(LIBYANG_DEP_SOVERSION_MAJOR 3)
 
 # generate only version header, it is needed for docs
@@ -506,7 +506,9 @@ include_directories(${PROJECT_BINARY_DIR})
 # dependencies
 # libatomic
 check_library_exists(atomic __atomic_fetch_add_4 "" LIBATOMIC)
-if(NOT LIBATOMIC)
+if(LIBATOMIC)
+    target_link_libraries(sysrepo atomic)
+else()
     # we may need to link it explicitly
     list(APPEND CMAKE_REQUIRED_LIBRARIES atomic)
     check_library_exists(atomic __atomic_fetch_add_4 "" LIBATOMIC)
@@ -603,7 +605,7 @@ endif()
 if(SR_HAVE_DLOPEN)
     install(DIRECTORY DESTINATION ${SR_PLUGINS_PATH})
 endif()
-if(SR_HAVE_SYSTEMD)
+if(SR_HAVE_SYSTEMD AND ENABLE_SYSREPO_PLUGIND)
     install(FILES ${PROJECT_BINARY_DIR}/sysrepo-plugind.service DESTINATION ${SYSTEMD_UNIT_DIR})
 endif()
 
@@ -632,7 +634,7 @@ endif()
 
 # generate API/ABI report
 if("${BUILD_TYPE_UPPER}" STREQUAL "ABICHECK")
-    lib_abi_check(sysrepo "${LIB_MAIN_HEADERS};${LIB_UTIL_HEADERS}" ${SYSREPO_SOVERSION_FULL} d5276ea67a657d8a39f0770a4e5b0993d53ddc5a)
+    lib_abi_check(sysrepo "${LIB_MAIN_HEADERS};${LIB_UTIL_HEADERS}" ${SYSREPO_SOVERSION_FULL} 5accdd96d9d59ac60e975b0c8e8cc9e83911451e)
 endif()
 
 # source files to be covered by the 'format' target and a test with 'format-check' target
