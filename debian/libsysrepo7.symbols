@@ -9,6 +9,7 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_delete_item@Base 2.2.161
  sr_disable_module_feature@Base 2.2.161
  sr_discard_changes@Base 2.2.161
+ sr_discard_changes_xpath@Base 3.4.4
  sr_discard_items@Base 2.2.161
  sr_discard_oper_changes@Base 2.2.161
  sr_disconnect@Base 2.2.161
@@ -41,8 +42,12 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_get_module_info@Base 2.2.161
  sr_get_module_replay_support@Base 2.2.161
  sr_get_node@Base 2.2.161
+ sr_get_oper_changes@Base 3.4.4
+ sr_get_oper_changes_order@Base 3.4.4
  sr_get_plugins@Base 2.2.161
  sr_get_repo_path@Base 2.2.161
+ sr_get_shm_path@Base 3.4.4
+ sr_get_shm_prefix@Base 3.4.4
  sr_get_su_uid@Base 2.2.161
  sr_get_subtree@Base 2.2.161
  sr_has_changes@Base 2.2.161
@@ -66,6 +71,7 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_module_has_change_sub@Base 2.2.161
  sr_module_rwlock_debug@Base 2.2.161
  sr_move_item@Base 2.2.161
+ sr_nacm_check_operation@Base 3.4.4
  sr_nacm_destroy@Base 2.2.161
  sr_nacm_get_recovery_user@Base 2.2.161
  sr_nacm_get_user@Base 2.2.161
@@ -131,6 +137,7 @@ libsysrepo.so.7 libsysrepo7 #MINVER#
  sr_set_module_access@Base 2.2.161
  sr_set_module_ds_access@Base 2.2.161
  sr_set_module_replay_support@Base 2.2.161
+ sr_set_oper_changes_order@Base 3.4.4
  sr_strerror@Base 2.2.161
  sr_subscription_get_last_sub_id@Base 2.2.161
  sr_subscription_get_suspended@Base 2.2.161
