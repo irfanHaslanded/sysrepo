@@ -1,3 +1,36 @@
+sysrepo (3.4.4-1) unstable; urgency=medium
+
+  [ Irfan ]
+  * sysrepo BUGFIX error on staged changes when discarding oper changes (#3508)
+
+  [ Humblesaw ]
+  * ds mongo BUGFIX change opaque node representation
+  * ds redis, ds mongo REFACTOR same behavior for opaque nodes
+  * ds mongo REFACTOR unify collection naming across databases
+
+  [ IrfanMohammad ]
+  * shm_ext BUGFIX sr_shmext_rpc_sub_remove_dead iter
+  * shm_ext BUGFIX sr_shmext__sub_suspended locks
+  * sr_shmext_check_sub_all BUGFIX hold ext_lock
+  * call sr_shmext_rpc_sub_remove_dead from rpc_sub_add
+
+  [ Humblesaw ]
+  * actions UPDATE Ubuntu 24.04
+  * ds mongo UPDATE change prefix representation of metadata
+
+  [ Michal Vasko ]
+  * nacm UPDATE explicit func for op checking
+  * SOVERSION bump to version 7.30.0
+  * VERSION bump to version 3.4.3
+  * edit diff BUGFIX inherit diff operations
+  * SOVERSION bump to version 7.30.1
+  * VERSION bump ot version 3.4.4
+
+  [ IrfanMohammad ]
+  * update patches for upstream v3.4.4
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Thu, 23 Jan 2025 09:09:21 +0000
+
 sysrepo (3.4.2-1) unstable; urgency=medium
 
   [ IrfanMohammad ]
