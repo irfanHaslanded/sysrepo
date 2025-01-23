@@ -3,14 +3,17 @@ Date: Wed, 13 Mar 2024 15:54:04 +0000
 Subject: Revert libyang err msg changes
 
 This reverts f04900891d17e3fd5a9634971c3a34a0c7c43b9f
+
+- Also update msgs in test_validation.c
 ---
  src/ly_wrap.c           | 5 ++++-
  tests/test_notif.c      | 6 +++---
  tests/test_rpc_action.c | 4 ++--
- 3 files changed, 9 insertions(+), 6 deletions(-)
+ tests/test_validation.c | 8 ++++----
+ 4 files changed, 13 insertions(+), 10 deletions(-)
 
 diff --git a/src/ly_wrap.c b/src/ly_wrap.c
-index d3954d6..49e7d0d 100644
+index b36ea42..bf2298d 100644
 --- a/src/ly_wrap.c
 +++ b/src/ly_wrap.c
 @@ -48,6 +48,7 @@ sr_errinfo_new_ly(sr_error_info_t **err_info, const struct ly_ctx *ly_ctx, const
@@ -33,7 +36,7 @@ index d3954d6..49e7d0d 100644
                  sr_errinfo_new(err_info, err_code, "%s", e->msg);
              }
 diff --git a/tests/test_notif.c b/tests/test_notif.c
-index 90681df..38a7327 100644
+index 294d21b..9b54bf7 100644
 --- a/tests/test_notif.c
 +++ b/tests/test_notif.c
 @@ -505,7 +505,7 @@ test_oper_dep(void **state)
@@ -85,3 +88,23 @@ index 4ce9b64..1f8c5c2 100644
      assert_null(err_info->err[0].error_format);
      assert_string_equal(err_info->err[1].message, "RPC output validation failed.");
      assert_null(err_info->err[1].error_format);
+diff --git a/tests/test_validation.c b/tests/test_validation.c
+index 1e0e12d..50e84fa 100644
+--- a/tests/test_validation.c
++++ b/tests/test_validation.c
+@@ -305,11 +305,11 @@ test_multi_error(void **state)
+     assert_int_equal(ret, SR_ERR_OK);
+     assert_int_equal(err_info->err_count, 4);
+     assert_string_equal(err_info->err[0].message, "Unsatisfied length - string \"string is too long\""
+-            " length is not allowed. (path \"/valid:cont/l1\")");
++            " length is not allowed. (Schema location \"/valid:cont/l1\".)");
+     assert_string_equal(err_info->err[1].message, "Invalid non-number-encoded uint8 value \"should be a number\"."
+-            " (path \"/valid:cont/l2\")");
+-    assert_string_equal(err_info->err[2].message, "Must condition \". = 'value'\" not satisfied. (path \"/valid:cont/l3\")");
+-    assert_string_equal(err_info->err[3].message, "Too many \"l4\" instances. (path \"/valid:cont/l4[.='there can be']\")");
++            " (Schema location \"/valid:cont/l2\".)");
++    assert_string_equal(err_info->err[2].message, "Must condition \". = 'value'\" not satisfied. (Data location \"/valid:cont/l3\".)");
++    assert_string_equal(err_info->err[3].message, "Too many \"l4\" instances. (Data location \"/valid:cont/l4[.='there can be']\".)");
+ 
+     /* cleanup */
+     ret = sr_discard_changes(st->sess);

@@ -4,8 +4,8 @@
  * @brief ietf-subscribed-notifications common functions header
  *
  * @copyright
- * Copyright (c) 2023 Deutsche Telekom AG.
- * Copyright (c) 2023 CESNET, z.s.p.o.
+ * Copyright (c) 2023 - 2024 Deutsche Telekom AG.
+ * Copyright (c) 2023 - 2024 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -89,6 +89,7 @@ struct srsn_state {
         struct timespec stop_time;
         struct srsn_timer stop_sntimer;
         sr_conn_ctx_t *conn;
+        char *nacm_user;
         ATOMIC_T sent_count;
 
         srsn_sub_type_t type;
@@ -97,18 +98,23 @@ struct srsn_state {
             sr_datastore_t ds;
         };
         union {
+            /* subscribed-notifications */
             struct {
                 struct timespec start_time;
                 struct srsn_rt_notif *rt_notifs;    /* buffered realtime notifications received before replay complete */
                 uint32_t rt_notif_count;
                 ATOMIC_T replay_complete_count;     /* counter of special replay-complete notifications received */
             };
+
+            /* YANG push periodic */
             struct {
                 uint32_t period_ms;
                 struct timespec anchor_time;
                 struct srsn_timer update_sntimer;
                 int suspended;
             };
+
+            /* YANG push on-change */
             struct {
                 uint32_t dampening_period_ms;
                 int sync_on_start;
@@ -188,11 +194,12 @@ void srsn_unlock(void);
  * @param[in] stop_time Stop-time of the subscription.
  * @param[in] sr_sub User sub parameter.
  * @param[in] conn Connection to store.
+ * @param[in] nacm_user Optional NACM user to use.
  * @param[out] sub Created subscription.
  * @return err_info, NULL on success.
  */
 sr_error_info_t *srsn_sub_new(const char *xpath_filter, const struct timespec *stop_time, sr_subscription_ctx_t **sr_sub,
-        sr_conn_ctx_t *conn, struct srsn_sub **sub);
+        sr_conn_ctx_t *conn, const char *nacm_user, struct srsn_sub **sub);
 
 /**
  * @brief Unsubscribe all notifications of a subscription.

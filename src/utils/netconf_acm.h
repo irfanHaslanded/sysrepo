@@ -4,8 +4,8 @@
  * @brief NACM functionality header
  *
  * @copyright
- * Copyright (c) 2019 - 2022 Deutsche Telekom AG.
- * Copyright (c) 2017 - 2022 CESNET, z.s.p.o.
+ * Copyright (c) 2019 - 2025 Deutsche Telekom AG.
+ * Copyright (c) 2017 - 2025 CESNET, z.s.p.o.
  *
  * This source code is licensed under BSD 3-Clause License (the "License").
  * You may not use this file except in compliance with the License.
@@ -63,7 +63,8 @@ void sr_nacm_destroy(void);
  * - reading data - unaccesible data are silently filtered out from the returned data;
  * - editing data - on an attempt to edit data without the proper access NETCONF error is returned;
  * - sending RPC/action - on an attempt to send RPC/action without the proper access NETCONF error is returned;
- * - receiving notifications - notifications without the proper access are silently dropped.
+ * - receiving notifications - notifications without the proper access are silently dropped;
+ * - subscribing to YANG Push - unreadable data are silently filtered out from the received notifications.
  *
  * @param[in] session Session to use.
  * @param[in] user NACM username to use. If NULL, the username is cleared disabling NACM.
@@ -84,6 +85,15 @@ const char *sr_nacm_get_user(sr_session_ctx_t *session);
  * @return Username of NACM recovery session.
  */
 const char *sr_nacm_get_recovery_user(void);
+
+/**
+ * @brief Explicitly check NACM access of an operation.
+ *
+ * @param[in] session Session to use, must have NACM username set for the check to be performed.
+ * @param[in] op Operation to check.
+ * @return Error code (::SR_ERR_OK on success).
+ */
+int sr_nacm_check_operation(sr_session_ctx_t *session, const struct lyd_node *op);
 
 #ifdef __cplusplus
 }

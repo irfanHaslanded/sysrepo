@@ -21,15 +21,15 @@ a "one shot" fashion where it is more performant to do so.
 ---
  src/modinfo.c          |  18 +++-
  src/sysrepo.c          |   2 +-
- src/sysrepo_types.h    |   9 +-
+ src/sysrepo_types.h    |  11 ++-
  tests/test_oper_pull.c | 225 +++++++++++++++++++++++++++++++++++++++++++++++++
- 4 files changed, 250 insertions(+), 4 deletions(-)
+ 4 files changed, 251 insertions(+), 5 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index ec3c6e2..3e43026 100644
+index 8c46c35..e143d36 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1302,10 +1302,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1554,10 +1554,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              /* nested data */
@@ -37,12 +37,12 @@ index ec3c6e2..3e43026 100644
 +            if (xpath_subs[0].opts & SR_SUBSCR_OPER_ONCE) {
                  /* get oper data from the client */
                  if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
--                        orig_data, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
-+                        orig_data, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
+-                        orig_data, operation_id, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
++                        orig_data, operation_id, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
                      goto cleanup_opergetsub_ext_unlock;
                  }
  
-@@ -1314,6 +1314,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1566,6 +1566,20 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
                      lyd_free_all(oper_data);
                      goto cleanup_opergetsub_ext_unlock;
                  }
@@ -50,7 +50,7 @@ index ec3c6e2..3e43026 100644
 +                for (j = 0; j < set->count; ++j) {
 +                    /* get oper data from the client */
 +                    if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
-+                            orig_data, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
++                            orig_data, operation_id, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
 +                        goto cleanup_opergetsub_ext_unlock;
 +                    }
 +
@@ -64,10 +64,10 @@ index ec3c6e2..3e43026 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 74e9421..ba5be68 100644
+index c9294a1..79e3ae9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7222,7 +7222,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7655,7 +7655,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
@@ -77,30 +77,44 @@ index 74e9421..ba5be68 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 9f820b8..43b7663 100644
+index e37a192..1b4dd1e 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
-@@ -454,7 +454,14 @@ typedef enum {
-      * event handling but results in 0 filtered-out changes returned by ::sr_module_change_sub_get_info(). Accepted
-      * only for ::sr_module_change_subscribe().
+@@ -448,20 +448,27 @@ typedef enum {
       */
--    SR_SUBSCR_FILTER_ORIG = 0x100
-+    SR_SUBSCR_FILTER_ORIG = 0x100000,
-+
+     SR_SUBSCR_OPER_POLL_DIFF = 0x80,
+ 
 +    /*
 +     * @brief For a given "get" operation on the operational datastore, this option ensures that a subscriber
 +     * is called no more than once, regardless of whether the subscription path is a child of a list.
 +     * When this option is specified, a parent node is not passed to the subscriber's callback.
 +     */
-+    SR_SUBSCR_OPER_ONCE = 0x100
++    SR_SUBSCR_OPER_ONCE = 0x100,
++
+     /**
+      * @brief Normally, XPath filter is applied by the listener (subscriber) for counting its statistics of filtered-out
+      * events. Using this option the event originator performs the filtering to unburden the subscriber of unnecessary
+      * event handling but results in 0 filtered-out changes returned by ::sr_module_change_sub_get_info(). Accepted
+      * only for ::sr_module_change_subscribe().
+      */
+-    SR_SUBSCR_FILTER_ORIG = 0x0100,
++    SR_SUBSCR_FILTER_ORIG = 0x100000,
+ 
+     /**
+      * @brief If you call getters (::sr_get_data()) in the module change callback for data from **other** modules
+      * than the one the callback subscribed for, use this flag. Normally, only the changes of the subscribed module
+      * are sent to the callback so it retrieves the old data of other modules.
+      */
+-    SR_SUBSCR_CHANGE_ALL_MODULES = 0x0200
++    SR_SUBSCR_CHANGE_ALL_MODULES = 0x200000
  
  } sr_subscr_flag_t;
  
 diff --git a/tests/test_oper_pull.c b/tests/test_oper_pull.c
-index cd338f5..5fdfb57 100644
+index 793a645..f443fe3 100644
 --- a/tests/test_oper_pull.c
 +++ b/tests/test_oper_pull.c
-@@ -3746,6 +3746,230 @@ test_cache_diff(void **state)
+@@ -3742,6 +3742,230 @@ test_cache_diff(void **state)
  
      assert_int_equal(ATOMIC_LOAD_RELAXED(st->cb_called), 6);
  }
@@ -329,12 +343,12 @@ index cd338f5..5fdfb57 100644
 +    sr_unsubscribe(subscr);
 +}
  
- int
- main(void)
-@@ -3777,6 +4001,7 @@ main(void)
-         cmocka_unit_test_teardown(test_cache, clear_up),
+ /* TEST */
+ static int
+@@ -3912,6 +4136,7 @@ main(void)
          cmocka_unit_test_teardown(test_cache_no_sub, clear_up),
          cmocka_unit_test_teardown(test_cache_diff, clear_up),
+         cmocka_unit_test_teardown(test_cache_nested, clear_up),
 +        cmocka_unit_test_teardown(test_oper_once, clear_up),
      };
  

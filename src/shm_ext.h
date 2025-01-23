@@ -279,22 +279,6 @@ sr_error_info_t *sr_shmext_rpc_sub_stop(sr_conn_ctx_t *conn, off_t *subs, uint32
         const char *path, uint32_t del_idx, int del_evpipe, int recovery);
 
 /**
- * @brief Remove dead main SHM module RPC/action subscription
- *
- * @param[in] conn Connection to use.
- * @param[in,out] subs Offset in ext SHM of RPC subs.
- * @param[in,out] sub_count Ext SHM RPC sub count.
-*/
-void sr_shmext_rpc_sub_remove_dead(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count);
-
-/**
- * @brief Recover all subscriptions in ext SHM, their connection must be dead.
- *
- * @param[in] conn Connection to use.
- */
-void sr_shmext_recover_sub_all(sr_conn_ctx_t *conn);
-
-/**
  * @brief Check validity of all the subscriptions in a new updated context.
  *
  * @param[in] conn Connection to use.
@@ -368,5 +352,59 @@ sr_error_info_t *sr_shmext_notif_sub_suspended(sr_conn_ctx_t *conn, const char *
  */
 sr_error_info_t *sr_shmext_rpc_sub_suspended(sr_conn_ctx_t *conn, const char *path, uint32_t sub_id, int set_suspended,
         int *get_suspended);
+
+/**
+ * @brief Update push oper data entry of a module for a session, create if does not exist.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] mod_name Module name.
+ * @param[in] sid Session ID of the push oper data.
+ * @param[in] order Order to set, 0 to generate/leave as is.
+ * @param[in] has_data Value of the flag to set, -1 to leave as is.
+ * @param[in] has_mod_lock Set to the SHM mod lock held.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid,
+        uint32_t order, int has_data, sr_lock_mode_t has_mod_locks);
+
+/**
+ * @brief Get push oper data entry members of a module for a session.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] mod_name Module name.
+ * @param[in] sid Session ID of the push oper data.
+ * @param[out] order Optional push oper data entry order.
+ * @param[out] has_data Optional value of the flag.
+ * @param[in] has_mod_lock Set to the SHM mod lock held.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_shmext_oper_push_get(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid,
+        uint32_t *order, int *has_data, sr_lock_mode_t has_mod_locks);
+
+/**
+ * @brief Remove a push oper data entry of a module for a session.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] mod_name Module name.
+ * @param[in] sid Session ID of the push oper data.
+ * @param[in] has_mod_lock Set to the SHM mod lock held.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_shmext_oper_push_del(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *mod_name, uint32_t sid,
+        sr_lock_mode_t has_mod_locks);
+
+/**
+ * @brief Change a push oper data entry's has_data flag of a module for a session.
+ *
+ * @param[in] conn Connection to use.
+ * @param[in] shm_mod SHM mod.
+ * @param[in] sid Session ID of the push oper data.
+ * @param[in] has_data Whether any push data is stored.
+ * @return err_info, NULL on success.
+ */
+sr_error_info_t *sr_shmext_oper_push_change_has_data(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sid, int has_data);
 
 #endif /* _SHM_EXT_H */

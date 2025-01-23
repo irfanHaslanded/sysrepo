@@ -10,7 +10,7 @@ before we can downgrade to a read lock.
  2 files changed, 8 insertions(+), 3 deletions(-)
 
 diff --git a/src/common.h b/src/common.h
-index 4066da8..43670e2 100644
+index e05e9da..663859e 100644
 --- a/src/common.h
 +++ b/src/common.h
 @@ -126,10 +126,10 @@ struct srplg_ntf_s;
@@ -27,10 +27,10 @@ index 4066da8..43670e2 100644
  /** default timeout for RPC/action subscription callback (ms) */
  #define SR_RPC_CB_TIMEOUT 2000
 diff --git a/src/shm_mod.c b/src/shm_mod.c
-index d4facd8..8774646 100644
+index b0ff875..5c3961f 100644
 --- a/src/shm_mod.c
 +++ b/src/shm_mod.c
-@@ -1193,7 +1193,12 @@ sr_shmmod_lock(const struct lys_module *ly_mod, sr_datastore_t ds, struct sr_mod
+@@ -1317,7 +1317,12 @@ sr_shmmod_lock(struct sr_mod_lock_s *shm_lock, uint32_t timeout_ms, sr_lock_mode
  
      if (!timeout_ms) {
          /* default timeout */
@@ -43,4 +43,4 @@ index d4facd8..8774646 100644
 +        }
      }
  
-     /* fill recovery callback information, context cannot be changed */
+ ds_lock_retry:

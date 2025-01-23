@@ -11,10 +11,10 @@ change the group of data files in this case.
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/common.c b/src/common.c
-index a41a254..6ef6c43 100644
+index af60755..1a08194 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -5712,7 +5712,7 @@ sr_is_prod_env(void)
+@@ -5549,7 +5549,7 @@ sr_is_prod_env(void)
      static int sr_prod_env = -1;
  
      if (sr_prod_env < 0) {

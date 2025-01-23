@@ -8,10 +8,10 @@ Subject: shm sub BUGFIX do not store error, which is never cleared
  1 file changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 0e96ba2..273f3ca 100644
+index b1f01ea..8c9d99f 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
-@@ -559,14 +559,17 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -560,14 +560,17 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              if (clear_ev_on_err) {
                  ATOMIC_STORE_RELAXED(sub_shm->event, SR_SUB_EV_NONE);
                  sub_shm->orig_cid = 0;

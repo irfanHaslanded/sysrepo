@@ -7,7 +7,7 @@ Subject: Add typedefs for compatibility
  1 file changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 43b7663..9232e3c 100644
+index 1b4dd1e..5f66a40 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -37,7 +37,7 @@ extern "C" {
@@ -130,7 +130,7 @@ index 43b7663..9232e3c 100644
      /**
       * @brief Default behavior of the subscription. In case of ::sr_module_change_subscribe call it means that:
       *
-@@ -492,7 +494,7 @@ typedef uint32_t sr_subscr_options_t;
+@@ -499,7 +501,7 @@ typedef uint32_t sr_subscr_options_t;
   * ::SR_SUBSCR_DONE_ONLY subscription flag. The general rule is that in case the operation fails, only if the subscriber
   * has __successfully__ processed the first event (::SR_EV_CHANGE/::SR_EV_RPC), it will get the second ::SR_EV_ABORT event.
   */
@@ -139,7 +139,7 @@ index 43b7663..9232e3c 100644
      SR_EV_UPDATE,  /**< Occurs before any other events and the subscriber can update the apply-changes diff.
                          It is performed by calling `sr_*_item()` or ::sr_edit_batch() on the callback session
                          __without__ calling ::sr_apply_changes() or any other function. */
-@@ -519,7 +521,7 @@ typedef enum {
+@@ -526,7 +528,7 @@ typedef enum {
  /**
   * @brief Type of the operation made on an item, used by changeset retrieval in ::sr_get_change_next.
   */
@@ -148,7 +148,7 @@ index 43b7663..9232e3c 100644
      SR_OP_CREATED,   /**< The item has been created by the change. */
      SR_OP_MODIFIED,  /**< The value of the item has been modified by the change. */
      SR_OP_DELETED,   /**< The item has been deleted by the change. */
-@@ -607,7 +609,7 @@ typedef int (*sr_rpc_tree_cb)(sr_session_ctx_t *session, uint32_t sub_id, const
+@@ -613,7 +615,7 @@ typedef int (*sr_rpc_tree_cb)(sr_session_ctx_t *session, uint32_t sub_id, const
  /**
   * @brief Type of the notification passed to the ::sr_event_notif_cb and ::sr_event_notif_tree_cb callbacks.
   */

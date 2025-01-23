@@ -1,0 +1,21 @@
+From: IrfanMohammad <irfan@graphiant.com>
+Date: Thu, 5 Dec 2024 17:34:13 +0000
+Subject: edit_diff bugfix false positive uninit vars
+
+---
+ src/edit_diff.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/edit_diff.c b/src/edit_diff.c
+index a8ed7cb..d7b2778 100644
+--- a/src/edit_diff.c
++++ b/src/edit_diff.c
+@@ -626,7 +626,7 @@ sr_edit_diff_append(const struct lyd_node *edit, enum edit_op op, const char *pr
+         struct lyd_node **diff)
+ {
+     sr_error_info_t *err_info = NULL;
+-    struct lyd_node *diff_parent, *new_diff_parent = NULL, *diff_subtree, *elem;
++    struct lyd_node *diff_parent = NULL, *new_diff_parent = NULL, *diff_subtree = NULL, *elem = NULL;
+ 
+     if (!diff) {
+         /* nothing to do, diff is not generated */

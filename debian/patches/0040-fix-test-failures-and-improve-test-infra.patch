@@ -9,7 +9,7 @@ Subject: fix test failures and improve test infra
  3 files changed, 24 insertions(+), 23 deletions(-)
 
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
-index c70f65e..6ad7359 100644
+index e22fd75..8eddbe6 100644
 --- a/tests/CMakeLists.txt
 +++ b/tests/CMakeLists.txt
 @@ -84,6 +84,9 @@ if(ENABLE_TESTS)
@@ -50,9 +50,9 @@ index c70f65e..6ad7359 100644
 +            set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup)
 +        endif()
  
-         # avoid loading installed plugins by sysrepo-plugind
-         if(${test_name} STREQUAL "test_rotation_valgrind")
-@@ -144,9 +150,6 @@ if(ENABLE_VALGRIND_TESTS)
+         if(${CMAKE_VERSION} VERSION_GREATER "3.7")
+             set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup TIMEOUT 300)
+@@ -148,9 +154,6 @@ if(ENABLE_VALGRIND_TESTS)
              )
          endif()
  

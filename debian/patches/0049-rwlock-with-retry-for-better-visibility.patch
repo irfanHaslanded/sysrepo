@@ -9,10 +9,10 @@ Subject: rwlock with retry for better visibility
  3 files changed, 83 insertions(+), 10 deletions(-)
 
 diff --git a/src/common.c b/src/common.c
-index 47f17fd..b58eef0 100644
+index 5d6199c..868e98a 100644
 --- a/src/common.c
 +++ b/src/common.c
-@@ -145,6 +145,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
+@@ -149,6 +149,40 @@ const sr_module_ds_t sr_module_ds_disabled_run = {{
          SR_DEFAULT_NOTIFICATION_DS /**< notification */
      }};
  
@@ -53,7 +53,7 @@ index 47f17fd..b58eef0 100644
  sr_error_info_t *
  sr_ptr_add(pthread_mutex_t *ptr_lock, void ***ptrs, uint32_t *ptr_count, void *add_ptr)
  {
-@@ -2573,7 +2607,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2476,7 +2510,7 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
      }
      if (!has_mutex) {
          /* MUTEX LOCK */
@@ -62,7 +62,7 @@ index 47f17fd..b58eef0 100644
      }
  
      SR_LOG_RWLOCK(rwlock, mode, cid, func, "Locking");
-@@ -2601,7 +2635,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2504,7 +2538,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[0] || rwlock->writer)) {
              /* COND WAIT */
@@ -75,7 +75,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2639,7 +2677,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2542,7 +2580,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
              }
  
              /* COND WAIT */
@@ -88,7 +88,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2677,7 +2719,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2580,7 +2622,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->upgr || rwlock->writer)) {
              /* COND WAIT */
@@ -101,7 +101,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2714,7 +2760,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
+@@ -2617,7 +2663,11 @@ sr_sub_rwlock(sr_rwlock_t *rwlock, struct timespec *timeout_abs, sr_lock_mode_t
          ret = 0;
          while (!ret && (rwlock->readers[SR_RWLOCK_READ_LIMIT - 1] || rwlock->writer)) {
              /* COND WAIT */
@@ -114,7 +114,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              /* recover the lock again, the owner may have died while processing */
-@@ -2840,7 +2890,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2743,7 +2793,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          ret = 0;
          while (!ret && (rwlock->readers[1] || (rwlock->read_count[0] > 1) || rwlock->writer)) {
              /* COND WAIT */
@@ -127,7 +127,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -2902,7 +2956,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2805,7 +2859,11 @@ sr_rwrelock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
              }
  
              /* COND WAIT */
@@ -140,7 +140,7 @@ index 47f17fd..b58eef0 100644
          }
          if (ret == ETIMEDOUT) {
              sr_rwlock_recover(rwlock, func, cb, cb_data);
-@@ -3015,7 +3073,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
+@@ -2918,7 +2976,7 @@ sr_rwunlock(sr_rwlock_t *rwlock, uint32_t timeout_ms, sr_lock_mode_t mode, sr_ci
          sr_timeouttime_get(&timeout_ts, timeout_ms);
  
          /* MUTEX LOCK */
@@ -150,10 +150,10 @@ index 47f17fd..b58eef0 100644
              /* make it consistent */
              ret = pthread_mutex_consistent(&rwlock->mutex);
 diff --git a/src/common.h b/src/common.h
-index 43670e2..35a616f 100644
+index 663859e..92b704e 100644
 --- a/src/common.h
 +++ b/src/common.h
-@@ -261,6 +261,8 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_or
+@@ -266,6 +266,8 @@ sr_error_info_t *sr_val_ly2sr_with_opts(const struct lyd_node *node, int with_or
   * */
  void sr_rwlock_debug_set(sr_rwlock_t *rwlock, uint32_t enable);
  
@@ -163,7 +163,7 @@ index 43670e2..35a616f 100644
  /*
   * From sysrepo.c
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 68af271..2cb22d1 100644
+index ab63f71..11419d8 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -351,6 +351,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
@@ -189,7 +189,7 @@ index 68af271..2cb22d1 100644
      }
  
      last_event = ATOMIC_LOAD_RELAXED(sub_shm->event);
-@@ -477,6 +484,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -478,6 +485,7 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
      uint32_t last_request_id, i, err_count;
      int ret, write_lock = 0;
      struct timespec timeout_abs2;
@@ -197,7 +197,7 @@ index 68af271..2cb22d1 100644
  
      assert((expected_ev == SR_SUB_EV_NONE) || SR_IS_NOTIFY_EVENT(expected_ev));
      assert(shm_data_sub->fd > -1);
-@@ -492,7 +500,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -493,7 +501,12 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
      while (!ret && (sub_shm->lock.readers[0] || sub_shm->lock.writer ||
              (ATOMIC_LOAD_RELAXED(sub_shm->event) && !SR_IS_NOTIFY_EVENT(ATOMIC_LOAD_RELAXED(sub_shm->event))))) {
          /* COND WAIT */

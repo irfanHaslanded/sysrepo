@@ -469,7 +469,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
         }
 
         /* make sure the directory exists */
-        shm_dir = strdup(sr_shm_dir_get());
+        shm_dir = strdup(sr_get_shm_path());
         if ((err_info = sr_mkpath(shm_dir, SR_DIR_PERM))) {
             goto cleanup;
         }
@@ -509,6 +509,7 @@ sr_shmmain_open(sr_shm_t *shm, int *created)
         ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
         ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
         ATOMIC_STORE_RELAXED(main_shm->new_evpipe_num, 1);
+        ATOMIC_STORE_RELAXED(main_shm->new_operation_id, 1);
         strncpy(main_shm->repo_path, sr_get_repo_path(), sizeof main_shm->repo_path - 1);
 
         /* remove leftover event pipes */

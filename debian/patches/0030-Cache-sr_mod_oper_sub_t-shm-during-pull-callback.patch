@@ -32,39 +32,39 @@ Subject: Cache sr_mod_oper_sub_t shm during pull callback
  Step 4. oper sub unlock read
 
 Also fix wrong assumption in new_wrlock about cleared events
-
-cherry-picked from 0068-Cache-sr_mod_oper_sub_t-shm-during-pull-callback.patch
 ---
- src/modinfo.c   | 83 +++++++++++++++++++++++++++++++++++++++------------------
+ src/modinfo.c   | 85 +++++++++++++++++++++++++++++++++++++++------------------
  src/shm_sub.c   | 19 +++++++------
- src/shm_sub.h   |  2 +-
- src/shm_types.h |  9 +++++++
- src/subscr.c    |  6 ++---
- 5 files changed, 81 insertions(+), 38 deletions(-)
+ src/shm_sub.h   |  5 ++--
+ src/shm_types.h |  9 ++++++
+ src/subscr.c    |  6 ++--
+ 5 files changed, 83 insertions(+), 41 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 3a5b8f1..4204716 100644
+index 5887fb3..7d9642f 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
-@@ -1030,7 +1030,7 @@ cleanup:
-  */
+@@ -1065,8 +1065,8 @@ cleanup:
  static sr_error_info_t *
  sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const char **request_xpaths,
--        uint32_t req_xpath_count, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_t *shm_subs,
-+        uint32_t req_xpath_count, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_cached_t *cached_subs,
-         uint32_t idx1, const struct lyd_node *parent, uint32_t timeout_ms, sr_conn_ctx_t *conn,
-         struct lyd_node **oper_data)
+         uint32_t req_xpath_count, const char *orig_name, const void *orig_data, uint32_t operation_id,
+-        sr_mod_oper_get_sub_t *shm_subs, uint32_t idx1, const struct lyd_node *parent, uint32_t timeout_ms,
+-        sr_conn_ctx_t *conn, struct lyd_node **oper_data)
++        sr_mod_oper_get_sub_cached_t *cached_subs, uint32_t idx1, const struct lyd_node *parent,
++        uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **oper_data)
  {
-@@ -1075,7 +1075,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
-     request_xpath = (req_xpath_count == 1) ? request_xpaths[0] : NULL;
+     sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
+     struct lyd_node *parent_dup = NULL, *last_parent;
+@@ -1110,7 +1110,7 @@ sr_xpath_oper_data_get(struct sr_mod_info_mod_s *mod, const char *xpath, const c
  
      /* get data from client */
--    if ((err_info = sr_shmsub_oper_get_notify(mod, xpath, request_xpath, parent_dup, orig_name, orig_data, shm_subs,
-+    if ((err_info = sr_shmsub_oper_get_notify(mod, xpath, request_xpath, parent_dup, orig_name, orig_data, cached_subs,
-             idx1, timeout_ms, conn, oper_data, &cb_err_info))) {
+     if ((err_info = sr_shmsub_oper_get_notify(mod, xpath, request_xpath, parent_dup, orig_name, orig_data, operation_id,
+-            shm_subs, idx1, timeout_ms, conn, oper_data, &cb_err_info))) {
++            cached_subs, idx1, timeout_ms, conn, oper_data, &cb_err_info))) {
          sr_errinfo_merge(&err_info, cb_err_info);
          goto cleanup;
-@@ -1167,6 +1167,17 @@ cleanup:
+     }
+@@ -1214,6 +1214,17 @@ cleanup:
      return err_info;
  }
  
@@ -80,18 +80,18 @@ index 3a5b8f1..4204716 100644
 +}
 +
  /**
-  * @brief Update (replace or append) operational data for a specific module.
-  *
-@@ -1193,6 +1204,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+  * @brief Callback for merging operational data.
+  */
+@@ -1453,6 +1464,8 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
      int required, merged;
      struct ly_set *set = NULL;
-     struct lyd_node *edit = NULL, *oper_data;
+     struct lyd_node *oper_data;
 +    sr_mod_oper_get_sub_cached_t *cached_subs = NULL;
 +    size_t oper_get_sub_count = 0, count = 0;
  
      if (!(get_oper_opts & SR_OPER_NO_STORED)) {
-         /* get stored operational edit */
-@@ -1229,31 +1242,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+         /* process stored operational data */
+@@ -1481,31 +1494,52 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
      /* EXT READ LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
@@ -150,7 +150,7 @@ index 3a5b8f1..4204716 100644
                      request_xpaths[req_xpath_count] = mod->xpaths[j];
                      ++req_xpath_count;
                  }
-@@ -1267,13 +1301,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1519,13 +1553,13 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* remove any present data */
          if (!(xpath_subs[0].opts & SR_SUBSCR_OPER_MERGE) && (err_info = sr_lyd_xpath_complement(data, sub_xpath))) {
@@ -166,7 +166,7 @@ index 3a5b8f1..4204716 100644
              }
              if (merged) {
                  /* we have the data */
-@@ -1283,7 +1317,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1535,7 +1569,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
  
          /* trim the last node to get the parent */
          if ((err_info = sr_xpath_trim_last_node(sub_xpath, &parent_xpath))) {
@@ -175,7 +175,7 @@ index 3a5b8f1..4204716 100644
          }
  
          if (parent_xpath) {
-@@ -1293,7 +1327,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1545,7 +1579,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              }
  
              if ((err_info = sr_lyd_find_xpath(*data, parent_xpath, &set))) {
@@ -184,13 +184,13 @@ index 3a5b8f1..4204716 100644
              }
  
              if (!set->count) {
-@@ -1305,27 +1339,27 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
+@@ -1557,27 +1591,27 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
              if (xpath_subs[0].opts & SR_SUBSCR_OPER_ONCE) {
                  /* get oper data from the client */
                  if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
--                        orig_data, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
+-                        orig_data, operation_id, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
 -                    goto cleanup_opergetsub_ext_unlock;
-+                        orig_data, cached_subs, i, NULL, timeout_ms, conn, &oper_data))) {
++                        orig_data, operation_id, cached_subs, i, NULL, timeout_ms, conn, &oper_data))) {
 +                    goto cleanup;
                  }
  
@@ -204,9 +204,9 @@ index 3a5b8f1..4204716 100644
                  for (j = 0; j < set->count; ++j) {
                      /* get oper data from the client */
                      if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
--                            orig_data, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
+-                            orig_data, operation_id, shm_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
 -                        goto cleanup_opergetsub_ext_unlock;
-+                            orig_data, cached_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
++                            orig_data, operation_id, cached_subs, i, set->dnodes[j], timeout_ms, conn, &oper_data))) {
 +                        goto cleanup;
                      }
  
@@ -218,13 +218,13 @@ index 3a5b8f1..4204716 100644
                      }
                  }
              }
-@@ -1339,13 +1373,13 @@ next_iter:
+@@ -1591,13 +1625,13 @@ next_iter:
          } else {
              /* top-level data */
              if ((err_info = sr_xpath_oper_data_get(mod, sub_xpath, request_xpaths, req_xpath_count, orig_name,
--                    orig_data, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
+-                    orig_data, operation_id, shm_subs, i, NULL, timeout_ms, conn, &oper_data))) {
 -                goto cleanup_opergetsub_ext_unlock;
-+                    orig_data, cached_subs, i, NULL, timeout_ms, conn, &oper_data))) {
++                    orig_data, operation_id, cached_subs, i, NULL, timeout_ms, conn, &oper_data))) {
 +                goto cleanup;
              }
  
@@ -235,7 +235,7 @@ index 3a5b8f1..4204716 100644
              }
          }
  
-@@ -1354,14 +1388,11 @@ next_iter:
+@@ -1606,14 +1640,11 @@ next_iter:
          req_xpath_count = 0;
      }
  
@@ -253,7 +253,7 @@ index 3a5b8f1..4204716 100644
      free(parent_xpath);
      ly_set_free(set, NULL);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index d1be1c9..d936e97 100644
+index 3d13155..36e222f 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -374,6 +374,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
@@ -286,24 +286,24 @@ index d1be1c9..d936e97 100644
      last_request_id = ATOMIC_LOAD_RELAXED(sub_shm->request_id);
  
      if (ret) {
-@@ -517,7 +520,6 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
+@@ -518,7 +521,6 @@ _sr_shmsub_notify_wait_wr(sr_sub_shm_t *sub_shm, sr_sub_event_t event, uint32_t
              if (event != last_event) {
                  SR_LOG_WRN("EV ORIGIN: SHM event \"%s\" ID %" PRIu32 " changed to \"%s\" unexpectedly",
-                         sr_ev2str(event), request_id, sr_ev2str(last_event));
+                         sr_ev2str(event), operation_id, sr_ev2str(last_event));
 -
              }
              SR_ERRINFO_COND(&err_info, __func__, ret);
          }
-@@ -2051,7 +2053,7 @@ cleanup:
- 
+@@ -2191,7 +2193,7 @@ cleanup:
  sr_error_info_t *
  sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, const char *request_xpath,
--        const struct lyd_node *parent, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_t *oper_get_subs,
-+        const struct lyd_node *parent, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_cached_t *cached_subs,
-         uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **data, sr_error_info_t **cb_err_info)
+         const struct lyd_node *parent, const char *orig_name, const void *orig_data, uint32_t operation_id,
+-        sr_mod_oper_get_sub_t *oper_get_subs, uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn,
++        sr_mod_oper_get_sub_cached_t *cached_subs, uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn,
+         struct lyd_node **data, sr_error_info_t **cb_err_info)
  {
      sr_error_info_t *err_info = NULL;
-@@ -2061,14 +2063,15 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
+@@ -2201,14 +2203,15 @@ sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, cons
      char *parent_lyb = NULL;
      struct lyd_node *oper_data;
      sr_cid_t cid;
@@ -322,23 +322,26 @@ index d1be1c9..d936e97 100644
          /* check subscription aliveness */
          if (!sr_conn_is_alive(xpath_sub->cid)) {
 diff --git a/src/shm_sub.h b/src/shm_sub.h
-index 0625a5d..8958a46 100644
+index 6d818ba..1b82a5c 100644
 --- a/src/shm_sub.h
 +++ b/src/shm_sub.h
-@@ -176,7 +176,7 @@ sr_error_info_t *sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_
+@@ -177,9 +177,8 @@ sr_error_info_t *sr_shmsub_change_notify_change_abort(struct sr_mod_info_s *mod_
   * @return err_info, NULL on success.
   */
  sr_error_info_t *sr_shmsub_oper_get_notify(struct sr_mod_info_mod_s *mod, const char *xpath, const char *request_xpath,
--        const struct lyd_node *parent, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_t *oper_get_subs,
-+        const struct lyd_node *parent, const char *orig_name, const void *orig_data, sr_mod_oper_get_sub_cached_t *oper_get_subs,
-         uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **data, sr_error_info_t **cb_err_info);
+-        const struct lyd_node *parent, const char *orig_name, const void *orig_data, uint32_t operation_id,
+-        sr_mod_oper_get_sub_t *oper_get_subs, uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn,
+-        struct lyd_node **data, sr_error_info_t **cb_err_info);
++        const struct lyd_node *parent, const char *orig_name, const void *orig_data, uint32_t operation_id, sr_mod_oper_get_sub_cached_t *oper_get_subs,
++        uint32_t idx1, uint32_t timeout_ms, sr_conn_ctx_t *conn, struct lyd_node **data, sr_error_info_t **cb_err_info);
  
  /**
+  * @brief Notify about (generate) an RPC/action event.
 diff --git a/src/shm_types.h b/src/shm_types.h
-index 6b4ea95..f3ec49e 100644
+index 638db81..c45c7c0 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -238,6 +238,15 @@ typedef struct {
+@@ -255,6 +255,15 @@ typedef struct {
      uint32_t xpath_sub_count;   /**< Number of subscriptions for given XPath */
  } sr_mod_oper_get_sub_t;
  

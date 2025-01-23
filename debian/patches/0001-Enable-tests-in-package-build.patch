@@ -3,11 +3,12 @@ Date: Thu, 17 Nov 2022 09:17:24 +0000
 Subject: Enable tests in package build
 
 ---
- CMakeLists.txt | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ CMakeLists.txt       | 2 +-
+ tests/CMakeLists.txt | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 9b405c7..3d685f7 100644
+index c299cce..b1152cf 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -79,7 +79,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -std=c11")
@@ -19,3 +20,18 @@ index 9b405c7..3d685f7 100644
      option(ENABLE_TESTS "Build tests" ON)
      option(ENABLE_VALGRIND_TESTS "Build tests with valgrind" ON)
  else()
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 4ac5717..910e791 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -125,6 +125,10 @@ if(ENABLE_VALGRIND_TESTS)
+             "SR_ENV_RUN_TESTS=1"
+         )
+ 
++        if(${CMAKE_VERSION} VERSION_GREATER "3.7")
++            set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tests_cleanup TIMEOUT 300)
++        endif()
++
+         # avoid loading installed plugins by sysrepo-plugind
+         if(${test_name} STREQUAL "test_rotation_valgrind")
+             set_property(TEST ${test_name} APPEND PROPERTY ENVIRONMENT

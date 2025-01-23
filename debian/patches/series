@@ -30,19 +30,14 @@
 0040-fix-test-failures-and-improve-test-infra.patch
 0041-TMPFIX-disable-urge-lock.patch
 0042-unlock-session-held-ly_ctx-locks-on-sr_session_stop.patch
-0043-disable-test_edit_set_item_del_parent-due-to-breakag.patch
 0044-implement-sr_install_module_perm.patch
 0045-Verify-data-parse-before-store.patch
 0047-Revert-complex-wrong-logic-to-handle-rwlock-readers.patch
 0048-increase-upgr-mod-lock-timeout.patch
 0049-rwlock-with-retry-for-better-visibility.patch
 0050-Optimize-xpath-filtering-for-oper-get-subscr.patch
-0051-ignore-isolate-for-set-items-in-oper.patch
 0052-enable-atomic-readers-list.patch
 0053-subscription-memory-check-for-validity.patch
-0054-Revert-edit-diff-UPDATE-forbid-invalid-leaf-list-pre.patch
-0055-bugfix-edit_diff-add-followed-by-del.patch
-0056-Fix-delete-of-oper-leaf-list-entry-with-predicate.patch
 0057-do-not-inform-subscribers-of-moves-for-oper-list.patch
 0059-debug-serialize-edit-and-data-in-sr_apply_changes.patch
 0058-Revert-libyang-err-msg-changes.patch
@@ -50,5 +45,4 @@
 0059-shutdown-mgr-to-disable-oper-discard-on-disconnect.patch
 0060-shm-sub-BUGFIX-do-not-store-error-which-is-never-cle.patch
 0059-attempt-recovery-on-rwlock-acq-delays.patch
-0053-shm-sub-UPDATE-optional-full-diff-print-parse.patch
-0054-shm-sub-UPDATE-use-specific-diff-for-all-the-change-.patch
+0050-edit_diff-bugfix-false-positive-uninit-vars.patch
