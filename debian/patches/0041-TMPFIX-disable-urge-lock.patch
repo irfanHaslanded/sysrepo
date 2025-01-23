@@ -44,7 +44,7 @@ index 052e510..15c8c5c 100644
      if ((mode == SR_LOCK_WRITE) || (mode == SR_LOCK_WRITE_URGE)) {
          /* we are unlocking a write lock, there can be no readers */
 diff --git a/tests/test_apply_changes.c b/tests/test_apply_changes.c
-index 529b050..79d6e6d 100644
+index 24b4e77..1ee76f9 100644
 --- a/tests/test_apply_changes.c
 +++ b/tests/test_apply_changes.c
 @@ -8123,12 +8123,13 @@ main(void)

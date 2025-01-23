@@ -253,7 +253,7 @@ index 5887fb3..7d9642f 100644
      free(parent_xpath);
      ly_set_free(set, NULL);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 58c5fbd..f6b8b35 100644
+index 3d13155..36e222f 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -374,6 +374,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

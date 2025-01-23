@@ -20,7 +20,7 @@ index dd7f70b..9985bce 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 4a79938..afa8acd 100644
+index added5d..51f8960 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -407,7 +407,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)
@@ -53,7 +53,7 @@ index 4a79938..afa8acd 100644
  
      /* subscriptions need to be freed before, with a WRITE lock */
      assert(!session->subscription_count && !session->subscriptions);
-@@ -722,7 +727,13 @@ _sr_session_stop(sr_session_ctx_t *session)
+@@ -730,7 +735,13 @@ _sr_session_stop(sr_session_ctx_t *session)
      sr_shmmod_release_locks(session->conn, session->sid);
  
      /* CONTEXT UNLOCK */

@@ -7,7 +7,7 @@ Subject: Add typedefs for compatibility
  1 file changed, 18 insertions(+), 16 deletions(-)
 
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 13e31bf..2ea2da2 100644
+index 1b4dd1e..5f66a40 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -37,7 +37,7 @@ extern "C" {

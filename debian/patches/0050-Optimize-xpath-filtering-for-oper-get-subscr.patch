@@ -285,10 +285,10 @@ index 1401942..686c2ca 100644
      lyd_free_siblings(mod_data);
      return err_info;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 19f7c4a..ef96182 100644
+index 400092b..356e91d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -8080,3 +8080,81 @@ cleanup:
+@@ -8085,3 +8085,81 @@ cleanup:
      }
  }
  
@@ -371,7 +371,7 @@ index 19f7c4a..ef96182 100644
 +    return sr_api_ret(NULL, err_info);
 +}
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 4df9686..c44bf7f 100644
+index 2ff1222..28fe6d0 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
 @@ -1972,6 +1972,10 @@ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);

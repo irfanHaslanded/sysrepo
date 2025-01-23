@@ -51,7 +51,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index e7ec7ab..e0b92b4 100644
+index b1152cf..a4daa82 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -71,10 +71,10 @@ index e7ec7ab..e0b92b4 100644
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
      set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 978f282..54c318f 100644
+index 7d4d05d..559137f 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7901,7 +7901,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7906,7 +7906,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -83,7 +83,7 @@ index 978f282..54c318f 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7911,8 +7911,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7916,8 +7916,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -94,7 +94,7 @@ index 978f282..54c318f 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7926,6 +7927,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7931,6 +7932,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;

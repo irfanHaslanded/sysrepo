@@ -380,7 +380,7 @@ index e143d36..11dc883 100644
                  }
              }
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index c3a77ef..8e133e8 100644
+index 79ae252..68f4d57 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,19 @@
@@ -422,7 +422,7 @@ index c3a77ef..8e133e8 100644
      free(msg);
  
      /* fail on an assert if something is wrong */
-@@ -567,7 +583,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -577,7 +593,7 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
          }
      }
  
@@ -431,7 +431,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -590,12 +606,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -600,12 +616,12 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -446,7 +446,7 @@ index c3a77ef..8e133e8 100644
                  sizeof(sr_sub_shm_t)))) {
              goto cleanup_unlock;
          }
-@@ -645,7 +661,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -655,7 +671,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
      }
      SR_CHECK_INT_GOTO(i == shm_mod->change_sub[ds].sub_count, err_info, cleanup_changesub_ext_unlock);
  
@@ -455,7 +455,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate memory for the new xpath, if any */
-@@ -662,7 +678,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
+@@ -672,7 +688,7 @@ sr_shmext_change_sub_modify(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore
          shm_sub[i].xpath = 0;
      }
  
@@ -464,7 +464,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* success */
-@@ -695,14 +711,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -705,14 +721,14 @@ sr_shmext_change_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
  
      shm_sub = &((sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs))[del_idx];
  
@@ -481,7 +481,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->change_sub[ds].sub_count) {
-@@ -891,7 +907,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -908,7 +924,7 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          /* use starting priority 1 */
          *prio = 1;
  
@@ -490,7 +490,7 @@ index c3a77ef..8e133e8 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
          /* allocate new subscription and its xpath */
-@@ -907,11 +923,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -924,11 +940,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
          shm_sub->xpath_subs = 0;
          shm_sub->xpath_sub_count = 0;
  
@@ -504,7 +504,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new XPath subscription */
-@@ -928,11 +944,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+@@ -945,11 +961,11 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      ATOMIC_STORE_RELAXED(xpath_sub->suspended, 0);
      xpath_sub->cid = conn->cid;
  
@@ -518,7 +518,7 @@ index c3a77ef..8e133e8 100644
              sizeof(sr_sub_shm_t)))) {
          goto cleanup_unlock;
      }
-@@ -982,25 +998,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
+@@ -999,25 +1015,25 @@ sr_shmext_oper_get_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del
          goto cleanup;
      }
  
@@ -548,7 +548,7 @@ index c3a77ef..8e133e8 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
      }
  
-@@ -1147,7 +1163,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1171,7 +1187,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
          }
      }
  
@@ -557,7 +557,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its path */
-@@ -1165,7 +1181,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
+@@ -1189,7 +1205,7 @@ sr_shmext_oper_poll_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -566,7 +566,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
  cleanup_unlock:
-@@ -1190,14 +1206,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
+@@ -1214,14 +1230,14 @@ sr_shmext_oper_poll_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t de
  
      shm_sub = &((sr_mod_oper_poll_sub_t *)(conn->ext_shm.addr + shm_mod->oper_poll_subs))[del_idx];
  
@@ -583,16 +583,16 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      return NULL;
-@@ -1313,7 +1329,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
- 
-     sr_shmext_notif_sub_remove_dead(conn, shm_mod);
+@@ -1344,7 +1360,7 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+         return err_info;
+     }
  
 -    SR_LOG_DBG("#SHM before (adding notif sub)");
 +    SR_LOG_SHM_DBG("#SHM before (adding notif sub)");
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* allocate new subscription and its xpath, if any */
-@@ -1334,12 +1350,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
+@@ -1365,12 +1381,12 @@ sr_shmext_notif_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_id,
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = conn->cid;
  
@@ -607,7 +607,7 @@ index c3a77ef..8e133e8 100644
              goto cleanup_unlock;
          }
  
-@@ -1375,14 +1391,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
+@@ -1406,14 +1422,14 @@ sr_shmext_notif_sub_free(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t del_id
  
      shm_sub = &((sr_mod_notif_sub_t *)(conn->ext_shm.addr + shm_mod->notif_subs))[del_idx];
  
@@ -624,7 +624,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      if (!shm_mod->notif_sub_count) {
-@@ -1554,7 +1570,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
+@@ -1594,7 +1610,7 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
          goto cleanup_unlock;
      }
  
@@ -633,7 +633,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      /* add new subscription with its xpath */
-@@ -1573,13 +1589,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
+@@ -1613,13 +1629,13 @@ sr_shmext_rpc_sub_add(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, con
      ATOMIC_STORE_RELAXED(shm_sub->suspended, 0);
      shm_sub->cid = sub_cid;
  
@@ -649,7 +649,7 @@ index c3a77ef..8e133e8 100644
              goto cleanup_unlock;
          }
  
-@@ -1621,14 +1637,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
+@@ -1661,14 +1677,14 @@ sr_shmext_rpc_sub_free(sr_conn_ctx_t *conn, off_t *subs, uint32_t *sub_count, co
  
      shm_subs = (sr_mod_rpc_sub_t *)(conn->ext_shm.addr + *subs);
  
@@ -666,7 +666,7 @@ index c3a77ef..8e133e8 100644
      sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
      for (i = 0; i < *sub_count; ++i) {
-@@ -2653,7 +2669,7 @@ sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *m
+@@ -2675,7 +2691,7 @@ sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *m
      }
  
      if (found_i == -1) {
@@ -675,7 +675,7 @@ index c3a77ef..8e133e8 100644
          sr_shmext_print(SR_CONN_MOD_SHM(conn), &conn->ext_shm);
  
          /* session not added yet, add it */
-@@ -2668,7 +2684,7 @@ sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *m
+@@ -2690,7 +2706,7 @@ sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *m
          new_item->order = 0;
          new_item->has_data = 0;
  
@@ -865,7 +865,7 @@ index 336d5e7..d06db7c 100644
  /**
   * @brief Delete all push oper data and SHM ext push oper data entries for a set of module.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index fd6f105..58c5fbd 100644
+index a7b9107..3d13155 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -912,7 +912,7 @@ index 3a9c572..638db81 100644
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 54c318f..23622fc 100644
+index 559137f..61a5fe0 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -71,6 +71,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -981,7 +981,7 @@ index 54c318f..23622fc 100644
          goto error;
      }
  
-@@ -1511,7 +1512,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
+@@ -1515,7 +1516,7 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
      }
  
      /* update SHM modules */
@@ -990,7 +990,7 @@ index 54c318f..23622fc 100644
          goto error;
      }
      mod_shm_changed = 1;
-@@ -1558,7 +1559,7 @@ error:
+@@ -1562,7 +1563,7 @@ error:
      lyd_free_siblings(sr_del_mods);
  
      /* revert SHM module changes */
@@ -999,7 +999,7 @@ index 54c318f..23622fc 100644
          sr_errinfo_merge(&err_info, tmp_err);
      }
  
-@@ -1833,7 +1834,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
+@@ -1837,7 +1838,7 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
      }
  
      /* update SHM modules */
@@ -1008,7 +1008,7 @@ index 54c318f..23622fc 100644
          goto cleanup;
      }
  
-@@ -2081,7 +2082,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
+@@ -2085,7 +2086,7 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
      }
  
      /* update SHM modules */
@@ -1017,7 +1017,7 @@ index 54c318f..23622fc 100644
          goto cleanup;
      }
  
-@@ -2591,7 +2592,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
+@@ -2595,7 +2596,7 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
      }
  
      /* update SHM modules */
@@ -1026,7 +1026,7 @@ index 54c318f..23622fc 100644
          goto cleanup;
      }
  
-@@ -5783,7 +5784,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5792,7 +5793,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);

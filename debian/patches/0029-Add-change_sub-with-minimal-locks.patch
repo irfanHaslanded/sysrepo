@@ -33,10 +33,10 @@ cherry-picked from 0067-Locking-improvements-for-subscriptions.patch
  5 files changed, 114 insertions(+), 43 deletions(-)
 
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 8e133e8..798ce73 100644
+index 68f4d57..556d83f 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
-@@ -555,14 +555,17 @@ sr_shmext_change_sub_remove_dead(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_data
+@@ -565,8 +565,8 @@ sr_shmext_change_sub_remove_dead(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_data
  }
  
  sr_error_info_t *
@@ -47,8 +47,9 @@ index 8e133e8..798ce73 100644
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      off_t xpath_off;
-     sr_mod_change_sub_t *shm_sub;
-     uint32_t i;
+@@ -575,6 +575,9 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+ 
+     sr_shmext_change_sub_remove_dead(conn, shm_mod, ds);
  
 +    /* kept for possible future use */
 +    assert(*has_lock == SR_LOCK_WRITE);
@@ -56,7 +57,7 @@ index 8e133e8..798ce73 100644
      /* EXT WRITE LOCK */
      if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_WRITE, 1, __func__))) {
          goto cleanup;
-@@ -628,6 +631,17 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
+@@ -638,6 +641,17 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_datastore_t
  cleanup_unlock:
      /* EXT WRITE UNLOCK */
      sr_shmext_conn_remap_unlock(conn, SR_LOCK_WRITE, 1, __func__);
@@ -74,7 +75,7 @@ index 8e133e8..798ce73 100644
  
  cleanup:
      return err_info;
-@@ -738,15 +752,31 @@ cleanup:
+@@ -748,15 +762,31 @@ cleanup:
  }
  
  sr_error_info_t *
@@ -108,7 +109,7 @@ index 8e133e8..798ce73 100644
      }
  
      /* find the subscription */
-@@ -770,6 +800,18 @@ cleanup_unlock:
+@@ -780,6 +810,18 @@ cleanup_unlock:
      /* EXT READ UNLOCK */
      sr_shmext_conn_remap_unlock(conn, SR_LOCK_READ, 1, __func__);
  
@@ -128,7 +129,7 @@ index 8e133e8..798ce73 100644
  }
  
 diff --git a/src/shm_ext.h b/src/shm_ext.h
-index f21ba48..a4979d1 100644
+index 7e46547..c0bdaec 100644
 --- a/src/shm_ext.h
 +++ b/src/shm_ext.h
 @@ -72,8 +72,8 @@ void sr_shmext_print(sr_mod_shm_t *mod_shm, sr_shm_t *shm_ext);
@@ -233,10 +234,10 @@ index 9d5f2b1..710287e 100644
  /**
   * @brief Delete a change subscription from a subscription structure.
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e0a78c9..a9736bc 100644
+index 22ae384..347410e 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -5669,7 +5669,6 @@ cleanup:
+@@ -5678,7 +5678,6 @@ cleanup:
   * @brief Perform enabled event on a subscription.
   *
   * @param[in] session Session to use.
@@ -244,7 +245,7 @@ index e0a78c9..a9736bc 100644
   * @param[in] ly_mod Specific module.
   * @param[in] xpath Optional subscription xpath.
   * @param[in] callback Callback to call.
-@@ -5679,7 +5678,7 @@ cleanup:
+@@ -5688,7 +5687,7 @@ cleanup:
   * @return err_info, NULL on success.
   */
  static sr_error_info_t *
@@ -253,7 +254,7 @@ index e0a78c9..a9736bc 100644
          const struct lys_module *ly_mod, const char *xpath, sr_module_change_cb callback, void *private_data,
          uint32_t sub_id, int opts)
  {
-@@ -5688,6 +5687,9 @@ sr_module_change_subscribe_enable(sr_session_ctx_t *session, struct sr_mod_info_
+@@ -5697,6 +5696,9 @@ sr_module_change_subscribe_enable(sr_session_ctx_t *session, struct sr_mod_info_
      sr_session_ctx_t *ev_sess = NULL;
      sr_error_t err_code;
  
@@ -263,7 +264,7 @@ index e0a78c9..a9736bc 100644
      /* create mod_info structure with this module only, do not use cache to allow reading data in the callback
       * (avoid dead-lock) */
      if ((err_info = sr_modinfo_add(ly_mod, NULL, 0, 0, mod_info))) {
-@@ -5759,6 +5761,10 @@ sr_module_change_subscribe_enable(sr_session_ctx_t *session, struct sr_mod_info_
+@@ -5768,6 +5770,10 @@ sr_module_change_subscribe_enable(sr_session_ctx_t *session, struct sr_mod_info_
      callback(ev_sess, sub_id, ly_mod->name, xpath, sr_ev2api(ev_sess->ev), 0, private_data);
  
  cleanup:
@@ -274,7 +275,7 @@ index e0a78c9..a9736bc 100644
      sr_session_stop(ev_sess);
      lyd_free_all(enabled_data);
      return err_info;
-@@ -5848,11 +5854,13 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5857,11 +5863,13 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
  {
      sr_error_info_t *err_info = NULL, *tmp_err;
      const struct lys_module *ly_mod;
@@ -289,7 +290,7 @@ index e0a78c9..a9736bc 100644
  
      SR_CHECK_ARG_APIRET(!session || !SR_IS_STANDARD_DS(session->ds) || SR_IS_EVENT_SESS(session) || !module_name ||
              !callback || !subscription, session, err_info);
-@@ -5862,7 +5870,8 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5871,7 +5879,8 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
          xpath = NULL;
      }
  
@@ -299,7 +300,7 @@ index e0a78c9..a9736bc 100644
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
-@@ -5916,30 +5925,37 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5925,30 +5934,37 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
              conn->cid, __func__, NULL, NULL))) {
          goto cleanup;
      }
@@ -348,7 +349,7 @@ index e0a78c9..a9736bc 100644
          goto error1;
      }
  
-@@ -5948,34 +5964,39 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
+@@ -5957,34 +5973,39 @@ sr_module_change_subscribe(sr_session_ctx_t *session, const char *module_name, c
              *subscription))) {
          goto error2;
      }

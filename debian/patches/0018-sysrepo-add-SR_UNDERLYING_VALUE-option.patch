@@ -51,10 +51,10 @@ index da71f83..3564cfe 100644
  /*
   * From sysrepo.c
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index e36ebec..2b0659d 100644
+index 958d5fd..c863ad6 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -2855,7 +2855,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2859,7 +2859,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      uint32_t i;
  
      SR_CHECK_ARG_APIRET(!session || !xpath || !values || !value_cnt ||
@@ -63,7 +63,7 @@ index e36ebec..2b0659d 100644
  
      if (!timeout_ms) {
          timeout_ms = SR_OPER_CB_TIMEOUT;
-@@ -2915,7 +2915,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
+@@ -2919,7 +2919,9 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,
      }
  
      for (i = 0; i < set->count; ++i) {
@@ -75,7 +75,7 @@ index e36ebec..2b0659d 100644
          }
          ++(*value_cnt);
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 2ea2da2..b7cf0e1 100644
+index 5f66a40..cbadc60 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -307,8 +307,13 @@ typedef enum sr_get_oper_flag_e {

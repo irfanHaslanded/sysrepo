@@ -190,7 +190,7 @@ index a4ec0bd..e05e9da 100644
  #define SR_SHM_MEM_ALIGN 8
  
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index b749b7f..4b56ec2 100644
+index 4de3a85..7c171b6 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,8 @@
@@ -202,12 +202,14 @@ index b749b7f..4b56ec2 100644
  static int
  sr_shmext_log_enabled(void)
  {
-@@ -563,15 +565,30 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
+@@ -573,17 +575,32 @@ sr_shmext_change_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, sr_lock_mode_t
      off_t xpath_off;
      sr_mod_change_sub_t *shm_sub;
      uint32_t i;
 +    FILE *logfile = sr_get_log_file();
 +    extern char * __progname;
+ 
+     sr_shmext_change_sub_remove_dead(conn, shm_mod, ds);
  
      /* kept for possible future use */
      assert(*has_lock == SR_LOCK_WRITE);
@@ -232,9 +234,9 @@ index b749b7f..4b56ec2 100644
      }
 -    *xpath_id = ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_xpath_id);
  
-     sr_shmext_change_sub_remove_dead(conn, shm_mod, ds);
- 
-@@ -900,13 +917,29 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
+     if (sub_opts & SR_SUBSCR_UPDATE) {
+         /* check that there is not already an update subscription with the same priority */
+@@ -917,15 +934,31 @@ sr_shmext_oper_get_sub_add(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, uint32_t sub_
      uint32_t i, j;
      int xpath_found = 0;
  
@@ -242,6 +244,8 @@ index b749b7f..4b56ec2 100644
 +    extern char * __progname;
 +
      assert(path && sub_type);
+ 
+     sr_shmext_oper_get_sub_remove_dead(conn, shm_mod);
  
 +    *xpath_id = ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_xpath_id);
 +
@@ -263,10 +267,10 @@ index b749b7f..4b56ec2 100644
      }
 -    *xpath_id = ATOMIC_INC_RELAXED(SR_CONN_MAIN_SHM(conn)->new_xpath_id);
  
-     sr_shmext_oper_get_sub_remove_dead(conn, shm_mod);
- 
+     /* check that this exact subscription does not exist yet while finding its position */
+     new_len = sr_xpath_len_no_predicates(path);
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index f97398a..632d3d9 100644
+index b368e84..ab63f71 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -46,6 +46,10 @@

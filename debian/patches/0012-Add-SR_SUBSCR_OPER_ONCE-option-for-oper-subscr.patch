@@ -64,10 +64,10 @@ index 8c46c35..e143d36 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index c8c8780..41bcda7 100644
+index c9294a1..79e3ae9 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7650,7 +7650,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7655,7 +7655,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */
@@ -77,7 +77,7 @@ index c8c8780..41bcda7 100644
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
 diff --git a/src/sysrepo_types.h b/src/sysrepo_types.h
-index 337ee51..13e31bf 100644
+index e37a192..1b4dd1e 100644
 --- a/src/sysrepo_types.h
 +++ b/src/sysrepo_types.h
 @@ -448,20 +448,27 @@ typedef enum {

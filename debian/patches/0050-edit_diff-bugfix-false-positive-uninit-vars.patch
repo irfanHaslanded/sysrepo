@@ -7,7 +7,7 @@ Subject: edit_diff bugfix false positive uninit vars
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/edit_diff.c b/src/edit_diff.c
-index 7a21920..005ffca 100644
+index a8ed7cb..d7b2778 100644
 --- a/src/edit_diff.c
 +++ b/src/edit_diff.c
 @@ -626,7 +626,7 @@ sr_edit_diff_append(const struct lyd_node *edit, enum edit_op op, const char *pr

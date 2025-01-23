@@ -48,7 +48,7 @@ index 77f8cd7..a1a8df6 100644
  
      /* delete all dependencies */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index afa8acd..19f7c4a 100644
+index 51f8960..400092b 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -60,6 +60,9 @@ static sr_error_info_t *_sr_session_stop(sr_session_ctx_t *session);
@@ -61,7 +61,7 @@ index afa8acd..19f7c4a 100644
  
  /**
   * @brief Allocate a new connection structure.
-@@ -1310,6 +1313,32 @@ cleanup:
+@@ -1314,6 +1317,32 @@ cleanup:
      return err_info;
  }
  
@@ -94,7 +94,7 @@ index afa8acd..19f7c4a 100644
  /**
   * @brief Prepare members of a new module to be installed.
   *
-@@ -1331,7 +1360,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
+@@ -1335,7 +1364,14 @@ sr_install_modules_prepare_mod(struct ly_ctx *new_ctx, sr_conn_ctx_t *conn, sr_i
  
      if (new_mod->ly_mod) {
          /* module already installed, check whether with all the features */
@@ -110,7 +110,7 @@ index afa8acd..19f7c4a 100644
          goto cleanup;
      }
  
-@@ -8011,3 +8047,36 @@ cleanup:
+@@ -8016,3 +8052,36 @@ cleanup:
      return sr_api_ret(NULL, err_info);
  }
  
@@ -148,7 +148,7 @@ index afa8acd..19f7c4a 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 226a5e0..4df9686 100644
+index 80661fa..2ff1222 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
 @@ -561,6 +561,22 @@ int sr_install_modules(sr_conn_ctx_t *conn, const char **schema_paths, const cha
