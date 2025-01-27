@@ -809,6 +809,7 @@ test_purge(void **state)
     struct state *st = (struct state *)*state;
     sr_data_t *subtree;
     int ret;
+    const sr_error_info_t *err_info = NULL;
 
     /* create some list instances */
     ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces/interface[name='eth64']/type",
@@ -865,6 +866,27 @@ test_purge(void **state)
     assert_int_equal(ret, SR_ERR_OK);
     ret = sr_delete_item(st->sess, "/test:ll1", 0);
     assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/mod:container/list-enh[label='0']", NULL, NULL, 0);
+    assert_int_equal(ret, SR_ERR_LY);
+
+    ret = sr_session_get_error(st->sess, &err_info);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    assert_non_null(err_info);
+
+    /* check that the path is returned in the error */
+    assert_non_null(strstr(err_info->err->message, "/mod:container/list-enh[label='0']"));
+
+    sr_session_get_error(st->sess, &err_info);
+
+    ret = sr_set_item_str(st->sess, "/mod:container/list-enh[label='0'][date-and-time='1970-01-01T00:00:00Z']", NULL, NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* typo in xpath, should be caught */
 
     ret = sr_set_item_str(st->sess, "/mod:container/list-enh[label='0'][date-and-time='1970-01-01T00:00:00Z']", NULL, NULL, 0);
     assert_int_equal(ret, SR_ERR_OK);
