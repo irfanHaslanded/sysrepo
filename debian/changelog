@@ -1,3 +1,28 @@
+sysrepo (3.4.5-1) unstable; urgency=medium
+
+  [ IrfanMohammad ]
+  * update required libyang version in debian control
+  * update libsysrepo7.symbols for v3.4.4
+  * support delete of multi-key lists without key
+
+  [ Irfan Mohammad ]
+  * shm_sub BUGFIX update sub_count for DONE ABORT ev
+
+  [ Irfan ]
+  * sysrepo UPDATE full xpath item delete for oper DS (#3519)
+
+  [ Michal Vasko ]
+  * SOVERSION bump to version 7.30.2
+  * VERSION bump to version 3.4.5
+
+  [ Irfan ]
+  * modinfo OPTIMIZE acquire EXT lock only when needed (#3520)
+
+  [ Irfan Mohammad ]
+  * update patches for upstream v3.4.5
+
+ -- Irfan Mohammad <irfan@graphiant.com>  Tue, 28 Jan 2025 17:44:54 +0000
+
 sysrepo (3.4.4-1) unstable; urgency=medium
 
   [ Irfan ]
