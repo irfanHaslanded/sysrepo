@@ -1,0 +1,32 @@
+From: Irfan Mohammad <irfan@graphiant.com>
+Date: Tue, 28 Jan 2025 08:50:25 +0000
+Subject: debug remap lock
+
+---
+ src/shm_ext.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/shm_ext.c b/src/shm_ext.c
+index 108b7ca..07720fd 100644
+--- a/src/shm_ext.c
++++ b/src/shm_ext.c
+@@ -70,9 +70,11 @@ sr_shmext_conn_remap_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int ext_lock
+ 
+     if (ext_lock) {
+         /* EXT LOCK */
++        SR_LOG_DBG("Locking ext_lock for %s by %lu", func, conn->cid);
+         if ((err_info = sr_mlock(&SR_CONN_MAIN_SHM(conn)->ext_lock, SR_EXT_LOCK_TIMEOUT, func, NULL, NULL))) {
+             return err_info;
+         }
++        SR_LOG_DBG("Locked ext_lock for %s by %lu", func, conn->cid);
+     }
+ 
+     /* REMAP LOCK */
+@@ -182,6 +184,7 @@ cleanup_unlock:
+     if (ext_lock) {
+         /* EXT UNLOCK */
+         sr_munlock(&SR_CONN_MAIN_SHM(conn)->ext_lock);
++        SR_LOG_DBG("Unlocked ext_lock for %s by %lu", func, conn->cid);
+     }
+ 
+     sr_errinfo_free(&err_info);
