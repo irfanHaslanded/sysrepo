@@ -140,10 +140,10 @@ index b968055..ee05f0c 100644
          error_print(0, "No operation specified");
          goto cleanup;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 61a5fe0..5af859f 100644
+index 31ded86..27238d2 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7941,3 +7941,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7928,3 +7928,35 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
      }
      return ret;
  }
@@ -180,10 +180,10 @@ index 61a5fe0..5af859f 100644
 +}
 +
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 8f2f178..80661fa 100644
+index 2e834de..b8eb5d4 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1939,6 +1939,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
+@@ -1940,6 +1940,23 @@ void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...)
  uint64_t sr_session_get_event_nc_id(sr_session_ctx_t *session);
  void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
  

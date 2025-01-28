@@ -22,7 +22,7 @@ Cherry-picked from 0037-Add-type-check-of-format-str-for-printf-like-fns.patch
  4 files changed, 12 insertions(+), 28 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index a4daa82..331c8bb 100644
+index 555cd01..cc431ca 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -77,7 +77,7 @@ set(LIBYANG_DEP_SOVERSION_MAJOR 3)
@@ -56,7 +56,7 @@ index 58714d2..eba5ead 100644
          SRPLG_LOG_ERR(SRPD_PLUGIN_NAME, format, module_name, path, err_info->err[0].message);
          sr_session_set_error_message(ev_sess, format, module_name, path, err_info->err[0].message);
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 11dc883..5887fb3 100644
+index 1cfd227..0938adc 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1886,20 +1886,20 @@ cleanup:

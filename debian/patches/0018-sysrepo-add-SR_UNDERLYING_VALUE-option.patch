@@ -51,7 +51,7 @@ index da71f83..3564cfe 100644
  /*
   * From sysrepo.c
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 958d5fd..c863ad6 100644
+index f805231..1db5d8d 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -2859,7 +2859,7 @@ sr_get_items(sr_session_ctx_t *session, const char *xpath, uint32_t timeout_ms,

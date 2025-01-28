@@ -42,7 +42,7 @@ ENG-6495
  create mode 100644 src/executables/sysrepo-shutdown-mgr.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 331c8bb..248097b 100644
+index cc431ca..b232b34 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -95,6 +95,7 @@ option(ENABLE_COMMON_TARGETS "Define common custom target names such as 'doc' or
@@ -195,7 +195,7 @@ index 0000000..852b124
 +    return ret;
 +}
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 3bb21c4..0c5854b 100644
+index e14bde6..0c377d3 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1289,6 +1289,8 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
@@ -205,9 +205,9 @@ index 3bb21c4..0c5854b 100644
 +    int dead_cid_check =
 +        (!ATOMIC_LOAD_RELAXED(SR_CONN_MAIN_SHM(conn)->oper_keep_on_disconnect));
  
-     /* EXT READ LOCK */
-     if ((err_info = sr_shmext_conn_remap_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -1303,7 +1305,7 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
+     /* oper_push_data_count is protected by operational DS module data locks */
+     if (mod->shm_mod->oper_push_data_count) {
+@@ -1304,7 +1306,7 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
          } else {
              oper_push_ext = (sr_mod_oper_push_t *)(conn->ext_shm.addr + mod->shm_mod->oper_push_data);
              for (i = 0; i < mod->shm_mod->oper_push_data_count; ++i) {
@@ -262,7 +262,7 @@ index ccceffb..da09db4 100644
          }
  
 diff --git a/src/shm_types.h b/src/shm_types.h
-index b529279..1ce9b71 100644
+index 19e719c..d201bc4 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
 @@ -26,6 +26,8 @@
@@ -274,7 +274,7 @@ index b529279..1ce9b71 100644
  #define SR_MAIN_SHM_LOCK "sr_main_lock"     /**< Main SHM file lock name. */
  
  /**
-@@ -199,6 +201,8 @@ typedef struct {
+@@ -200,6 +202,8 @@ typedef struct {
      pthread_mutex_t lydmods_lock;   /**< Process-shared lock for modifying SR internal module data. */
      uint32_t content_id;        /**< Context content ID of the latest context. */
  

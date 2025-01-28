@@ -163,7 +163,7 @@ index 663859e..92b704e 100644
  /*
   * From sysrepo.c
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index ab63f71..11419d8 100644
+index da35c2a..e075f13 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -351,6 +351,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_
