@@ -394,10 +394,10 @@ index e235367..0bdcf13 100644
      if (subs_lock != has_subs_lock) {
          if (subs_lock == SR_LOCK_NONE) {
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 2f8ffa5..59bd72c 100644
+index dd9c1a4..723cade 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -8125,11 +8125,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8126,11 +8126,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
      size_t i = 0;
      sr_error_info_t *err_info = NULL;
      sr_mod_change_sub_t *change_subs;
@@ -411,7 +411,7 @@ index 2f8ffa5..59bd72c 100644
  
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -8142,8 +8143,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8143,8 +8144,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
          goto cleanup;
      }
  
@@ -422,7 +422,7 @@ index 2f8ffa5..59bd72c 100644
          goto cleanup;
      }
  
-@@ -8160,12 +8161,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8161,12 +8162,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
  
      change_subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
  
