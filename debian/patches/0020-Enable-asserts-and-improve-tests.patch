@@ -51,7 +51,7 @@ debugging of any issues.
  create mode 100644 tests/test_oper_edit.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b1152cf..a4daa82 100644
+index 2421492..555cd01 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -30,10 +30,13 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_UPPER)
@@ -71,10 +71,10 @@ index b1152cf..a4daa82 100644
      set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build Type" FORCE)
      set(CMAKE_C_FLAGS "-DNDEBUG -g -O2 ${CMAKE_C_FLAGS}")
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 7d4d05d..559137f 100644
+index 37148c9..ca8dfed 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7906,7 +7906,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7893,7 +7893,7 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
      }
      if (!session->orig_name) {
          /* TODO FIXME ENG-4345 */
@@ -83,7 +83,7 @@ index 7d4d05d..559137f 100644
      }
      /* Need to remove all previous data */
      sr_session_del_orig_data(session);
-@@ -7916,8 +7916,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+@@ -7903,8 +7903,9 @@ sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
  API uint64_t
  sr_session_get_event_nc_id(sr_session_ctx_t *session)
  {
@@ -94,7 +94,7 @@ index 7d4d05d..559137f 100644
      if (!session || !session->ev) {
          return 0;
      }
-@@ -7931,6 +7932,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
+@@ -7918,6 +7919,7 @@ sr_set_module_access(sr_conn_ctx_t *conn, const char *module_name, const char *o
          mode_t perm)
  {
      int i, ret;
@@ -3633,7 +3633,7 @@ index 3ed76a7..b851388 100644
      ts.tv_nsec /= 1000;
      fprintf(stderr, "%03ld.%06ld [%ld][%ld][%s]%s: %s\n", ts.tv_sec, ts.tv_nsec,
 diff --git a/tests/test_edit.c b/tests/test_edit.c
-index 62788c8..ab8bdde 100644
+index 19a85af..d0d8b5e 100644
 --- a/tests/test_edit.c
 +++ b/tests/test_edit.c
 @@ -50,6 +50,8 @@ setup_f(void **state)
@@ -3654,7 +3654,7 @@ index 62788c8..ab8bdde 100644
          NULL
      };
  
-@@ -1419,6 +1423,175 @@ test_unknown_ns(void **state)
+@@ -1442,6 +1446,175 @@ test_unknown_ns(void **state)
      sr_discard_changes(st->sess);
  }
  
@@ -3830,7 +3830,7 @@ index 62788c8..ab8bdde 100644
  int
  main(void)
  {
-@@ -1441,6 +1614,8 @@ main(void)
+@@ -1464,6 +1637,8 @@ main(void)
          cmocka_unit_test(test_edit_forbid_node_types),
          cmocka_unit_test(test_anyxml),
          cmocka_unit_test(test_unknown_ns),

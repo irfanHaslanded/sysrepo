@@ -6,14 +6,14 @@ Build-Depends: debhelper (>= 11),
                cmake,
                dh-graphnos-yang,
                libcmocka-dev,
-               libyang3-dev (>= 3.7.9),
+               libyang3-dev (>= 3.7.11),
                libsystemd-dev,
                pkg-config,
                valgrind
 Standards-Version: 4.6.2
 
 Package: libsysrepo7
-Depends: libyang3 (>= 3.7.9),
+Depends: libyang3 (>= 3.7.11),
          adduser,
          ${misc:Depends},
          ${shlibs:Depends}
@@ -44,11 +44,11 @@ Description: Yang that defines Netconf as used by libsysrepo
  yang module a single one can be selected for install.
 
 Package: libsysrepo7-dev
-Depends: libyang3-dev (>= 3.7.9),
+Depends: libyang3-dev (>= 3.7.11),
          libsysrepo7 (= ${binary:Version}),
          ${misc:Depends}
 Breaks: libsysrepo-dev
-Replaces: libsysrepo-dev, libsysrepo7-dev (<< 2.2.161)
+Replaces: libsysrepo-dev, libsysrepo7-dev (<< ${binary:Version})
 Section: libdevel
 Architecture: any
 Description: YANG-based configuration and operational data store - development files

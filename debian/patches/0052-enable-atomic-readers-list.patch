@@ -643,7 +643,7 @@ index 9985bce..b0a19c6 100644
      sr_cid_t writer;                /**< CID of the WRITE lock owner if locked, can be set if an WRITE-URGE lock
                                           is being waited on, 0 otherwise. */
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 686c2ca..3bb21c4 100644
+index 7f6c965..e14bde6 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1942,7 +1942,7 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,
@@ -695,7 +695,7 @@ index 686c2ca..3bb21c4 100644
              goto cleanup;
          }
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 11419d8..49647a0 100644
+index e075f13..2574f48 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -373,7 +373,7 @@ sr_shmsub_notify_new_wrlock(sr_sub_shm_t *sub_shm, const char *shm_name, sr_sub_

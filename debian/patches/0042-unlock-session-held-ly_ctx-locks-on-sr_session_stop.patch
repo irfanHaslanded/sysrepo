@@ -20,7 +20,7 @@ index dd7f70b..9985bce 100644
  
  /**
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index added5d..51f8960 100644
+index 8f7d2e9..b4be84a 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -407,7 +407,11 @@ sr_session_acquire_context(sr_session_ctx_t *session)

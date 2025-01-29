@@ -367,7 +367,7 @@ index 988f85c..7c6a965 100644
  
  /**
 diff --git a/src/modinfo.c b/src/modinfo.c
-index e143d36..11dc883 100644
+index 0f7eaa6..1cfd227 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1577,7 +1577,7 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
@@ -380,7 +380,7 @@ index e143d36..11dc883 100644
                  }
              }
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 79ae252..68f4d57 100644
+index d8a111c..834256e 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,19 @@
@@ -708,7 +708,7 @@ index fdcb567..c9b025c 100644
          ATOMIC_STORE_RELAXED(main_shm->new_sr_sid, 1);
          ATOMIC_STORE_RELAXED(main_shm->new_sub_id, 1);
 diff --git a/src/shm_mod.c b/src/shm_mod.c
-index 10b129e..b0ff875 100644
+index 71670b5..393a3bf 100644
 --- a/src/shm_mod.c
 +++ b/src/shm_mod.c
 @@ -145,38 +145,45 @@ sr_shmmod_find_rpc(sr_mod_shm_t *mod_shm, const char *path)
@@ -865,7 +865,7 @@ index 336d5e7..d06db7c 100644
  /**
   * @brief Delete all push oper data and SHM ext push oper data entries for a set of module.
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index a7b9107..3d13155 100644
+index 7028b21..377b0f9 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -98,7 +98,7 @@ struct sr_shmsub_many_info_oper_get_s {
@@ -900,10 +900,10 @@ index 505dab3..6d818ba 100644
  /**
   * @brief Open and map an existing subscription SHM.
 diff --git a/src/shm_types.h b/src/shm_types.h
-index 3a9c572..638db81 100644
+index 1bc3bc4..ecdcf8d 100644
 --- a/src/shm_types.h
 +++ b/src/shm_types.h
-@@ -199,6 +199,7 @@ typedef struct {
+@@ -200,6 +200,7 @@ typedef struct {
      pthread_mutex_t lydmods_lock;   /**< Process-shared lock for modifying SR internal module data. */
      uint32_t content_id;        /**< Context content ID of the latest context. */
  
@@ -912,7 +912,7 @@ index 3a9c572..638db81 100644
      ATOMIC_T new_sr_sid;        /**< SID for a new session. */
      ATOMIC_T new_sub_id;        /**< Subscription ID of a new subscription. */
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 559137f..61a5fe0 100644
+index ca8dfed..31ded86 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
 @@ -71,6 +71,7 @@ static sr_error_info_t *_sr_unsubscribe(sr_subscription_ctx_t *subscription);
@@ -1026,7 +1026,7 @@ index 559137f..61a5fe0 100644
          goto cleanup;
      }
  
-@@ -5792,7 +5793,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
+@@ -5779,7 +5780,7 @@ sr_subscr_new(sr_conn_ctx_t *conn, sr_subscr_options_t opts, sr_subscription_ctx
      /* allocate new subscription */
      *subs_p = calloc(1, sizeof **subs_p);
      SR_CHECK_MEM_RET(!*subs_p, err_info);

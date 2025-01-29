@@ -22,7 +22,7 @@ cherry-picked from 0063-Remove-unnecessary-read-locks-from-srmon.patch
  3 files changed, 68 insertions(+), 11 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 9c97db0..1401942 100644
+index bd36e1a..3d98f42 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1923,8 +1923,10 @@ sr_modinfo_module_srmon_locks_ds(sr_rwlock_t *rwlock, uint32_t skip_read_cid,

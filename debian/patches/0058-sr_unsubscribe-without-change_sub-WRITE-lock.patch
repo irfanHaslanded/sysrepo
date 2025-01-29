@@ -81,7 +81,7 @@ index db92760..649b5c8 100644
  #define SR_SHMEXT_SUB_LOCK_TIMEOUT 15000
  
 diff --git a/src/shm_ext.c b/src/shm_ext.c
-index 7c171b6..439718b 100644
+index 828b815..108b7ca 100644
 --- a/src/shm_ext.c
 +++ b/src/shm_ext.c
 @@ -41,6 +41,12 @@
@@ -221,7 +221,7 @@ index 8302447..f3117a4 100644
   * @brief Get or set operational get subscription suspended state (flag).
   *
 diff --git a/src/shm_sub.c b/src/shm_sub.c
-index 49647a0..b1f01ea 100644
+index 2574f48..8e410bd 100644
 --- a/src/shm_sub.c
 +++ b/src/shm_sub.c
 @@ -1080,7 +1080,11 @@ sr_shmsub_get_relevant_indices(struct sr_mod_info_s *mod_info, struct sr_mod_inf
@@ -394,10 +394,10 @@ index e235367..0bdcf13 100644
      if (subs_lock != has_subs_lock) {
          if (subs_lock == SR_LOCK_NONE) {
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 8803ef9..1ba8baa 100644
+index dd9c1a4..723cade 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -8138,11 +8138,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8126,11 +8126,12 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
      size_t i = 0;
      sr_error_info_t *err_info = NULL;
      sr_mod_change_sub_t *change_subs;
@@ -411,7 +411,7 @@ index 8803ef9..1ba8baa 100644
  
      /* CONTEXT LOCK */
      if ((err_info = sr_lycc_lock(conn, SR_LOCK_READ, 0, __func__))) {
-@@ -8155,8 +8156,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8143,8 +8144,8 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
          goto cleanup;
      }
  
@@ -422,7 +422,7 @@ index 8803ef9..1ba8baa 100644
          goto cleanup;
      }
  
-@@ -8173,12 +8174,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
+@@ -8161,12 +8162,16 @@ sr_module_has_change_sub(sr_conn_ctx_t *conn, const char *module_name,
  
      change_subs = (sr_mod_change_sub_t *)(conn->ext_shm.addr + shm_mod->change_sub[ds].subs);
  

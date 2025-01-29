@@ -26,7 +26,7 @@ a "one shot" fashion where it is more performant to do so.
  4 files changed, 251 insertions(+), 5 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 8c46c35..e143d36 100644
+index e438354..0f7eaa6 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -1554,10 +1554,10 @@ sr_module_oper_data_update(struct sr_mod_info_mod_s *mod, const char *orig_name,
@@ -64,10 +64,10 @@ index 8c46c35..e143d36 100644
  
  next_iter:
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index c9294a1..79e3ae9 100644
+index d0d7bd6..b51c1b1 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -7655,7 +7655,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
+@@ -7642,7 +7642,7 @@ sr_oper_get_subscribe(sr_session_ctx_t *session, const char *module_name, const
  
      conn = session->conn;
      /* only these options are relevant outside this function and will be stored */

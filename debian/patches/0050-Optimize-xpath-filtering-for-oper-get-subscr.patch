@@ -31,7 +31,7 @@ subscriptions.
  4 files changed, 224 insertions(+), 14 deletions(-)
 
 diff --git a/src/modinfo.c b/src/modinfo.c
-index 1401942..686c2ca 100644
+index 3d98f42..7f6c965 100644
 --- a/src/modinfo.c
 +++ b/src/modinfo.c
 @@ -967,6 +967,22 @@ sr_xpath_oper_data_text_atoms_required(const char *request_atom, const char *sub
@@ -285,10 +285,10 @@ index 1401942..686c2ca 100644
      lyd_free_siblings(mod_data);
      return err_info;
 diff --git a/src/sysrepo.c b/src/sysrepo.c
-index 400092b..356e91d 100644
+index 1a613bf..b0575f2 100644
 --- a/src/sysrepo.c
 +++ b/src/sysrepo.c
-@@ -8085,3 +8085,81 @@ cleanup:
+@@ -8072,3 +8072,81 @@ cleanup:
      }
  }
  
@@ -371,10 +371,10 @@ index 400092b..356e91d 100644
 +    return sr_api_ret(NULL, err_info);
 +}
 diff --git a/src/sysrepo.h b/src/sysrepo.h
-index 2ff1222..28fe6d0 100644
+index a15392a..a199aab 100644
 --- a/src/sysrepo.h
 +++ b/src/sysrepo.h
-@@ -1972,6 +1972,10 @@ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
+@@ -1973,6 +1973,10 @@ void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
   * */
  int sr_module_rwlock_debug(sr_conn_ctx_t *conn, const char *module_name, uint32_t mask);
  
