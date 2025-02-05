@@ -278,4 +278,6 @@ sr_error_info_t *sr_shmmod_change_prio(sr_conn_ctx_t *conn, const struct lys_mod
 sr_error_info_t *sr_shmmod_session_oper_order(sr_session_ctx_t *session, const struct lys_module *ly_mod, uint32_t order,
         uint32_t *order_p);
 
+sr_error_info_t *sr_shmmod_del_module_oper_cache(sr_conn_ctx_t *conn);
+
 #endif /* _SHM_MOD_H */

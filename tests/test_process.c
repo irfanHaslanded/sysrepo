@@ -199,6 +199,24 @@ teardown(void)
     sr_disconnect(conn);
 }
 
+static void
+test_process_prepare_for_crash(sr_conn_ctx_t *conn, sr_session_ctx_t *session)
+{
+    /* avoid leaks (valgrind probably cannot keep track of leafref attributes because they are shared) */
+    for (uint32_t i = 0; i < conn->ds_handle_count; ++i) {
+        if (conn->ds_handles[i].init) {
+            conn->ds_handles[i].plugin->conn_destroy_cb(conn, conn->ds_handles[i].plg_data);
+        }
+    }
+
+    if (!session) {
+        sr_session_stop(session);
+    }
+
+    ly_ctx_destroy((struct ly_ctx *)sr_acquire_context(conn));
+    sr_release_context(conn);
+}
+
 /* TEST */
 static int
 rpc_sub_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *op_path, const sr_val_t *input, const size_t input_cnt,
@@ -340,14 +358,7 @@ rpc_crash_cb(sr_session_ctx_t *session, uint32_t sub_id, const char *op_path, co
     (void)output_cnt;
     (void)private_data;
 
-    /* avoid leaks (valgrind probably cannot keep track of leafref attributes because they are shared) */
-    ly_ctx_destroy((struct ly_ctx *)sr_acquire_context(sr_session_get_connection(session)));
-    sr_release_context(sr_session_get_connection(session));
-    for (uint32_t i = 0; i < session->conn->ds_handle_count; ++i) {
-        if (session->conn->ds_handles[i].init) {
-            session->conn->ds_handles[i].plugin->conn_destroy_cb(session->conn, session->conn->ds_handles[i].plg_data);
-        }
-    }
+    test_process_prepare_for_crash(session->conn, session);
 
     /* callback crashes */
     exit(0);
@@ -450,15 +461,7 @@ test_oper_crash_set1(int rp, int wp)
     /* wait for the other process */
     barrier(rp, wp);
 
-    /* avoid leaks (valgrind probably cannot keep track of leafref attributes because they are shared) */
-    ly_ctx_destroy((struct ly_ctx *)sr_acquire_context(sr_session_get_connection(sess)));
-    sr_release_context(sr_session_get_connection(sess));
-    for (uint32_t i = 0; i < sess->conn->ds_handle_count; ++i) {
-        if (sess->conn->ds_handles[i].init) {
-            sess->conn->ds_handles[i].plugin->conn_destroy_cb(sess->conn, sess->conn->ds_handles[i].plg_data);
-        }
-    }
-
+    test_process_prepare_for_crash(conn, sess);
     /* crash */
     exit(0);
 
@@ -568,15 +571,7 @@ notif_nowait_crash_cb1(sr_session_ctx_t *UNUSED(session), uint32_t UNUSED(sub_id
 {
     struct notif_nowait_crash_arg *arg = private_data;
 
-    /* avoid leaks (valgrind probably cannot keep track of leafref attributes because they are shared) */
-    ly_ctx_destroy((struct ly_ctx *)sr_session_acquire_context(arg->sess));
-    sr_session_release_context(arg->sess);
-    for (uint32_t i = 0; i < arg->sess->conn->ds_handle_count; ++i) {
-        if (arg->sess->conn->ds_handles[i].init) {
-            arg->sess->conn->ds_handles[i].plugin->conn_destroy_cb(arg->sess->conn, arg->sess->conn->ds_handles[i].plg_data);
-        }
-    }
-
+    test_process_prepare_for_crash(arg->sess->conn, arg->sess);
     /* signal the crash */
     barrier(arg->rp, arg->wp);
 
@@ -1245,23 +1240,14 @@ static void
 conditional_exit(struct cb_data *data, int ev, sr_session_ctx_t *session, struct lyd_node **parent)
 {
     uint32_t event = (uint32_t)ev;
-    sr_conn_ctx_t *conn = NULL;
 
     if (data->exit_mask & (1 << event)) {
         if (parent && *parent) {
             lyd_free_all(*parent);
             *parent = NULL;
         }
-        /* avoid leaks (valgrind probably cannot keep track of leafref attributes because they are shared) */
-        conn = sr_session_get_connection(session);
-        for (uint32_t i = 0; i < session->conn->ds_handle_count; ++i) {
-            if (session->conn->ds_handles[i].init) {
-                session->conn->ds_handles[i].plugin->conn_destroy_cb(session->conn, session->conn->ds_handles[i].plg_data);
-            }
-        }
-        sr_session_stop(session);
-        ly_ctx_destroy((struct ly_ctx *)sr_acquire_context(conn));
-        sr_release_context(conn);
+        test_process_prepare_for_crash(session->conn, session);
+
         /* exit_rc is set to EXIT_FAILURE if callback was not expected to be called */
         TLOG_INF("Exiting with %d as event \"%s\" received", data->exit_rc, ev_to_str(event));
         sr_assert(data->exit_rc == EXIT_SUCCESS);

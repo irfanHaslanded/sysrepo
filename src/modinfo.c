@@ -1316,7 +1316,7 @@ sr_module_oper_data_load(struct sr_mod_info_mod_s *mod, sr_conn_ctx_t *conn, uin
         if (!last_sid || !mod_oper_data) {
             /* load push oper data for the session */
             if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, SR_DS_OPERATIONAL,
-                    oper_push_dup[i].cid, oper_push_dup[i].sid, NULL, 0, &mod_data))) {
+                    (conn->cid == oper_push_dup[i].cid), oper_push_dup[i].cid, oper_push_dup[i].sid, NULL, 0, &mod_data))) {
                 goto cleanup;
             }
         } else {
@@ -2703,7 +2703,7 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
 
         /* load module data */
         if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2,
-                conn->cid, sess->sid, mod->xpaths, mod->xpath_count, &mod_info->data))) {
+                1, conn->cid, sess->sid, mod->xpaths, mod->xpath_count, &mod_info->data))) {
             return err_info;
         }
 
@@ -2767,8 +2767,8 @@ sr_modinfo_module_data_load(struct sr_mod_info_s *mod_info, struct sr_mod_info_m
 
         /* get current DS data */
         assert(mod_info->ds2 != SR_DS_OPERATIONAL);
-        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, 0, 0, xpaths,
-                xpath_count, &mod_info->data))) {
+        if ((err_info = sr_module_file_data_append(mod->ly_mod, mod->ds_handle, mod_info->ds2, 0, 0, 0,
+                xpaths, xpath_count, &mod_info->data))) {
             return err_info;
         }
 

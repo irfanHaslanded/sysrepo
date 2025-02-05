@@ -625,7 +625,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
             goto cleanup;
         }
-        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, NULL, 0, &data->start))) {
+        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, 0, NULL, 0, &data->start))) {
             goto cleanup;
         }
 
@@ -635,7 +635,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
             if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
                 goto cleanup;
             }
-            if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, NULL, 0, &data->run))) {
+            if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, 0, NULL, 0, &data->run))) {
                 goto cleanup;
             }
         }
@@ -645,7 +645,7 @@ sr_lycc_append_data(sr_conn_ctx_t *conn, const struct ly_ctx *ctx, struct sr_dat
         if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[ds], conn, &ds_handle[ds]))) {
             goto cleanup;
         }
-        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, NULL, 0, &data->fdflt))) {
+        if ((err_info = sr_module_file_data_append(ly_mod, ds_handle, ds, 0, 0, 0, NULL, 0, &data->fdflt))) {
             goto cleanup;
         }
     }
@@ -734,7 +734,7 @@ sr_lycc_update_data_init_ds_load(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_
         }
 
         /* load the initial data of the module */
-        if ((err_info = ds_handle->plugin->load_cb(new_mods[i].ly_mod, ds, 0, 0, NULL, 0, ds_handle->plg_data, &mod_data))) {
+        if ((err_info = ds_handle->plugin->load_cb(new_mods[i].ly_mod, ds, 0, 0, NULL, 0, ds_handle->plg_data, 0, &mod_data))) {
             goto cleanup;
         }
         if (!mod_data) {

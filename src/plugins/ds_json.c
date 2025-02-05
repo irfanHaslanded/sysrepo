@@ -40,11 +40,169 @@
 
 #define srpds_name "JSON DS file"  /**< plugin name */
 
+#define SR_PLG_ERRINFO_INT(err_info) srplg_log_errinfo(err_info, srpds_name, NULL, SR_ERR_INTERNAL, "Internal error (%s:%d).", __FILE__, __LINE__)
+#define SR_PLG_ERRINFO_MEM(err_info) srplg_log_errinfo(err_info, srpds_name, NULL, SR_ERR_NO_MEMORY, NULL)
+
+#define SR_PLG_CHECK_INT_GOTO(cond, err_info, go) if (cond) { SR_PLG_ERRINFO_INT(&(err_info)); goto go; }
+#define SR_PLG_CHECK_MEM_GOTO(cond, err_info, go) if (cond) { SR_PLG_ERRINFO_MEM(&(err_info)); goto go; }
+
 static sr_error_info_t *srpds_json_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
-        const char **xpaths, uint32_t xpath_count, void *plg_data, struct lyd_node **mod_data);
+        const char **xpaths, uint32_t xpath_count, void *plg_data, int use_cached, struct lyd_node **mod_data);
 
 static sr_error_info_t *srpds_json_access_get(const struct lys_module *mod, sr_datastore_t ds, void *plg_data,
         char **owner, char **group, mode_t *perm);
+
+typedef struct {
+    char *mod_name;
+    sr_cid_t cid;
+    uint32_t sid;
+    struct lyd_node *data;
+} srpds_json_oper_cache_t;
+
+static struct {
+    srpds_json_oper_cache_t *cache;
+    size_t count;
+    pthread_mutex_t lock;
+} srpds_json_oper_cache = {
+    .cache = NULL,
+    .count = 0,
+    .lock = PTHREAD_MUTEX_INITIALIZER,
+};
+
+static void
+srpds_json_oper_cache_free(void)
+{
+    int locked;
+    size_t i;
+    srpds_json_oper_cache_t *cache;
+
+    locked = !pthread_mutex_lock(&srpds_json_oper_cache.lock);
+    assert(locked);
+
+    if (!locked) {
+        goto cleanup;
+    }
+
+    cache = srpds_json_oper_cache.cache;
+
+    for (i = 0; i < srpds_json_oper_cache.count; i++) {
+        free(cache[i].mod_name);
+        lyd_free_siblings(cache[i].data);
+    }
+
+    free(cache);
+
+cleanup:
+    srpds_json_oper_cache.count = 0;
+    srpds_json_oper_cache.cache = NULL;
+    if (locked) {
+        pthread_mutex_unlock(&srpds_json_oper_cache.lock);
+    }
+}
+
+/*
+ *
+ * @return SR_ERR_OK on success, an error code otherwise.
+ * */
+static int
+srpds_json_oper_cache_load(const char *mod_name, sr_cid_t cid, uint32_t sid, struct lyd_node **mod_data)
+{
+    int ret;
+    size_t i;
+    srpds_json_oper_cache_t *cache;
+    sr_error_info_t *err_info = NULL;
+
+    *mod_data = NULL;
+    ret = pthread_mutex_lock(&srpds_json_oper_cache.lock);
+    SR_PLG_CHECK_INT_GOTO(ret, err_info, cleanup);
+
+    ret = SR_ERR_NOT_FOUND;
+    cache = srpds_json_oper_cache.cache;
+
+    for (i = 0; i < srpds_json_oper_cache.count; i++) {
+        if ((cache[i].cid == cid) && (cache[i].sid == sid) && !strcmp(cache[i].mod_name, mod_name)) {
+            break;
+        }
+    }
+
+    if (i == srpds_json_oper_cache.count) {
+        goto cleanup;
+    }
+
+    /* read the cached mod_data */
+    *mod_data = cache[i].data;
+    cache[i].data = NULL;
+    /* mark it as empty */
+    cache[i].cid = 0;
+
+    ret = SR_ERR_OK;
+
+cleanup:
+    srplg_errinfo_free(&err_info);
+    pthread_mutex_unlock(&srpds_json_oper_cache.lock);
+
+    return ret;
+}
+
+static void
+srpds_json_oper_cache_store(const char *mod_name, sr_cid_t cid, uint32_t sid, const struct lyd_node *mod_data)
+{
+    struct lyd_node *mod_cache_data = NULL;
+    void *mem;
+    size_t i;
+    int ret, ly_rc;
+    srpds_json_oper_cache_t *cache;
+    sr_error_info_t *err_info = NULL;
+
+    /* create a copy of mod_data */
+    if (mod_data && (ly_rc = lyd_dup_siblings(mod_data, NULL, LYD_DUP_RECURSIVE, &mod_cache_data))) {
+        err_info = srpjson_log_err_ly(srpds_name, LYD_CTX(mod_data));
+        srplg_log_errinfo(&err_info, srpds_name, NULL, SR_ERR_INTERNAL, "Failed to cache operational data for \"%s\".", mod_name);
+        goto cleanup;
+    }
+
+    ret = pthread_mutex_lock(&srpds_json_oper_cache.lock);
+    SR_PLG_CHECK_INT_GOTO(ret, err_info, cleanup);
+
+    cache = srpds_json_oper_cache.cache;
+
+    /* locate old data in the cache */
+    for (i = 0; i < srpds_json_oper_cache.count; i++) {
+        if ((cache[i].sid == sid) && !strcmp(cache[i].mod_name, mod_name)) {
+            break;
+        }
+    }
+
+    if (i == srpds_json_oper_cache.count) {
+        mem = realloc(cache, (i + 1) * sizeof(*cache));
+        SR_PLG_CHECK_MEM_GOTO(!mem, err_info, cleanup_unlock);
+        cache = mem;
+        cache[i].mod_name = NULL;
+        srpds_json_oper_cache.cache = cache;
+        srpds_json_oper_cache.count++;
+    } else {
+        lyd_free_siblings(cache[i].data);
+    }
+
+    if (!cache[i].mod_name) {
+        cache[i].mod_name = strdup(mod_name);
+    }
+    cache[i].cid = cid;
+    cache[i].sid = sid;
+    cache[i].data = mod_cache_data;
+
+    pthread_mutex_unlock(&srpds_json_oper_cache.lock);
+    return;
+
+cleanup_unlock:
+    pthread_mutex_unlock(&srpds_json_oper_cache.lock);
+
+cleanup:
+    /* invalidate cache on error */
+    srpds_json_oper_cache_free();
+    srplg_errinfo_free(&err_info);
+    lyd_free_siblings(mod_cache_data);
+}
 
 static sr_error_info_t *
 srpds_json_store_(const char *path, const struct lyd_node *mod_data, const char *owner, const char *group, mode_t perm,
@@ -326,6 +484,9 @@ srpds_json_init(const struct lys_module *mod, sr_datastore_t ds, void *UNUSED(pl
         goto cleanup;
     }
 
+    /* release any stored operational data */
+    srpds_json_oper_cache_free();
+
 cleanup:
     if (fd > -1) {
         close(fd);
@@ -339,12 +500,16 @@ cleanup:
 static sr_error_info_t *
 srpds_json_conn_init(sr_conn_ctx_t *UNUSED(conn), void **UNUSED(plg_data))
 {
+    /* release any stored operational data */
+    srpds_json_oper_cache_free();
     return NULL;
 }
 
 static void
 srpds_json_conn_destroy(sr_conn_ctx_t *UNUSED(conn), void *UNUSED(plg_data))
 {
+    /* release any stored operational data */
+    srpds_json_oper_cache_free();
 }
 
 static sr_error_info_t *
@@ -396,6 +561,11 @@ srpds_json_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, 
         unlink(path);
     } else if ((err_info = srpds_json_store_(path, mod_data, NULL, NULL, perm, (ds == SR_DS_STARTUP) ? 1 : 0))) {
         goto cleanup;
+    }
+
+    if (ds == SR_DS_OPERATIONAL) {
+        /* add this to cache */
+        srpds_json_oper_cache_store(mod->name, cid, sid, mod_data);
     }
 
 cleanup:
@@ -461,7 +631,7 @@ cleanup:
 
 static sr_error_info_t *
 srpds_json_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid, const char **UNUSED(xpaths),
-        uint32_t UNUSED(xpath_count), void *UNUSED(plg_data), struct lyd_node **mod_data)
+        uint32_t UNUSED(xpath_count), void *UNUSED(plg_data), int use_cached, struct lyd_node **mod_data)
 {
     sr_error_info_t *err_info = NULL;
     int fd = -1, recovered;
@@ -469,9 +639,11 @@ srpds_json_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, u
     uint32_t parse_opts;
 
     *mod_data = NULL;
-
     /* prepare correct file path */
     if (ds == SR_DS_OPERATIONAL) {
+        if (use_cached && (SR_ERR_OK == srpds_json_oper_cache_load(mod->name, cid, sid, mod_data))) {
+            goto cleanup;
+        }
         if ((err_info = srpjson_get_oper_path(srpds_name, mod->name, cid, sid, &path))) {
             goto cleanup;
         }
@@ -569,6 +741,7 @@ cleanup:
     }
     free(path);
     free(bck_path);
+
     return err_info;
 }
 
@@ -969,4 +1142,5 @@ const struct srplg_ds_s srpds_json = {
     .last_modif_cb = srpds_json_last_modif,
     .data_version_cb = NULL,
     .oper_store_require_diff = 0,
+    .oper_ds_cache_free = srpds_json_oper_cache_free,
 };

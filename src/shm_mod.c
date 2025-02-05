@@ -851,6 +851,39 @@ cleanup:
     return err_info;
 }
 
+sr_error_info_t *
+sr_shmmod_del_module_oper_cache(sr_conn_ctx_t *conn)
+{
+    sr_error_info_t *err_info = NULL;
+    const struct sr_ds_handle_s *oper_ds_handle;
+    const struct lys_module *ly_mod;
+    sr_mod_t *shm_mod;
+    uint32_t idx = 0;
+
+    while ((ly_mod = ly_ctx_get_module_iter(conn->ly_ctx, &idx))) {
+        if (!ly_mod->implemented || !strcmp(ly_mod->name, "sysrepo")) {
+            /* we need data of only implemented modules and never from internal SR module */
+            continue;
+        }
+
+        /* get SHM mod */
+        shm_mod = sr_shmmod_find_module(SR_CONN_MOD_SHM(conn), ly_mod->name);
+        SR_CHECK_INT_GOTO(!shm_mod, err_info, cleanup);
+
+        /* get DS handle */
+        if ((err_info = sr_ds_handle_find(conn->mod_shm.addr + shm_mod->plugins[SR_DS_OPERATIONAL], conn,
+                &oper_ds_handle))) {
+            goto cleanup;
+        }
+
+        /* delete all cached data - safe because we have WRITE context lock or MOD REMAP WRITE lock */
+        oper_ds_handle->plugin->oper_ds_cache_free();
+    }
+
+cleanup:
+    return err_info;
+}
+
 /**
  * @brief Remove push oper data of a module for a session.
  *
@@ -881,7 +914,7 @@ sr_shmmod_del_module_sess_oper_data(sr_conn_ctx_t *conn, const struct lys_module
         if (oper_ds_handle->plugin->oper_store_require_diff) {
             /* load oper data */
             if ((err_info = oper_ds_handle->plugin->load_cb(ly_mod, SR_DS_OPERATIONAL, cid, sid, NULL, 0, oper_ds_handle->plg_data,
-                    &mod_diff))) {
+                    (cid == conn->cid), &mod_diff))) {
                 goto cleanup;
             }
 
@@ -1709,13 +1742,13 @@ sr_shmmod_copy_mod(const struct lys_module *ly_mod, const struct sr_ds_handle_s 
 
     /* load source data */
     assert(sds != SR_DS_CANDIDATE);
-    if ((err_info = sds_handle->plugin->load_cb(ly_mod, sds, 0, 0, NULL, 0, sds_handle->plg_data, &s_mod_data))) {
+    if ((err_info = sds_handle->plugin->load_cb(ly_mod, sds, 0, 0, NULL, 0, sds_handle->plg_data, 0, &s_mod_data))) {
         goto cleanup;
     }
 
     /* load also current target data */
     assert(tds != SR_DS_CANDIDATE);
-    if ((err_info = tds_handle->plugin->load_cb(ly_mod, tds, 0, 0, NULL, 0, tds_handle->plg_data, &r_mod_data))) {
+    if ((err_info = tds_handle->plugin->load_cb(ly_mod, tds, 0, 0, NULL, 0, tds_handle->plg_data, 0, &r_mod_data))) {
         goto cleanup;
     }
 

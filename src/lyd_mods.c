@@ -1100,7 +1100,7 @@ sr_lydmods_parse(const struct ly_ctx *ly_ctx, sr_conn_ctx_t *conn, int *initiali
     }
     if (srpjson_file_exists(NULL, path)) {
         /* load the data using the internal JSON plugin */
-        if ((err_info = srpds_json.load_cb(ly_mod, SR_DS_STARTUP, 0, 0, NULL, 0, NULL, &sr_mods))) {
+        if ((err_info = srpds_json.load_cb(ly_mod, SR_DS_STARTUP, 0, 0, NULL, 0, NULL, 0, &sr_mods))) {
             goto cleanup;
         }
         if (!sr_mods) {

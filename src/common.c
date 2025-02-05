@@ -3160,7 +3160,7 @@ sr_conn_run_cache_update(sr_conn_ctx_t *conn, const struct sr_mod_info_s *mod_in
 
         /* replace with loaded current data */
         if ((err_info = mod->ds_handle[cache_ds]->plugin->load_cb(mod->ly_mod, cache_ds, 0, 0, NULL, 0,
-                mod->ds_handle[cache_ds]->plg_data, &mod_data))) {
+                mod->ds_handle[cache_ds]->plg_data, 0, &mod_data))) {
             goto cleanup;
         }
         if (mod_data) {
@@ -5397,7 +5397,7 @@ sr_module_data_unlink(struct lyd_node **data, const struct lys_module *ly_mod, i
 
 sr_error_info_t *
 sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[], sr_datastore_t ds,
-        sr_cid_t cid, uint32_t sid, const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
+        int use_cached, sr_cid_t cid, uint32_t sid, const char **xpaths, uint32_t xpath_count, struct lyd_node **data)
 {
     sr_error_info_t *err_info = NULL;
     struct lyd_node *mod_data;
@@ -5421,7 +5421,7 @@ sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_h
 
     /* get the data */
     if ((err_info = ds_handle[ds]->plugin->load_cb(ly_mod, ds, cid, sid, xpaths, xpath_count, ds_handle[ds]->plg_data,
-            &mod_data))) {
+            use_cached, &mod_data))) {
         return err_info;
     }
 

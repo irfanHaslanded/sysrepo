@@ -3383,13 +3383,15 @@ cleanup:
  */
 sr_error_info_t *
 srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid, const char **xpaths,
-        uint32_t xpath_count, void *plg_data, struct lyd_node **mod_data)
+        uint32_t xpath_count, void *plg_data, int use_cached, struct lyd_node **mod_data)
 {
     mongo_data_t mdata;
     mongo_plg_conn_data_t *pdata = (mongo_plg_conn_data_t *)plg_data;
     sr_error_info_t *err_info = NULL;
     bson_t xpath_filter;
     int is_valid = 0;
+
+    (void)use_cached;
 
     assert(mod && mod_data);
 
@@ -3522,6 +3524,11 @@ cleanup:
     return err_info;
 }
 
+static void
+srpds_mongo_oper_cache_free(void)
+{
+}
+
 const struct srplg_ds_s srpds_mongo = {
     .name = plugin_name,
     .install_cb = srpds_mongo_install,
@@ -3540,4 +3547,5 @@ const struct srplg_ds_s srpds_mongo = {
     .last_modif_cb = srpds_mongo_last_modif,
     .data_version_cb = NULL,
     .oper_store_require_diff = 0,
+    .oper_ds_cache_free = srpds_mongo_oper_cache_free,
 };

@@ -3869,12 +3869,14 @@ cleanup:
  */
 sr_error_info_t *
 srpds_redis_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid, const char **xpaths,
-        uint32_t xpath_count, void *plg_data, struct lyd_node **mod_data)
+        uint32_t xpath_count, void *plg_data, int use_cached, struct lyd_node **mod_data)
 {
     redis_plg_conn_data_t *pdata = (redis_plg_conn_data_t *)plg_data;
     redisContext *ctx = NULL;
     char *mod_ns = NULL, *xpath_filter = NULL;
     sr_error_info_t *err_info = NULL;
+
+    (void)use_cached;
 
     assert(mod && mod_data);
 
@@ -4044,6 +4046,11 @@ srpds_redis_conn_destroy(sr_conn_ctx_t *conn, void *plg_data)
     free(data);
 }
 
+static void
+srpds_redis_oper_cache_free(void)
+{
+}
+
 const struct srplg_ds_s srpds_redis = {
     .name = plugin_name,
     .install_cb = srpds_redis_install,
@@ -4062,4 +4069,5 @@ const struct srplg_ds_s srpds_redis = {
     .last_modif_cb = srpds_redis_last_modif,
     .data_version_cb = NULL,
     .oper_store_require_diff = 0,
+    .oper_store_cache_free = srpds_redis_oper_cache_free,
 };

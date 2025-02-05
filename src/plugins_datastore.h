@@ -149,12 +149,13 @@ typedef sr_error_info_t *(*srds_store)(const struct lys_module *mod, sr_datastor
  * @param[in] xpaths Array of XPaths selecting the required data, NULL if all the module data are needed.
  * @param[in] xpath_count Number of @p xpaths.
  * @param[in] plg_data Plugin data.
+ * @param[in] use_cached If it is okay to use cached operational data when available.
  * @param[out] mod_data Loaded module data.
  * @return NULL on success;
  * @return Sysrepo error info on error.
  */
 typedef sr_error_info_t *(*srds_load)(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
-        const char **xpaths, uint32_t xpath_count, void *plg_data, struct lyd_node **mod_data);
+        const char **xpaths, uint32_t xpath_count, void *plg_data, int use_cached, struct lyd_node **mod_data);
 
 /**
  * @brief Copy data of a module from source datastore to the target datastore.
@@ -276,6 +277,8 @@ typedef sr_error_info_t *(*srds_last_modif)(const struct lys_module *mod, sr_dat
 typedef sr_error_info_t *(*srds_data_version)(const struct lys_module *mod, sr_datastore_t ds, void *plg_data,
         uint32_t *version);
 
+typedef void (*srds_oper_cache_free)(void);
+
 /**
  * @brief Datastore plugin structure
  */
@@ -297,6 +300,7 @@ struct srplg_ds_s {
     srds_last_modif last_modif_cb;  /**< callback for getting the time of last modification */
     srds_data_version data_version_cb;  /**< optional callback for checking data version */
     const int oper_store_require_diff;  /**< if a diff is required to store operational data */
+    srds_oper_cache_free oper_ds_cache_free;  /* free up any oper datastore cache */
 };
 
 /**

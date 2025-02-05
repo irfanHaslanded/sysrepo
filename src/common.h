@@ -1348,6 +1348,7 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
  * @param[in] ly_mod libyang module.
  * @param[in] ds_handle Datastore plugin handles of @p ly_mod.
  * @param[in] ds Datastore of the data.
+ * @param[in] use_cached If cached operational data can be used when available.
  * @param[in] cid Connection ID, if @p ds is ::SR_DS_OPERATIONAL.
  * @param[in] sid Session ID, if @p ds is ::SR_DS_OPERATIONAL.
  * @param[in] xpaths Array of XPaths selecting the required data, NULL for all module data.
@@ -1356,7 +1357,8 @@ struct lyd_node *sr_module_data_unlink(struct lyd_node **data, const struct lys_
  * @return err_info, NULL on success.
  */
 sr_error_info_t *sr_module_file_data_append(const struct lys_module *ly_mod, const struct sr_ds_handle_s *ds_handle[],
-        sr_datastore_t ds, sr_cid_t cid, uint32_t sid, const char **xpaths, uint32_t xpath_count, struct lyd_node **data);
+        sr_datastore_t ds, int use_cached, sr_cid_t cid, uint32_t sid,
+        const char **xpaths, uint32_t xpath_count, struct lyd_node **data);
 
 /**
  * @brief Learn CIDs and PIDs of all the live connections.

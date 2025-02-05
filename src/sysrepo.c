@@ -1826,6 +1826,11 @@ sr_remove_modules(sr_conn_ctx_t *conn, const char **module_names, int force)
     }
     ctx_mode = SR_LOCK_WRITE;
 
+    /* remove all cached oper data */
+    if ((err_info = sr_shmmod_del_module_oper_cache(conn))) {
+        goto cleanup;
+    }
+
     /* load all data and prepare their update */
     if ((err_info = sr_lycc_update_data(conn, new_ctx, NULL, NULL, 0, &data_info))) {
         goto cleanup;
@@ -2073,6 +2078,11 @@ sr_update_modules(sr_conn_ctx_t *conn, const char **schema_paths, const char *se
         goto cleanup;
     }
     ctx_mode = SR_LOCK_WRITE;
+
+    /* remove all cached oper data */
+    if ((err_info = sr_shmmod_del_module_oper_cache(conn))) {
+        goto cleanup;
+    }
 
     /* load all data and prepare their update */
     if ((err_info = sr_lycc_update_data(conn, new_ctx, NULL, NULL, 0, &data_info))) {
@@ -2583,6 +2593,11 @@ sr_change_module_feature(sr_conn_ctx_t *conn, const char *module_name, const cha
         goto cleanup;
     }
     ctx_mode = SR_LOCK_WRITE;
+
+    /* remove all cached oper data */
+    if ((err_info = sr_shmmod_del_module_oper_cache(conn))) {
+        goto cleanup;
+    }
 
     /* load all data and prepare their update */
     if ((err_info = sr_lycc_update_data(conn, new_ctx, NULL, NULL, 0, &data_info))) {
