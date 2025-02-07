@@ -2978,7 +2978,7 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, sr_session_c
     sr_conn_ctx_t *conn;
     struct sr_mod_info_mod_s *mod;
     uint32_t i;
-    int run_data_cache_cur = 0;
+    int run_data_cache_cur = 0, mod_data_load = 1;
 
     conn = mod_info->conn;
 
@@ -3030,6 +3030,14 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, sr_session_c
         }
     }
 
+    /* use cached oper push data if available and usable */
+    if ((mod_info->ds == SR_DS_OPERATIONAL) && (mod_info->ds2 == SR_DS_OPERATIONAL) && sess &&
+            sess->oper_push_data && !mod_info->data) {
+        mod_info->data = sess->oper_push_data;
+        sess->oper_push_data = NULL;
+        mod_data_load = 0;
+    }
+
     /* load data for each module */
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
@@ -3038,7 +3046,8 @@ sr_modinfo_data_load(struct sr_mod_info_s *mod_info, int read_only, sr_session_c
             continue;
         }
 
-        if ((err_info = sr_modinfo_module_data_load(mod_info, mod, sess, timeout_ms, get_oper_opts, run_data_cache_cur))) {
+        /* load data if not already loaded from cache */
+        if (mod_data_load && (err_info = sr_modinfo_module_data_load(mod_info, mod, sess, timeout_ms, get_oper_opts, run_data_cache_cur))) {
             goto cleanup;
         }
         if (!mod->xpath_count) {

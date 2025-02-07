@@ -4228,6 +4228,12 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
         }
     }
 
+    /* cache the newly stored oper push data unless we are deleting the session or cache is disabled */
+    if (!shmmod_session_del && !(session->conn->opts & SR_CONN_NO_OPER_PUSH_CACHE)) {
+        session->oper_push_data = mod_info->data;
+        mod_info->data = NULL;
+    }
+
 cleanup:
     sr_release_data(old_oper_data);
     lyd_free_siblings(data_diff);
