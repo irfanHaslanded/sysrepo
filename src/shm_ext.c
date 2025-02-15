@@ -2647,6 +2647,9 @@ sr_shmext_oper_push_update(sr_conn_ctx_t *conn, sr_mod_t *shm_mod, const char *m
     sr_mod_oper_push_t *item;
     int32_t found_i;
 
+    /* 'order' must not be changed when session 'has_data' for the module */
+    assert(order ^ has_data);
+
     assert((has_mod_locks == SR_LOCK_NONE) || (has_mod_locks == SR_LOCK_WRITE));
 
     shm_lock = &shm_mod->data_lock_info[SR_DS_OPERATIONAL];

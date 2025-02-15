@@ -954,7 +954,7 @@ int sr_set_item_str(sr_session_ctx_t *session, const char *path, const char *val
  * changes merged into the list, use ::SR_EDIT_ISOLATE in such a case.
  *
  * For ::SR_DS_OPERATIONAL, this function deletes the selected nodes from the session push oper data. To delete the nodes
- * from the final operational datastore, use ::sr_discard_items() instead. Only ::SR_EDIT_STRICT option is allowed
+ * from the final operational datastore, use ::sr_discard_items() in addition. Only ::SR_EDIT_STRICT option is allowed
  * causing the function to return an error if the deleted nodes do not exist in the session push oper data.
  * If the path is invalid, an error is returned even without ::SR_EDIT_STRICT option.
  *
@@ -972,11 +972,15 @@ int sr_oper_delete_item_str(sr_session_ctx_t *session, const char *path, const c
 
 /**
  * @brief Prepare to discard nodes matching the specified xpath in the operational datastore before applying
- * the other push oper data of this sessions. Usable only for ::SR_DS_OPERATIONAL datastore. These changes are applied
+ * the other push oper data of this session. Usable only for ::SR_DS_OPERATIONAL datastore. These changes are applied
  * only after calling ::sr_apply_changes().
  *
  * Creates an opaque node `discard-items` in the `sysrepo` YANG module namespace with @p xpath used as the value.
  * Such a node can be a part of the edit in ::sr_edit_batch() and will discard nodes like this function does.
+ *
+ * This affects only operational data of lower order. For correct behaviour, `sr_set_oper_changes_order()` must be called
+ * from all sessions that push operational data to the module to explicitly set the order.
+ * `sr_discard_items` will not give consistent results with automatically generated order.
  *
  * @param[in] session Session ([DS](@ref sr_datastore_t)-specific) to use.
  * @param[in] xpath [XPath](@ref paths) expression filtering the nodes to discard, all if NULL.
@@ -1156,9 +1160,13 @@ int sr_get_oper_changes(sr_session_ctx_t *session, const char *module_name, sr_d
  * for the module.
  *
  * By default the next highest order (lowest priority) is generated for any new session push oper data of a module.
+ * It is not supported to set the order:
+ * 1. if the session already has push operational data for the specified module.
+ * 2. for all modules if the session has push operational data for any module.
+ * This is because it can result in change of the final view of operational data, which must be notified to subscribers.
  *
  * @param[in] session Session (not [DS](@ref sr_datastore_t)-specific) to use.
- * @param[in] module_name Name of the module to change. Set to NULL to change the order for all the modules.
+ * @param[in] module_name Name of the module to change, must be a valid installed module.
  * @param[in] order Non-zero order to set, must be unique.
  * @return Error code (::SR_ERR_OK on success).
  */
