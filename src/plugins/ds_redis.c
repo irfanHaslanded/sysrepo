@@ -2641,12 +2641,13 @@ cleanup:
  * @param[in] ctx Libyang context.
  * @param[in] xpaths Array of XPaths.
  * @param[in] xpath_cnt XPath count.
+ * @param[in] discard_items If sysrepo discard-items nodes should be retrieved as well.
  * @param[out] xpath_filter Final query filter.
  * @return NULL on success;
  * @return Sysrepo error info on error.
  */
 static sr_error_info_t *
-srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath_cnt, char **xpath_filter)
+srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath_cnt, int discard_items, char **xpath_filter)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t i;
@@ -2738,6 +2739,18 @@ srpds_process_load_paths(struct ly_ctx *ctx, const char **xpaths, uint32_t xpath
         }
         free(path);
         path = NULL;
+    }
+
+    if (xpath_cnt && discard_items) {
+        if ((err_info = srpds_escape_string(plugin_name, "/sysrepo:discard-items", &escaped_path))) {
+            goto cleanup;
+        }
+        if (asprintf(&tmp, "%s | %s*", *xpath_filter, escaped_path) == -1) {
+            ERRINFO(&err_info, plugin_name, SR_ERR_NO_MEMORY, "asprintf()", strerror(errno));
+            goto cleanup;
+        }
+        free(*xpath_filter);
+        *xpath_filter = tmp;
     }
 
 cleanup:
@@ -3897,7 +3910,7 @@ srpds_redis_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, 
         goto cleanup;
     }
 
-    if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, &xpath_filter))) {
+    if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, (ds == SR_DS_OPERATIONAL), &xpath_filter))) {
         goto cleanup;
     }
 

@@ -3399,8 +3399,15 @@ srpds_mongo_load(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, 
         goto cleanup;
     }
 
-    if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, &is_valid, &xpath_filter))) {
-        goto cleanup;
+    if (ds != SR_DS_OPERATIONAL) {
+        /*
+         * TODO
+         * xpath filtering is unimplemented for MONGO DS operational datastore.
+         * metadata (ietf-origin) needs to be explicitly retrieved.
+         */
+        if ((err_info = srpds_process_load_paths(mod->ctx, xpaths, xpath_count, &is_valid, &xpath_filter))) {
+            goto cleanup;
+        }
     }
 
     /* initialize xpath_filter for loading */
