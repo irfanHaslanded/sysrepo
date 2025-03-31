@@ -2948,7 +2948,7 @@ cleanup:
  */
 sr_error_info_t *
 srpds_mongo_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
-        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, void *plg_data)
+        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, srds_store_op_t op, void *plg_data)
 {
     mongo_data_t mdata;
     mongo_plg_conn_data_t *pdata = (mongo_plg_conn_data_t *)plg_data;
@@ -2956,6 +2956,10 @@ srpds_mongo_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid,
     int modified = 1;
 
     assert(mod);
+    if (op == SRDS_STORE_PREP) {
+        /* mongo DS plugin does not need to prepare to store data */
+        return NULL;
+    }
 
     /* for candidate ds learn if modified */
     if (ds == SR_DS_CANDIDATE) {

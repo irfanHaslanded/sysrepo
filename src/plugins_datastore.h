@@ -42,6 +42,12 @@ extern "C" {
  */
 #define SRPLG_DS_API_VERSION 12
 
+typedef enum {
+    SRDS_STORE_PREP,
+    SRDS_STORE_SAVE,
+    SRDS_STORE_PREP_AND_SAVE
+} srds_store_op_t;
+
 /**
  * @brief Setup datastore of a newly installed module.
  *
@@ -127,12 +133,13 @@ typedef void (*srds_conn_destroy)(sr_conn_ctx_t *conn, void *plg_data);
  * @param[in] mod_diff Diff of currently stored module data and the new @p mod_data. __Not always available.__
  * @param[in] mod_data New module data tree to store. If @p ds ::SR_DS_OPERATIONAL, every node may have a metadata
  * instance of 'ietf-origin:origin' that needs to be stored. Also, top-level 'discard-items' opaque nodes may be present.
+ * @param[in] op Store operation to perform. prepare, save or prepare and save in a single call.
  * @param[in] plg_data Plugin data.
  * @return NULL on success;
  * @return Sysrepo error info on error.
  */
 typedef sr_error_info_t *(*srds_store)(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
-        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, void *plg_data);
+        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, srds_store_op_t op, void *plg_data);
 
 /**
  * @brief Load data of a module.

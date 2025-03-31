@@ -3985,7 +3985,7 @@ cleanup:
 }
 
 sr_error_info_t *
-sr_modinfo_data_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session, int shmmod_session_del)
+sr_modinfo_data_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session, int shmmod_session_del, int commit)
 {
     sr_error_info_t *err_info = NULL;
     struct sr_mod_info_mod_s *mod;
@@ -4016,10 +4016,21 @@ sr_modinfo_data_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
 
             /* store the new data */
             if ((err_info = mod->ds_handle[store_ds]->plugin->store_cb(mod->ly_mod, store_ds, mod_info->conn->cid,
-                    sid, mod_diff, mod_data, mod->ds_handle[store_ds]->plg_data))) {
+                    sid, mod_diff, mod_data, commit ? SRDS_STORE_SAVE : SRDS_STORE_PREP, mod->ds_handle[store_ds]->plg_data))) {
                 lyd_free_siblings(mod_diff);
                 lyd_free_siblings(mod_data);
                 goto cleanup;
+            }
+
+            if (!commit) {
+                /* connect them back */
+                if (mod_diff) {
+                    lyd_insert_sibling(mod_info->ds_diff, mod_diff, &mod_info->ds_diff);
+                }
+                if (mod_data) {
+                    lyd_insert_sibling(mod_info->data, mod_data, &mod_info->data);
+                }
+                continue;
             }
 
             if (mod_info->ds == SR_DS_RUNNING) {
@@ -4079,7 +4090,7 @@ sr_modinfo_data_store(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
         }
     }
 
-    if (shmmod_session_del && !mod_info->mod_count && session->oper_push_mod_count) {
+    if (commit && shmmod_session_del && !mod_info->mod_count && session->oper_push_mod_count) {
         /* we are stopping a session, we had pushed some data in the past, but no current data, so mod_info->count is zero */
         for (i = 0; i < session->oper_push_mod_count; ++i) {
             mod_name = session->oper_push_mods[i].name;

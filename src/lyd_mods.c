@@ -894,7 +894,7 @@ sr_lydmods_print(struct lyd_node **sr_mods)
     lyd_change_term_bin(node, &hash, sizeof hash);
 
     /* store the data using the internal JSON plugin */
-    if ((err_info = srpds_json.store_cb(sr_ly_mod, SR_DS_STARTUP, 0, 0, NULL, *sr_mods, NULL))) {
+    if ((err_info = srpds_json.store_cb(sr_ly_mod, SR_DS_STARTUP, 0, 0, NULL, *sr_mods, SRDS_STORE_PREP_AND_SAVE, NULL))) {
         return err_info;
     }
 

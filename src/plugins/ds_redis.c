@@ -3460,7 +3460,7 @@ cleanup:
  */
 sr_error_info_t *
 srpds_redis_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid, uint32_t sid,
-        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, void *plg_data)
+        const struct lyd_node *mod_diff, const struct lyd_node *mod_data, srds_store_op_t op, void *plg_data)
 {
     redis_plg_conn_data_t *pdata = (redis_plg_conn_data_t *)plg_data;
     redisContext *ctx = NULL;
@@ -3472,6 +3472,11 @@ srpds_redis_store(const struct lys_module *mod, sr_datastore_t ds, sr_cid_t cid,
     struct redis_bulk bulk = {0};
 
     assert(mod);
+
+    if (op == SRDS_STORE_PREP) {
+        /* redis DS plugin does not need to prepare to store data */
+        return NULL;
+    }
 
     /* for candidate ds learn if modified */
     if (ds == SR_DS_CANDIDATE) {
