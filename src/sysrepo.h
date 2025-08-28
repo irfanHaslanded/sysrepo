@@ -1979,6 +1979,16 @@ void srplg_errinfo_free(sr_error_info_t **err_info);
  */
 void srplg_log(const char *plg_name, sr_log_level_t ll, const char *format, ...) _FORMAT_PRINTF(3, 4);
 
+/**
+ * @brief Get the netconf session id of the session
+ */
+uint64_t sr_session_get_event_nc_id(sr_session_ctx_t *session);
+
+/**
+ * @brief Set the netconf session id of the session
+ */
+void sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_sid);
+
 #ifdef __cplusplus
 }
 #endif

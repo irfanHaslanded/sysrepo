@@ -8312,3 +8312,33 @@ cleanup:
     sr_lycc_unlock(conn, SR_LOCK_READ, 0, __func__);
     return sr_api_ret(session, err_info);
 }
+
+API void
+sr_session_set_nc_id(sr_session_ctx_t *session, uint64_t nc_id)
+{
+    extern char *__progname;
+
+    if (!session) {
+        return;
+    }
+    if (!session->orig_name) {
+        sr_session_set_orig_name(session, __progname);
+    }
+    /* Need to remove all previous data */
+    sr_session_del_orig_data(session);
+    sr_session_push_orig_data(session, sizeof nc_id, &nc_id);
+}
+
+API uint64_t
+sr_session_get_event_nc_id(sr_session_ctx_t *session)
+{
+    uint64_t *nc_id = NULL;
+    uint32_t size = 0;
+
+    if (!session || !session->ev) {
+        return 0;
+    }
+
+    sr_session_get_orig_data(session, 0, &size, (const void **)&nc_id);
+    return nc_id ? *nc_id : 0;
+}
