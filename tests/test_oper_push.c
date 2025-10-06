@@ -3325,10 +3325,67 @@ test_oper_cache(void **state)
     assert_int_equal(ret, SR_ERR_OK);
 }
 
+/* TEST */
+static void
+test_oper_delete_multi(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_data_t *data;
+    sr_conn_ctx_t *conn;
+    sr_session_ctx_t *sess;
+    int ret;
+
+    ret = sr_session_switch_ds(st->sess, SR_DS_OPERATIONAL);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_set_item_str(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/type",
+            "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* create another connection and session */
+    ret = sr_connect(0, &conn);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_session_start(conn, SR_DS_OPERATIONAL, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* set some operational data */
+    ret = sr_set_item_str(sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/speed",
+            "1000", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* delete the interface since we created it */
+    ret = sr_delete_item(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(st->sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* delete the information we pushed */
+    ret = sr_delete_item(sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']/speed", 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    /* expect that the interface is deleted ? */
+    ret = sr_get_data(st->sess, "/ietf-interfaces:interfaces-state/interface[name='eth0']", 0, 0, SR_OPER_WITH_ORIGIN, &data);
+    assert_int_equal(ret, SR_ERR_OK);
+    assert_null(data);
+
+    sr_release_data(data);
+    /* disconnect, operational data should be removed */
+    sr_disconnect(conn);
+    exit(0);
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_delete_multi, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
