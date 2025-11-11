@@ -221,6 +221,8 @@ struct sr_yang_ctx_s {
 
     uint32_t refcount;              /**< Number of connections in this process using this context. */
     pthread_mutex_t create_lock;    /**< Lock for refcount and managing the context on connection creation and deletion. */
+    pthread_mutex_t rdlock;         /**< Lock for updating read_count of context lock. */
+    uint32_t rdlock_count;          /**< Count of recursive context read lock. */
 };
 
 /**
