@@ -125,6 +125,8 @@ struct sr_yang_ctx_s sr_yang_ctx = {
     .remap_lock = SR_RWLOCK_INITIALIZER,
     .refcount = 0,
     .create_lock = PTHREAD_MUTEX_INITIALIZER,
+    .rdlock = PTHREAD_MUTEX_INITIALIZER,
+    .rdlock_count = 0,
 };
 
 /**

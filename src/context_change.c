@@ -120,6 +120,47 @@ context_is_up_to_date(sr_main_shm_t *main_shm, uint32_t content_id, uint32_t sch
     return 1;
 }
 
+static inline sr_error_info_t *
+sr_lycc_rdlock(int *check, const char *func)
+{
+    sr_error_info_t *err_info = NULL;
+
+    if ((err_info = sr_mlock(&sr_yang_ctx.rdlock, -1, func, NULL, NULL))) {
+        return err_info;
+    }
+
+    if (sr_yang_ctx.rdlock_count || !check) {
+        sr_yang_ctx.rdlock_count++;
+        if (check) {
+            SR_LOG_INF("saved-context-lock %s", func);
+            *check = 1;
+        }
+    }
+
+    /* YANG CTX UNLOCK */
+    sr_munlock(&sr_yang_ctx.rdlock);
+    return NULL;
+}
+
+static inline void
+sr_lycc_rdunlock(int *unlock, const char *func)
+{
+    sr_error_info_t *err_info = NULL;
+
+    if ((err_info = sr_mlock(&sr_yang_ctx.rdlock, -1, func, NULL, NULL))) {
+        sr_errinfo_free(&err_info);
+    }
+
+    assert(sr_yang_ctx.rdlock_count);
+    sr_yang_ctx.rdlock_count--;
+
+    /* caller must unlock context lock if this is the last one */
+    *unlock = !sr_yang_ctx.rdlock_count;
+
+    /* YANG CTX UNLOCK */
+    sr_munlock(&sr_yang_ctx.rdlock);
+}
+
 sr_error_info_t *
 sr_lycc_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int lydmods_lock, const char *func)
 {
@@ -127,6 +168,14 @@ sr_lycc_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int lydmods_lock, const c
     sr_main_shm_t *main_shm = SR_CONN_MAIN_SHM(conn);
     sr_lock_mode_t remap_mode = SR_LOCK_NONE;
     struct ly_ctx *new_ctx = NULL;
+    int recursive_rdlock = 0;
+
+    if (!lydmods_lock && (mode == SR_LOCK_READ)) {
+        if ((err_info = sr_lycc_rdlock(&recursive_rdlock, func)) || recursive_rdlock) {
+            sr_available_conn = conn;
+            return err_info;
+        }
+    }
 
     /* CONTEXT LOCK */
     if ((err_info = sr_rwlock(&main_shm->context_lock, SR_CONTEXT_LOCK_TIMEOUT, mode, conn->cid, func, NULL, NULL))) {
@@ -206,6 +255,10 @@ sr_lycc_lock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int lydmods_lock, const c
 
     sr_available_conn = conn;
 
+    if (mode == SR_LOCK_READ) {
+        err_info = sr_lycc_rdlock(NULL, func);
+        sr_errinfo_free(&err_info);
+    }
 cleanup_unlock:
     ly_ctx_destroy(new_ctx);
     if (err_info) {
@@ -244,6 +297,7 @@ void
 sr_lycc_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int lydmods_lock, const char *func)
 {
     sr_main_shm_t *main_shm = SR_CONN_MAIN_SHM(conn);
+    int unlock = 1;
 
     if (mode == SR_LOCK_NONE) {
         return;
@@ -254,11 +308,17 @@ sr_lycc_unlock(sr_conn_ctx_t *conn, sr_lock_mode_t mode, int lydmods_lock, const
         sr_munlock(&main_shm->lydmods_lock);
     }
 
-    /* MOD REMAP UNLOCK */
-    sr_rwunlock(&sr_yang_ctx.remap_lock, SR_REMAP_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, func);
+    if (mode == SR_LOCK_READ) {
+        sr_lycc_rdunlock(&unlock, func);
+    }
 
-    /* CONTEXT UNLOCK */
-    sr_rwunlock(&main_shm->context_lock, SR_CONTEXT_LOCK_TIMEOUT, mode, conn->cid, func);
+    if (unlock) {
+        /* MOD REMAP UNLOCK */
+        sr_rwunlock(&sr_yang_ctx.remap_lock, SR_REMAP_LOCK_TIMEOUT, SR_LOCK_READ, conn->cid, func);
+
+        /* CONTEXT UNLOCK */
+        sr_rwunlock(&main_shm->context_lock, SR_CONTEXT_LOCK_TIMEOUT, mode, conn->cid, func);
+    }
 }
 
 sr_error_info_t *
