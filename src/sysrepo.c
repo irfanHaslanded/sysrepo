@@ -4602,8 +4602,9 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
     sr_error_info_t *err_info = NULL;
     struct lyd_node *data_diff = NULL, *old_oper_ds = NULL, *new_oper_data = NULL;
     const struct lyd_node *oper_edit;
-    uint32_t mi_opts;
+    uint32_t mi_opts, i;
     sr_lock_mode_t change_sub_lock = SR_LOCK_NONE;
+    struct sr_mod_info_mod_s *mod;
 
     assert(session && (session->ds == SR_DS_OPERATIONAL));
 
@@ -4624,8 +4625,16 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
         goto cleanup;
     }
 
+    if (!oper_edit) {
+        for (i = 0; i < mod_info->mod_count; ++i) {
+            mod = &mod_info->mods[i];
+            mod->state |= MOD_INFO_CHANGED;
+        }
+        lyd_free_siblings(mod_info->data);
+        mod_info->data = NULL;
+    }
     /* generate the DS diff, data, and learn what modules are changed */
-    if ((err_info = sr_modinfo_oper_ds_diff(mod_info, oper_edit))) {
+    else if ((err_info = sr_modinfo_oper_ds_diff(mod_info, oper_edit))) {
         goto cleanup;
     }
     new_oper_data = mod_info->data;
