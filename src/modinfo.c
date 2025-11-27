@@ -767,7 +767,7 @@ sr_modinfo_replace(struct sr_mod_info_s *mod_info, struct lyd_node **src_data)
 }
 
 sr_error_info_t *
-sr_modinfo_oper_notify_diff(struct sr_mod_info_s *mod_info, struct lyd_node **old_data)
+sr_modinfo_oper_notify_diff(struct sr_mod_info_s *mod_info, struct lyd_node **old_data, int can_skip)
 {
     sr_error_info_t *err_info = NULL;
     struct sr_mod_info_mod_s *mod;
@@ -780,6 +780,11 @@ sr_modinfo_oper_notify_diff(struct sr_mod_info_s *mod_info, struct lyd_node **ol
     for (i = 0; i < mod_info->mod_count; ++i) {
         mod = &mod_info->mods[i];
         if (!(mod->state & MOD_INFO_REQ)) {
+            continue;
+        }
+
+        /* if there are no change subscribers, don't need to create a diff */
+        if (can_skip && !mod->shm_mod->change_sub[SR_DS_OPERATIONAL].sub_count) {
             continue;
         }
 

@@ -224,9 +224,11 @@ sr_error_info_t *sr_modinfo_replace(struct sr_mod_info_s *mod_info, struct lyd_n
  *
  * @param[in] mod_info Mod info to use.
  * @param[in] old_data Old (previous) oper DS data to use.
+ * @param[in] can_skip Can skip creating a notify_diff if there are no change subs to the modules.
+ *
  * @return err_info, NULL on success.
  */
-sr_error_info_t *sr_modinfo_oper_notify_diff(struct sr_mod_info_s *mod_info, struct lyd_node **old_data);
+sr_error_info_t *sr_modinfo_oper_notify_diff(struct sr_mod_info_s *mod_info, struct lyd_node **old_data, int can_skip);
 
 /**
  * @brief Read-lock all changed modules in mod info.

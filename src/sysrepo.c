@@ -4605,7 +4605,7 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
     uint32_t mi_opts;
     sr_lock_mode_t change_sub_lock = SR_LOCK_NONE;
 
-    assert(session && (session->ds == SR_DS_OPERATIONAL) && !data_old->run);
+    assert(session && (session->ds == SR_DS_OPERATIONAL));
 
     *err_info2 = NULL;
     oper_edit = session->dt[session->ds].edit ? session->dt[session->ds].edit->tree : NULL;
@@ -4652,7 +4652,7 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
     change_sub_lock = SR_LOCK_READ;
 
     /* create the notify diff and use the new session oper data (data depend also on change subscriptions and their xpaths) */
-    if ((err_info = sr_modinfo_oper_notify_diff(mod_info, &old_oper_ds))) {
+    if ((err_info = sr_modinfo_oper_notify_diff(mod_info, &old_oper_ds, !data_old))) {
         goto cleanup;
     }
     lyd_free_siblings(mod_info->data);
@@ -4661,6 +4661,7 @@ sr_apply_oper_changes(struct sr_mod_info_s *mod_info, sr_session_ctx_t *session,
 
     /* check for oper changes in schema-mount diff */
     if (sr_schema_mount_changed_oper_data(mod_info->notify_diff)) {
+        assert(data_old && !data_old->run);
         /* prepare context update by getting current data with the current SM data */
         if ((err_info = sr_lycc_append_data(session->conn, sr_yang_ctx.ly_ctx, data_old))) {
             goto cleanup;
@@ -4695,7 +4696,7 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
 {
     sr_error_info_t *err_info = NULL, *err_info2 = NULL;
     struct sr_mod_info_s mod_info;
-    struct sr_lycc_ds_data_set_s data_old = {0};
+    struct sr_lycc_ds_data_set_s data_old = {0}, *data_old_ptr = NULL;
     uint32_t mi_opts;
     sr_lock_mode_t ctx_lock = SR_LOCK_NONE;
 
@@ -4732,9 +4733,10 @@ sr_apply_changes(sr_session_ctx_t *session, uint32_t timeout_ms)
                 goto cleanup;
             }
             ctx_lock = SR_LOCK_READ_UPGR;
+            data_old_ptr = &data_old;
         }
 
-        err_info = sr_apply_oper_changes(&mod_info, session, NULL, 0, timeout_ms, &err_info2, &data_old);
+        err_info = sr_apply_oper_changes(&mod_info, session, NULL, 0, timeout_ms, &err_info2, data_old_ptr);
         if (err_info || err_info2) {
             goto cleanup;
         }
@@ -5142,7 +5144,7 @@ _sr_discard_oper_changes(sr_session_ctx_t *session, const char *module_name, int
     sr_error_info_t *err_info = NULL, *cb_err_info = NULL;
     const struct lys_module *ly_mod = NULL;
     struct sr_mod_info_s mod_info;
-    struct sr_lycc_ds_data_set_s data_old = {0};
+    struct sr_lycc_ds_data_set_s data_old = {0}, *data_old_ptr = NULL;
     sr_datastore_t prev_ds;
     sr_lock_mode_t ctx_lock = SR_LOCK_NONE;
 
@@ -5173,6 +5175,7 @@ _sr_discard_oper_changes(sr_session_ctx_t *session, const char *module_name, int
             goto cleanup;
         }
         ctx_lock = SR_LOCK_READ_UPGR;
+        data_old_ptr = &data_old;
     }
 
     if (module_name) {
@@ -5187,7 +5190,7 @@ _sr_discard_oper_changes(sr_session_ctx_t *session, const char *module_name, int
     /* discard oper changes */
     prev_ds = session->ds;
     session->ds = SR_DS_OPERATIONAL;
-    err_info = sr_apply_oper_changes(&mod_info, session, ly_mod, shmmod_session_del, timeout_ms, &cb_err_info, &data_old);
+    err_info = sr_apply_oper_changes(&mod_info, session, ly_mod, shmmod_session_del, timeout_ms, &cb_err_info, data_old_ptr);
     session->ds = prev_ds;
 
     if (err_info || cb_err_info) {
