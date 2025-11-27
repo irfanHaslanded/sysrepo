@@ -3367,10 +3367,58 @@ test_session_stop(void **state)
 
 }
 
+static void
+test_oper_add_one_helper(sr_session_ctx_t *sess)
+{
+    int i, ret;
+    char xpath[64] = "";
+    TLOG_INF("adding 100k entries");
+    for (i = 0; i < 100000; i++) {
+        snprintf(xpath, sizeof xpath, "/ietf-interfaces:interfaces/interface[name='eth%d']/type", i);
+        /* set some operational data of second module */
+        ret = sr_set_item_str(sess, xpath, "iana-if-type:ethernetCsmacd", NULL, 0);
+        assert_int_equal(ret, SR_ERR_OK);
+    }
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("added 100k entries");
+}
+
+static void
+test_oper_add_one(void **state)
+{
+    struct state *st = (struct state *)*state;
+    sr_session_ctx_t *sess = NULL;
+    int i, ret;
+    char xpath[64] = "/ietf-interfaces:interfaces/interface[name='gig0']/type";
+
+    ret = sr_session_start(st->conn, SR_DS_OPERATIONAL, &sess);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    test_oper_add_one_helper(sess);
+
+    TLOG_INF("adding one entry");
+    /* set some operational data of second module */
+    ret = sr_set_item_str(sess, xpath, "iana-if-type:ethernetCsmacd", NULL, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+
+    ret = sr_apply_changes(sess, 0);
+    assert_int_equal(ret, SR_ERR_OK);
+    TLOG_INF("added one entry");
+
+    ret = sr_session_stop(sess);
+    assert_int_equal(ret, SR_ERR_OK);
+    exit(0);
+
+}
+
+
 int
 main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_teardown(test_oper_add_one, clear_up),
         cmocka_unit_test_teardown(test_conn_owner1, clear_up),
         cmocka_unit_test_teardown(test_conn_owner2, clear_up),
         cmocka_unit_test_teardown(test_conn_owner_same_data, clear_up),
