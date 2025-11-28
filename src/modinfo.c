@@ -627,6 +627,8 @@ sr_modinfo_oper_ds_diff(struct sr_mod_info_s *mod_info, const struct lyd_node *o
     const struct lys_module *ly_mod;
     struct sr_mod_info_mod_s *mod;
     const struct lyd_node *node;
+    struct lyd_node **ds_diff;
+    const struct sr_ds_handle_s *oper_ds_handle;
     uint32_t i;
     int change;
 
@@ -651,15 +653,32 @@ sr_modinfo_oper_ds_diff(struct sr_mod_info_s *mod_info, const struct lyd_node *o
         mod = &mod_info->mods[i];
         assert(mod->state & MOD_INFO_REQ);
 
-        /* merge relevant data */
-        if ((err_info = sr_oper_edit_mod_apply(oper_data, mod->ly_mod, &mod_info->data, &mod_info->ds_diff, &change))) {
+        if ((err_info = sr_ds_handle_find(sr_yang_ctx.mod_shm.addr + mod->shm_mod->plugins[SR_DS_OPERATIONAL],
+                            mod_info->conn, &oper_ds_handle))) {
             goto cleanup;
+        }
+
+        if (oper_data) {
+            /* only create a ds_diff if our plugin requires it */
+            ds_diff = oper_ds_handle->plugin->oper_store_uses_diff ? &mod_info->ds_diff : NULL;
+            /* merge relevant data */
+            if ((err_info = sr_oper_edit_mod_apply(oper_data, mod->ly_mod, &mod_info->data, ds_diff, &change))) {
+                goto cleanup;
+            }
+        } else {
+            /* all push oper data is being deleted */
+            change = 1;
         }
 
         if (change) {
             /* there is a diff for this module */
             mod->state |= MOD_INFO_CHANGED;
         }
+    }
+
+    if (!oper_data) {
+        lyd_free_siblings(mod_info->data);
+        mod_info->data = NULL;
     }
 
 cleanup:

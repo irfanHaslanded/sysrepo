@@ -4373,4 +4373,5 @@ const struct srplg_ds_s srpds_redis = {
     .access_check_cb = srpds_redis_access_check,
     .last_modif_cb = srpds_redis_last_modif,
     .data_version_cb = NULL,
+    .oper_store_uses_diff = 1,
 };
