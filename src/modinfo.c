@@ -630,7 +630,7 @@ sr_modinfo_oper_ds_diff(struct sr_mod_info_s *mod_info, const struct lyd_node *o
     struct lyd_node **ds_diff;
     const struct sr_ds_handle_s *oper_ds_handle;
     uint32_t i;
-    int change;
+    int change = 0;
 
     assert(!mod_info->data_cached && (mod_info->ds == SR_DS_OPERATIONAL) && (mod_info->ds2 == SR_DS_OPERATIONAL));
 

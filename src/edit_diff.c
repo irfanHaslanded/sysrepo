@@ -2407,7 +2407,9 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
 
     assert((op == EDIT_MERGE) || (op == EDIT_REPLACE));
 
-    *mod_diff = NULL;
+    if (mod_diff) {
+        *mod_diff = NULL;
+    }
     *change = 0;
 
     /* collect relevant data opaque nodes */
@@ -2434,7 +2436,11 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
         if ((err_info = sr_lyd_merge_module(data, mod_first, ly_mod, sr_oper_edit_mod_apply_cb, &arg, LYD_MERGE_DEFAULTS))) {
             goto cleanup;
         }
-        *mod_diff = arg.mod_diff;
+        if (mod_diff) {
+            *mod_diff = arg.mod_diff;
+        } else {
+            lyd_free_siblings(arg.mod_diff);
+        }
         *change = arg.change;
     } else {
         /* get source and target data of the module */
@@ -2454,15 +2460,20 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
         trg_tree = sr_module_data_unlink(data, ly_mod, 0);
 
         /* generate diff and replace module data */
-        if ((err_info = sr_lyd_diff_siblings(trg_tree, src_tree, LYD_DIFF_DEFAULTS, NULL, mod_diff))) {
-            goto cleanup;
-        }
-        if (*mod_diff) {
-            *change = 1;
+        if (mod_diff) {
+            if ((err_info = sr_lyd_diff_siblings(trg_tree, src_tree, LYD_DIFF_DEFAULTS, NULL, mod_diff))) {
+                goto cleanup;
+            }
+            if (*mod_diff) {
+                *change = 1;
+            } else {
+                /* check that all origin values are the same */
+                sr_oper_edit_mod_diff_origin_r(trg_tree, src_tree, change);
+            }
         } else {
-            /* check that all origin values are the same */
-            sr_oper_edit_mod_diff_origin_r(trg_tree, src_tree, change);
+            *change = 1;
         }
+
         if ((err_info = sr_lyd_insert_sibling(*data, src_tree, data))) {
             goto cleanup;
         }
@@ -2498,13 +2509,16 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
                 *data = (*data)->next;
             }
             lyd_unlink_tree(node);
-            if ((err_info = sr_diff_set_oper(node, "delete"))) {
-                goto cleanup;
+            if (mod_diff) {
+                if ((err_info = sr_diff_set_oper(node, "delete"))) {
+                    goto cleanup;
+                }
+                if ((err_info = sr_lyd_insert_sibling(*mod_diff, node, mod_diff))) {
+                    goto cleanup;
+                }
+            } else {
+                lyd_free_tree(node);
             }
-            if ((err_info = sr_lyd_insert_sibling(*mod_diff, node, mod_diff))) {
-                goto cleanup;
-            }
-
             *change = 1;
         }
     }
@@ -2521,17 +2535,18 @@ sr_oper_edit_mod_apply_data(const struct lyd_node *mod_first, struct ly_set *opa
             goto cleanup;
         }
 
-        /* add the opaque node to diff */
-        if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &dup))) {
-            goto cleanup;
+        if (mod_diff) {
+            /* add the opaque node to diff */
+            if ((err_info = sr_lyd_dup(node, NULL, LYD_DUP_NO_META, 0, &dup))) {
+                goto cleanup;
+            }
+            if ((err_info = sr_diff_set_oper(dup, "create"))) {
+                goto cleanup;
+            }
+            if ((err_info = sr_lyd_insert_sibling(*mod_diff, dup, mod_diff))) {
+                goto cleanup;
+            }
         }
-        if ((err_info = sr_diff_set_oper(dup, "create"))) {
-            goto cleanup;
-        }
-        if ((err_info = sr_lyd_insert_sibling(*mod_diff, dup, mod_diff))) {
-            goto cleanup;
-        }
-
         *change = 1;
     }
 
@@ -2626,7 +2641,8 @@ sr_oper_edit_mod_apply(const struct lyd_node *tree, const struct lys_module *ly_
 
 apply:
     /* apply the edit to oper data and generate diff */
-    if ((err_info = sr_oper_edit_mod_apply_data(mod_first, &opaq_set, ly_mod, op, data, &mod_diff, change))) {
+    if ((err_info = sr_oper_edit_mod_apply_data(mod_first, &opaq_set, ly_mod, op,
+                        data, diff ? &mod_diff : NULL, change))) {
         goto cleanup;
     }
 
